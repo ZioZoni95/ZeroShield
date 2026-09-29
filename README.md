@@ -78,6 +78,7 @@ Ogni scenario ha un **profilo** pronto (vedi [Profili](#-profili)).
 personal_zeroT/
 ├── README.md                   # Questo file
 ├── PUNTI_APERTI.md             # Stato, decisioni aperte e checklist
+├── TESTING.md                  # Scenari di collaudo pratico (LSM, XDP, network namespaces)
 ├── gemini-code-1790668303538.md # Specifiche tecniche iniziali e storico evolutivo
 ├── Makefile                    # make build | test | clean
 ├── go.mod
@@ -227,3 +228,4 @@ kubectl get pods                                         # consentito
 ## 📖 Riferimenti
 * Specifiche tecniche iniziali e storico evolutivo: [gemini-code-1790668303538.md](gemini-code-1790668303538.md).
 * Stato e attività aperte: [PUNTI_APERTI.md](PUNTI_APERTI.md).
+* Guida agli scenari di collaudo pratico: [TESTING.md](TESTING.md).
