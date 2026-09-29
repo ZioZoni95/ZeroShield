@@ -1,13 +1,13 @@
 # 🛡️ Local Zero-Trust Shield (`zt-shield`)
 
 > **Kernel-Enforced Local Security Agent for Developer Workstations**  
-> *Defesa in profondità locale contro movimenti laterali, compromissioni Active Directory e furto di credenziali.*
+> *Difesa in profondità locale a livello kernel contro movimenti laterali, reti ostili e furto di credenziali.*
 
 ---
 
 ## 📋 Panoramica Architetturale
 
-`zt-shield` è un agente di sicurezza locale progettato per postazioni di sviluppo Linux (Ubuntu) che operano in reti aziendali non fidate o potenzialmente compromesse (es. caduta di Active Directory / domain-joined environments).
+`zt-shield` è un agente di sicurezza locale progettato per postazioni di sviluppo Linux che operano in reti non fidate o ambienti potenzialmente compromessi (LAN pubbliche, shared networks, host compromessi).
 
 Il sistema implementa il paradigma **Zero-Trust ("Never Trust, Always Verify")** direttamente a livello kernel tramite **eBPF (XDP + LSM)**, combinato con hardening del sistema operativo e credenziali hardware non estraibili (**FIDO2**).
 
@@ -61,6 +61,7 @@ Il sistema implementa il paradigma **Zero-Trust ("Never Trust, Always Verify")**
 personal_zeroT/
 ├── .gitignore                  # Esclusioni per binari, artefatti C e vmlinux.h
 ├── README.md                   # Documentazione architetturale e guida operativa
+├── PUNTI_APERTI.md             # Registro attività, decisioni aperte e checklist
 ├── gemini-code-1790668303538.md # Specifiche tecniche e storico evolutivo
 ├── go.mod                      # Definizione modulo Go
 ├── bpf/
@@ -90,29 +91,29 @@ personal_zeroT/
 ## 🎯 I Quattro Livelli di Protezione
 
 ### 1. Network Layer (eBPF XDP)
-* **Ingress Filtering hardware/driver level:** Scarta a monte i pacchetti provenienti da subnet LAN compromesse o non autorizzate prima ancora che raggiungano lo stack TCP/IP del kernel.
-* **Supporto Universale:** Utilizza il fallback `XDP_GENERIC` per operare senza incompatibilità su schede di rete Wi-Fi e dongle Ethernet tipici dei laptop di sviluppo.
+* **Ingress Filtering a livello kernel/driver:** Scarta ad alte prestazioni i pacchetti provenienti da subnet o indirizzi IP ostili prima ancora che raggiungano lo stack TCP/IP del kernel.
+* **Supporto Universale:** Utilizza il fallback `XDP_GENERIC` per operare senza incompatibilità su qualsiasi interfaccia (Wi-Fi, Ethernet, tunnel VPN).
 
 ### 2. Secret & Data Layer (eBPF LSM)
 * **Protezione Inode:** Registra gli inode di file critici (`~/.kube/config`, `~/.ssh/id_rsa`, `~/.aws/credentials`).
-* **Enforcement a livello kernel:** Intercetta l'hook `file_open` e restituisce `-EACCES` (Permission Denied) a qualsiasi binario non esplicitamente registrato nella whitelist (`allowed_readers`).
+* **Enforcement a livello kernel:** Intercetta l'hook `file_open` e restituisce `-EACCES` (Permission Denied) a qualsiasi processo non esplicitamente registrato nella whitelist (`allowed_readers`).
 * **Audit Ring Buffer:** Invia in tempo reale eventi asincroni a user-space ogni volta che un processo non autorizzato tenta l'accesso a un file protetto.
 
 ### 3. Identity & Non-Repudiation Layer (FIDO2 Hardware Keys)
 * **Chiavi residenti non estraibili:** Generazione di chiavi `ed25519-sk` su token hardware (YubiKey, token FIDO2/U2F) con tocco fisico obbligatorio (`verify-required`).
-* **Anti-Impersonation Git:** Tutti i commit sui repository locali e remoti devono essere obbligatoriamente firmati crittograficamente con la chiave hardware.
+* **Anti-Impersonation Git:** Tutti i commit sui repository devono essere obbligatoriamente firmati crittograficamente con la chiave hardware.
 * **Anti SSH-Agent Hijacking:** Protezione dell'agente SSH locale tramite flag `-c` (richiesta di conferma esplicita a schermo per ogni utilizzo della chiave).
 
 ### 4. Protocol & OS Hardening
-* **Anti-Responder / Anti-Inveigh:** Disattivazione di LLMNR (*Link-Local Multicast Name Resolution*) e mDNS in `systemd-resolved` per neutralizzare il furto broadcast di hash NTLM.
+* **Anti-Poisoning Broadcast:** Disattivazione di protocolli insicuri di broadcast discovery (LLMNR e mDNS) in `systemd-resolved` per neutralizzare attacchi di sniffing e spoofing locale.
 * **Firewall Strict Ingress:** Policy predefinita `default deny incoming` tramite UFW.
-* **DNS Protection:** Isolamento dai server DNS interni gestiti dai Domain Controller aziendali tramite configurazione DNS-over-HTTPS (DoH).
+* **DNS Security:** Protezione contro attacchi di DNS poisoning locale tramite configurazione crittografica sicura (DoH / DoT).
 
 ---
 
 ## ⚙️ Prerequisiti di Sistema
 
-* **Sistema Operativo:** Ubuntu 22.04 LTS o 24.04 LTS (o kernel Linux compatibile >= 5.15 con BTF attivo in `/sys/kernel/btf/vmlinux`).
+* **Sistema Operativo:** Ubuntu 22.04 LTS, 24.04 LTS o qualsiasi distribuzione Linux con kernel >= 5.15 e BTF abilitato (`/sys/kernel/btf/vmlinux`).
 * **BPF LSM attivo nel kernel:**
   Verifica con:
   ```bash
@@ -158,4 +159,4 @@ sudo ./bin/zt-shield
 ---
 
 ## 📖 Riferimenti
-* Per l'analisi dettagliata dei bug del prototipo iniziale e il threat model completo, consulta [gemini-code-1790668303538.md](file:///home/acucchiara/Scrivania/personal_zeroT/gemini-code-1790668303538.md).
+* Per le specifiche tecniche dettagliate del motore eBPF e lo storico evolutivo, consulta [gemini-code-1790668303538.md](file:///home/acucchiara/Scrivania/personal_zeroT/gemini-code-1790668303538.md).
