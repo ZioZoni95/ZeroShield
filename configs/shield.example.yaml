@@ -1,0 +1,42 @@
+# zt-shield — configurazione di esempio (copia in /etc/zt-shield/shield.yaml)
+#
+# Profili (definiscono i default; ogni chiave sotto li sovrascrive):
+#   home         audit,   regole: ssh, cloud, tokens, gpg
+#   corporate    enforce, regole: ssh, cloud, tokens, gpg
+#   public-wifi  enforce, regole: ssh, cloud, tokens, gpg, browsers
+#   paranoid     enforce, come public-wifi (+ hardening DNS più severo in harden_system.sh)
+profile: home
+
+# Utente di cui proteggere la home (obbligatorio se non usi sudo / SHIELD_USER)
+user: mario
+
+# audit  = logga soltanto (consigliato la prima settimana)
+# enforce = nega l'accesso (-EACCES)
+# mode: enforce
+
+# Interfaccia XDP. Vuoto = interfaccia della route di default.
+# Con più interfacce attive (es. VPN) indica quella esposta alla rete ostile.
+# interface: wlp3s0
+
+# Drop in ingresso di LLMNR/mDNS/NBT-NS
+block_poisoning: true
+
+# Subnet da scartare in XDP. ATTENZIONE: scarta anche le risposte da quelle reti.
+# block_subnets:
+#   - 192.168.100.0/24
+
+log_format: text        # text | json (json: una riga per evento, per SIEM/jq)
+rescan_seconds: 30
+
+# Aggiunge regole a quelle del profilo:
+# extra_rules:
+#   - name: wallet
+#     paths: [".bitcoin/wallet.dat", ".config/Electrum/wallets"]
+#     allow: ["bitcoin-qt", "/opt/electrum/electrum"]
+#
+# 'paths': relativi alla home o assoluti, glob ammessi, le directory sono ricorsive.
+# 'allow': nome (risolto via PATH) o percorso assoluto. Conta il binario che apre il file:
+#          per tool con shebang (npm, pip, gcloud, az) è l'interprete, quindi NON autorizzarli:
+#          autorizzeresti ogni script che usa quell'interprete.
+#
+# 'rules:' (al posto di 'extra_rules:') sostituisce del tutto le regole del profilo.

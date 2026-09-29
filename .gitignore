@@ -5,8 +5,8 @@ bin/
 # Artefatti eBPF / Clang
 bpf/vmlinux.h
 *.o
-bpf_bpf*.go
-bpf_bpf*.o
+bpf/shield_*.go
+bpf/shield_*.o
 
 # Go
 vendor/
