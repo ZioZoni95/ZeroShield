@@ -1,0 +1,22 @@
+# Binari e build
+bin/
+/zt-shield
+
+# Artefatti eBPF / Clang
+bpf/vmlinux.h
+*.o
+bpf_bpf*.go
+bpf_bpf*.o
+
+# Go
+vendor/
+
+# Configurazione locale con segreti
+configs/shield.yaml
+
+# IDE e file temporanei
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
