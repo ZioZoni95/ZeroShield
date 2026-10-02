@@ -258,8 +258,9 @@ kubectl get pods                                         # consentito
 ## 🚧 Limiti noti (riletti 2026-10-02, fedeli al codice)
 
 * **Root locale = game over:** chi ha root scarica gli hook e legge tutto. Difende da processi utente e rete, non da privilege escalation. Aiutano solo LUKS + backup offline.
-* **Solo `file_open`:** niente hook su `unlink`/`rename`/`ptrace`. Un ransomware che cifra passa; `ptrace` sullo stesso UID legge la memoria di `ssh` (mitigato da `yama.ptrace_scope=1`).
-* **Write-only passa di proposito:** creazione chiavi e backup funzionano, ma anche la scrittura malevola. Bloccata solo la lettura/esfiltrazione.
+* **Hook su `file_open`, `unlink`, `rename` (sorgente e destinazione), `truncate`; niente `ptrace`.** `ptrace` sullo stesso UID legge la memoria di `ssh` (mitigato da `yama.ptrace_scope=1`). `LD_PRELOAD` su un binario in whitelist dinamico (`ssh`, `git`, `gpg`) esegue codice con la sua identità: stesso limite strutturale della whitelist.
+* **Write-only passa di proposito:** creazione chiavi e backup funzionano, ma anche la sovrascrittura malevola senza troncare. `O_TRUNC` e `truncate(2)` passano invece dalla whitelist; su kernel ≥ 6.2 `ftruncate` di un fd write-only resta scoperto. Per segreti immutabili usa `deny_write`.
+* **Whitelist solo per binari di root:** binari (o directory padri) scrivibili da un utente non root, es. `~/.local/bin`, vengono scartati con log `⛔`: altrimenti basterebbe riscriverli per ereditarne l'accesso.
 * **Whitelist per binario, non per catena:** ogni binario in lista legge i suoi file per chiunque lo invochi (`git` fuori da `ssh-keys`, ma dentro `dev-tokens`). Il segreto forte è la chiave FIDO2.
 * **`io_uring` = fail-open:** worker senza `mm` passa senza evento. Scelta contro falsi blocchi, resta bypass tecnico.
 * **XDP: solo IPv4, un tag VLAN, niente IPv6.** IPv6 coperto solo da `systemd-resolved`. `interface` accetta lista; UP scoperte segnalate nel log.

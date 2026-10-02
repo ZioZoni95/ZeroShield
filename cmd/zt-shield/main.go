@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -99,7 +100,7 @@ func main() {
 	// l'utente crede di essere protetto. Per questo Attach() fa restituire l'errore
 	// e main lo trasforma in uscita fatale invece di proseguire.
 	mgr := lsm.New(objs.ProtectedFiles, objs.AllowedExes,
-		[]*ebpf.Program{objs.ZtFileOpen, objs.ZtFileUnlink, objs.ZtFileRename},
+		[]*ebpf.Program{objs.ZtFileOpen, objs.ZtFileUnlink, objs.ZtFileRename, objs.ZtPathTruncate},
 		home, cfg.AllRules())
 
 	// Popola le mappe PRIMA di agganciare l'hook: cosi' al primo open() dal sistema
@@ -122,10 +123,8 @@ func main() {
 	//
 	// NewTicker (non Tick): il ticker va fermato a chiusura, altrimenti la goroutine
 	// vive oltre il necessario e i linter segnalano leak.
-	// publishStatus fotografa demone per le UI (definita dopo il server IPC,
-	// usata anche dal rescan: dichiarata qui per visibilita').
-	var publishStatus func()
-
+	// La goroutine parte DOPO il server IPC e publishStatus (vedi sotto): da li'
+	// in poi p/a/topSrc/tracker sono toccati solo da lei, niente data race.
 	ticker := time.NewTicker(time.Duration(cfg.RescanSeconds) * time.Second)
 	defer ticker.Stop()
 	// Radar eBPF: tracker userspace sopra la LRU kernel. La mappa conta per IP,
@@ -137,7 +136,20 @@ func main() {
 	tracker := map[[4]byte]*seen{}
 	var topSrc []ipc.SourceStat
 	refreshRadar := func() {
-		for _, s := range xdp.ReadStats(objs.XdpStats) {
+		stats := xdp.ReadStats(objs.XdpStats)
+		// FIX: il tracker cresceva senza limite (IP sorgente spoofati su mDNS
+		// = memoria del demone illimitata). Ora segue la LRU kernel: un IP
+		// sfrattato dal kernel esce anche da qui, tetto 1024 voci.
+		live := make(map[[4]byte]bool, len(stats))
+		for _, s := range stats {
+			live[s.IP] = true
+		}
+		for ip := range tracker {
+			if !live[ip] {
+				delete(tracker, ip)
+			}
+		}
+		for _, s := range stats {
 			tot := s.Poison + s.Subnet
 			e, ok := tracker[s.IP]
 			if !ok {
@@ -161,20 +173,6 @@ func main() {
 			topSrc = topSrc[:12]
 		}
 	}
-	go func() {
-		for range ticker.C {
-			p, a = mgr.Sync()
-			log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
-			refreshRadar()
-			publishStatus()
-			// Watchdog systemd (no-op senza NOTIFY_SOCKET): un demone hung
-			// viene riavviato invece di fingersi attivo.
-			if err := watchdog.Ping(); err != nil {
-				log.Printf("⚠️ watchdog: %v", err)
-			}
-		}
-	}()
-
 	// --- XDP: non fatale --------------------------------------------------------------
 	// Se XDP non parte si continua: la protezione dei segreti (LSM) e' indipendente
 	// e resta attiva. Il log e' un warning perche' l'utente deve sapere che la rete
@@ -209,7 +207,7 @@ func main() {
 	}
 	// publishStatus fotografa demone per le UI. Chiamata a ogni cambio rilevante
 	// (avvio, rescan) perche' il protocollo ritrasmette ai connessi.
-	publishStatus = func() {
+	publishStatus := func() {
 		if srv == nil {
 			return
 		}
@@ -226,6 +224,44 @@ func main() {
 		})
 	}
 	publishStatus()
+
+	// Rescan periodico (vedi sopra). lastRescan alimenta il watchdog: se il
+	// rescan si pianta (walk bloccato su NFS, deadlock) i ping si fermano e
+	// systemd riavvia, invece di un demone che si dichiara vivo ma non lavora.
+	var lastRescan atomic.Int64
+	lastRescan.Store(time.Now().UnixNano())
+	go func() {
+		for range ticker.C {
+			p, a = mgr.Sync()
+			log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
+			refreshRadar()
+			publishStatus()
+			lastRescan.Store(time.Now().UnixNano())
+		}
+	}()
+
+	// Watchdog systemd su ticker proprio a meta' WatchdogSec (no-op senza
+	// NOTIFY_SOCKET/WATCHDOG_USEC). Il ping si ferma se l'ultimo rescan e'
+	// piu' vecchio di 2 intervalli + margine: hung = restart.
+	if err := watchdog.Ready(); err != nil {
+		log.Printf("⚠️ sd_notify READY: %v", err)
+	}
+	if every := watchdog.Interval(); every > 0 {
+		stale := 2*time.Duration(cfg.RescanSeconds)*time.Second + 30*time.Second
+		go func() {
+			wd := time.NewTicker(every)
+			defer wd.Stop()
+			for range wd.C {
+				if time.Since(time.Unix(0, lastRescan.Load())) > stale {
+					log.Printf("⚠️ rescan fermo da oltre %s: stop ping watchdog", stale)
+					continue
+				}
+				if err := watchdog.Ping(); err != nil {
+					log.Printf("⚠️ watchdog: %v", err)
+				}
+			}
+		}()
+	}
 
 	// --- Audit ------------------------------------------------------------------------
 	// Lettore del ring buffer: una sola lettura per programma, poi il consumer gira

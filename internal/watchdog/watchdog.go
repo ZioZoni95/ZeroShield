@@ -13,10 +13,32 @@ package watchdog
 import (
 	"net"
 	"os"
+	"strconv"
+	"time"
 )
 
 // Ping avvisa systemd che siamo vivi. Ritorna nil anche senza socket.
-func Ping() error {
+func Ping() error { return notify("WATCHDOG=1") }
+
+// Ready segnala a systemd la fine dell'avvio (utile con Type=notify, innocuo altrove).
+func Ready() error { return notify("READY=1") }
+
+// Interval: cadenza consigliata dei ping, cioe' meta' di WatchdogSec
+// (systemd la passa in WATCHDOG_USEC). 0 = watchdog non attivo.
+//
+// FIX: prima si pingava a ogni rescan (default 30s) con WatchdogSec=30: il
+// ping arrivava al limite o dopo, systemd uccideva il demone ogni ~30s e con
+// StartLimitBurst=3 lo lasciava fermo. La regola sd_watchdog_enabled(3) e'
+// pingare a meta' intervallo.
+func Interval() time.Duration {
+	usec, err := strconv.ParseInt(os.Getenv("WATCHDOG_USEC"), 10, 64)
+	if err != nil || usec <= 0 {
+		return 0
+	}
+	return time.Duration(usec) * time.Microsecond / 2
+}
+
+func notify(state string) error {
 	sock := os.Getenv("NOTIFY_SOCKET")
 	if sock == "" {
 		return nil
@@ -26,6 +48,6 @@ func Ping() error {
 		return err
 	}
 	defer conn.Close()
-	_, err = conn.Write([]byte("WATCHDOG=1"))
+	_, err = conn.Write([]byte(state))
 	return err
 }

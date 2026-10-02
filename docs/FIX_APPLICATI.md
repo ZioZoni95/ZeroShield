@@ -115,3 +115,29 @@ Ogni voce: problema → fix → file → cosa riverificare in lab.
 - Demo sicura senza kernel/root: `mockd` pubblica `TopSources` finte,
   TUI `--dump` e GUI le mostrano. Verifier del nuovo codice non ancora visto:
   primo load solo in VM con snapshot.
+
+## 9. Revisione codice 2026-10-02 — APPLICATI
+
+Compilato con clang + bpf2go (stub rigenerati), `go vet` e `go test -race`
+puliti. **Verifier non visto**: i nuovi hook vanno caricati in VM prima dell'uso.
+
+- **Watchdog systemd uccideva il demone.** Ping a ogni rescan (30s) con
+  `WatchdogSec=30`: restart ogni ~30s, poi `StartLimitBurst=3` lo lasciava
+  fermo. Ora `READY=1` all'avvio + ticker dedicato a `WATCHDOG_USEC/2`; il ping
+  si ferma se il rescan e' fermo da > 2 intervalli + 30s (hung = restart).
+  File: `internal/watchdog`, `cmd/zt-shield/main.go`, unit.
+- **`rename` sopra un segreto non controllato.** `mv junk ~/.ssh/id_ed25519`
+  sostituiva la chiave senza passare da `inode_unlink`. Ora `inode_rename`
+  verifica anche `new_dentry`. Riverifica: `mv /tmp/x ~/.ssh/id_ed25519` → negato.
+- **Wipe con `O_TRUNC`/`truncate(2)`.** `: > ~/.ssh/id_ed25519` passava come
+  write-only. Ora `O_TRUNC` in `file_open` va in whitelist; nuovo hook
+  `lsm/path_truncate` (`ZtPathTruncate`). Residuo: `ftruncate` su kernel ≥ 6.2
+  (hook `file_truncate`, non usato per compatibilita').
+- **Whitelist di binari scrivibili dall'utente.** `cat evil > ~/.local/bin/aws`
+  manteneva l'inode autorizzato. Ora `trustedExe`: file e directory padri di
+  root, non world-writable, group-writable solo con gid 0. Test in `lsm_test.go`.
+- **Radar senza tetto.** `tracker` in `main` cresceva con IP spoofati; ora
+  segue la LRU kernel (max 1024).
+- **Data race in `main`.** `p`/`a`/`topSrc`/`publishStatus` letti e scritti da
+  goroutine diverse, ticker avviato prima di `publishStatus`. Ora la goroutine
+  di rescan parte dopo IPC e primo `publishStatus`, unica proprietaria dello stato.

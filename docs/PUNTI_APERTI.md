@@ -51,6 +51,25 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
   `StartLimit`+`ExecStartPre`, sed `TESTING.md`).
 - [ ] **Commit** delle modifiche (working tree con file modificati e non tracciati).
 
+### Da revisione codice 2026-10-02 (fix applicati in `FIX_APPLICATI.md` sez. 9)
+
+- [ ] **Canary fanotify non parte.** `FAN_DELETE`/`FAN_MOVED_*` richiedono
+  `FAN_REPORT_FID` in `fanotify_init`, altrimenti `fanotify_mark` → `EINVAL`.
+  Con FID pero' gli eventi non hanno fd e il path delle esche non si risolve:
+  servono due gruppi (classico per le esche, FID per le dir). Riscrittura.
+- [ ] **Canary e indicizzatori:** tracker/baloo/deja-dup/rsync aprono le esche →
+  `SIGKILL` in enforce. `exclude_exe` vale solo per la massa.
+- [ ] **Canary creato da root:** `MkdirAll` crea `~/Documents` di root se manca,
+  esche di root. Fare `chown` all'utente protetto.
+- [ ] **`ZT_SOCKET` rispettato anche dal demone root** (commento dice il contrario):
+  ignorarlo se euid 0.
+- [ ] **QinQ:** commento in `zerotrust.c` dice "outer tag scartato, poi si
+  rivaluta", il codice gestisce un solo tag. Allineare codice o commento.
+- [ ] **`ftruncate` su kernel ≥ 6.2** non coperto (hook `lsm/file_truncate`,
+  da caricare opzionale per non rompere i kernel vecchi).
+- [ ] **Verifier:** caricare in VM i nuovi hook (`path_truncate`, rename su
+  destinazione, `f_flags`).
+
 ## Decisioni aperte
 
 - [ ] `block_subnets`: scarta anche le risposte; con UFW `deny incoming` il valore è basso. Tenerlo?
@@ -62,7 +81,7 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
 
 - [ ] IPv6 e VLAN in XDP (LLMNR/mDNS su `ff02::`).
 - [ ] Più interfacce XDP (VPN + Wi-Fi).
-- [ ] Hook aggiuntivi: `unlink`/`rename` sui segreti, `ptrace`.
+- [ ] Hook aggiuntivi: `ptrace` (`unlink`/`rename`/`truncate` fatti).
 - [ ] Hardening unit systemd: `ProtectSystem=strict`, `CapabilityBoundingSet` (CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON).
 - [ ] Notifiche desktop sugli eventi bloccati.
 - [ ] Supporto btrfs (mappatura `st_dev` ↔ `s_dev`).

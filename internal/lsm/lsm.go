@@ -146,6 +146,14 @@ func (m *Manager) Sync() (protected, allowed int) {
 				log.Printf("⚠️ regola %q: binario %q non risolto (PATH demone: %q + /snap/bin + ~/.local/bin), NON in whitelist", r.Name, a, os.Getenv("PATH"))
 				continue
 			}
+			// FIX: un binario modificabile dall'utente in whitelist e' un bypass:
+			// `cat evil > ~/.local/bin/aws` conserva l'inode e il codice malevolo
+			// legge i segreti come "aws". Si accettano solo binari (e directory
+			// padri) di root e non scrivibili da altri.
+			if err := trustedExe(exe); err != nil {
+				log.Printf("⛔ regola %q: binario %q (%s) NON in whitelist: %v. Installalo in un percorso di root (es. /usr/local/bin)", r.Name, a, exe, err)
+				continue
+			}
 			if k, ok := fileKey(exe); ok {
 				k.Extra = id
 				wantExes[k] = 1
@@ -287,6 +295,9 @@ func expand(home, pattern string) []string {
 // stessa directory, quindi senza resolve metteresti in mappa l'inode del symlink
 // e non quello dell'ELF, che non corrisponderebbe mai.
 //
+// Nota: i fallback in home (~/.local/bin, ~/bin) servono solo a risolvere il nome
+// e a dare un log chiaro: trustedExe li scarta perche' scrivibili dall'utente.
+//
 // FIX: per i nomi non assoluti si cercava solo con exec.LookPath (PATH di QUESTO
 // processo). Sotto systemd il PATH e' minimale, quindi kubectl snap (/snap/bin)
 // o aws in ~/.local/bin non venivano trovati e restavano fuori whitelist in
@@ -319,6 +330,32 @@ func resolveExe(home, name string) (string, bool) {
 		return "", false
 	}
 	return path, true
+}
+
+// trustedExe verifica che un utente non root non possa sostituire o modificare
+// il binario: il file e ogni directory padre devono essere di root, non
+// scrivibili da "others" e scrivibili dal gruppo solo se il gruppo e' root.
+// Basta un anello debole (es. una dir padre dell'utente) per rinominare o
+// riscrivere il binario e ereditarne l'autorizzazione.
+func trustedExe(path string) error {
+	for p := path; ; p = filepath.Dir(p) {
+		var st syscall.Stat_t
+		if err := syscall.Stat(p, &st); err != nil {
+			return fmt.Errorf("stat %s: %w", p, err)
+		}
+		if st.Uid != 0 {
+			return fmt.Errorf("%s appartiene a uid %d, non a root", p, st.Uid)
+		}
+		if st.Mode&0o002 != 0 {
+			return fmt.Errorf("%s scrivibile da chiunque", p)
+		}
+		if st.Mode&0o020 != 0 && st.Gid != 0 {
+			return fmt.Errorf("%s scrivibile dal gruppo %d", p, st.Gid)
+		}
+		if p == "/" || p == "." {
+			return nil
+		}
+	}
 }
 
 // fileKey: (dev, ino) del file, con dev nel formato del kernel.
