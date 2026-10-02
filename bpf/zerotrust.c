@@ -38,6 +38,12 @@
 // Bloccare anche O_WRONLY rompe ssh-keygen e i backup senza aggiungere sicurezza.
 #define FMODE_READ 0x1
 
+// O_TRUNC per struct file->f_flags (octal 01000). Il kernel lo azzera solo DOPO
+// security_file_open (do_dentry_open), quindi qui e' ancora visibile.
+// Un open write-only CON truncate distrugge il segreto (`: > ~/.ssh/id_ed25519`):
+// passa dalla whitelist anche senza deny_write.
+#define O_TRUNC 01000
+
 // Errno restituito all'utente quando l'accesso e' negato. Deve essere NEGATIVO:
 // il contratto degli hook LSM e' "0 = consenti, <0 = nega con errno".
 // (Restituirlo positivo e' un errore classico: l'utente vede successo e nessun errore.)
@@ -362,8 +368,11 @@ int BPF_PROG(zt_file_open, struct file *file) {
     // Default (deny_write=0): creazione chiavi e backup funzionano.
     // Con deny_write=1: anche ssh-keygen e i backup vengono negati, anche a root.
     // Usalo solo su segreti che non cambiano mai (es. root CA offline).
+    // FIX: O_TRUNC non passa piu' come semplice scrittura: svuotare la chiave e'
+    // un wipe, non un backup. Va in whitelist come la lettura.
     fmode_t fmode = BPF_CORE_READ(file, f_mode);
-    if (!(fmode & FMODE_READ) && !deny_write)
+    unsigned int fflags = BPF_CORE_READ(file, f_flags);
+    if (!(fmode & FMODE_READ) && !(fflags & O_TRUNC) && !deny_write)
         return 0;
 
     // -- Identita' del processo chiamante -------------------------------------------------
@@ -458,7 +467,39 @@ int BPF_PROG(zt_file_unlink, struct inode *dir, struct dentry *dentry) {
 SEC("lsm/inode_rename")
 int BPF_PROG(zt_file_rename, struct inode *old_dir, struct dentry *old_dentry,
              struct inode *new_dir, struct dentry *new_dentry) {
+    struct file_key fk = {};
+    __u32 *rp;
+
     struct inode *victim = BPF_CORE_READ(old_dentry, d_inode);
+    if (victim) {
+        fk.ino = BPF_CORE_READ(victim, i_ino);
+        fk.dev = BPF_CORE_READ(victim, i_sb, s_dev);
+        rp = bpf_map_lookup_elem(&protected_files, &fk);
+        if (rp)
+            return check_access(fk, *rp & 0x7FFFFFFF);
+    }
+
+    // FIX: anche la DESTINAZIONE. `mv junk ~/.ssh/id_ed25519` sostituisce il
+    // segreto (il vecchio inode viene sganciato) senza passare da inode_unlink.
+    // new_dentry->d_inode e' non-NULL solo se il target esiste gia'.
+    struct inode *target = BPF_CORE_READ(new_dentry, d_inode);
+    if (!target)
+        return 0;
+    fk.ino = BPF_CORE_READ(target, i_ino);
+    fk.dev = BPF_CORE_READ(target, i_sb, s_dev);
+    rp = bpf_map_lookup_elem(&protected_files, &fk);
+    if (!rp)
+        return 0;
+    return check_access(fk, *rp & 0x7FFFFFFF);
+}
+
+// truncate(2)/ftruncate(2) su un segreto: stesso wipe di O_TRUNC ma senza open
+// in scrittura con flag. path_truncate copre truncate(2) (e ftruncate sui kernel
+// < 6.2; dopo, ftruncate richiede comunque un fd aperto in scrittura, che per
+// i non-whitelistati passa solo senza O_TRUNC: limite residuo, vedi README).
+SEC("lsm/path_truncate")
+int BPF_PROG(zt_path_truncate, const struct path *path) {
+    struct inode *victim = BPF_CORE_READ(path, dentry, d_inode);
     if (!victim)
         return 0;
     struct file_key fk = {};
