@@ -1,11 +1,9 @@
-# FIX_APPLICATI — Local Zero-Trust Shield
+# FIX_APPLICATI — ZeroShield
 
-Stato: fix statici applicati senza esecuzione test (verifier kernel mai visto).
-Ogni voce: problema → fix → file → cosa riverificare in lab.
-
-> Nota onestà: parte dei fix pianificati (main multi-iface/Ticker/cleanup,
-> script UFW/unit, sed TESTING) è documentata qui come DA APPLICARE:
-> il codice corrispondente non è ancora modificato. Vedi sezione 7.
+Registro cronologico delle correzioni: problema → fix → file → come riverificare.
+Stato attuale e cose ancora aperte: [`PUNTI_APERTI.md`](PUNTI_APERTI.md).
+Le sezioni 1–8 sono state scritte prima di qualsiasi test su kernel: la verifica
+reale è nelle sezioni 11–12 e in [`TEST_SANDBOX.md`](TEST_SANDBOX.md).
 
 ## 1. Kernel `bpf/zerotrust.c` — APPLICATI
 
@@ -91,22 +89,23 @@ Ogni voce: problema → fix → file → cosa riverificare in lab.
 - `reconcile` riscrive tutto ogni sync: costo accettato per immunità da disallineamenti.
 - Timestamp eventi `time.Now()` userspace: skew con backlog ringbuf, noto.
 
-## 7. DA APPLICARE (codice non ancora toccato)
+## 7. Fix pianificati — APPLICATI (verificato 2026-10-02)
 
-- [ ] `scripts/harden_system.sh`: `ufw allow OpenSSH` prima di `enable`
+- [x] `scripts/harden_system.sh`: `ufw allow OpenSSH` prima di `enable`
   (lockout); fallback se manca sezione `[Resolve]`; `restart resolved` e
   `sysctl --system` tolleranti (`||` warning invece di abort con `set -e`).
-- [ ] `scripts/install_service.sh`: `StartLimitBurst/Interval` + `ExecStartPre`
+- [x] `scripts/install_service.sh`: `StartLimitBurst/Interval` + `ExecStartPre`
   `grep bpf`; risolvi `bin/` da script-dir; valuta `ProtectSystem=strict` +
   `CapabilityBoundingSet` (test in VM prima).
-- [ ] `TESTING.md`: fix placeholder sed (`__USER__` vs `$USER`, `__UTENTE__`
+- [x] `TESTING.md`: fix placeholder sed (`__USER__` vs `$USER`, `__UTENTE__`
   incoerenti) che rompono il copia-incolla.
-- [ ] Verifier reale: `sudo SHIELD_USER=$USER ./bin/zt-shield` + `bpftool prog show`,
+- [~] Verifier reale: fatto per XDP (sandbox) e LSM (runner GitHub) con `zt-probe`;
+  resta l'avvio completo del demone in VM. Testo originale: `sudo SHIELD_USER=$USER ./bin/zt-shield` + `bpftool prog show`,
   test btrfs/overlay, misura `run_cnt` con `bpf_stats_enabled=1`.
   (Nota: `NewTicker`, `AttachAll`, `CheckFilesystem`, conteggio subnet sono
   stati applicati durante il lavoro UI.)
 
-## 8. Radar eBPF (in corso, kernel mai caricato)
+## 8. Radar eBPF — collaudato su kernel reale (sez. 11)
 
 - Kernel: mappa `xdp_stats` (LRU_HASH 1024, chiave saddr network order,
   valore poisoning/subnet/last_ns) + `count_drop()` su entrambi i drop XDP.
@@ -188,3 +187,27 @@ Dettagli, ambiente e comandi in `docs/TEST_SANDBOX.md`.
 - **README**: avviso di maturità con tabella "cosa è testato", badge CI sulla
   repo giusta, Go ≥ 1.26, `bpftool` da `linux-tools-generic` (autodetect nel
   `Makefile`), struttura aggiornata.
+
+## 12. Documentazione e pacchetti 2026-10-02 — APPLICATI
+
+- **Pacchetti `.deb`** con nfpm: `zeroshield` (demone, `zt-tui`, `zt-probe`,
+  unit systemd, config come conffile, script in `/usr/share/zeroshield`, doc) e
+  `zeroshield-gui` (GUI Wails compilata senza CLI Wails, `.desktop`, icona).
+  `make package` / `make package-gui`; installazione, reinstallazione e rimozione
+  provate. Il servizio NON parte da solo: senza `user:` e `bpf` negli LSM il
+  demone si fermerebbe (fail-closed).
+- **Script del pacchetto**: `prerm` disabilita il servizio solo su rimozione,
+  non su aggiornamento; `systemctl` solo se systemd è l'init.
+- **Release automatica** (`.github/workflows/release.yml`): tag `v*` → build,
+  test, due `.deb` + `SHA256SUMS` in una GitHub Release (pre-release).
+- **`zt-shield -version`**, versione iniettata dal Makefile (tag git o
+  `0.0.0~dev+<commit>`).
+- **Config di esempio**: `user: ""` (errore chiaro) invece di `mario`; commento
+  `deny_write` corretto.
+- **`.desktop` della GUI**: rimossi path assoluti di una macchina personale.
+- **Documenti**: `PUNTI_APERTI` riscritto, `CANARY` come guida d'uso, `TESTING`
+  (passo 0 `make probe`, niente scrittura in `/sys/kernel/security/lsm`, 5
+  programmi attesi), `TESTING_LAB` (wipe, symlink, ANSI, canary), `UI_RESEARCH`
+  e `FEATURE_PLAN` allineati.
+- **Trovato**: canary sotto systemd bloccato da `ProtectHome=read-only`;
+  documentato l'override `ReadWritePaths`, fix strutturale in `PUNTI_APERTI`.

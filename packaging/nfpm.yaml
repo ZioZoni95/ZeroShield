@@ -1,0 +1,67 @@
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
+# Pacchetto principale: demone, TUI, probe, script, servizio, documentazione.
+# Build: make package   (VERSION e ARCH dall'ambiente, vedi Makefile)
+name: zeroshield
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: none
+section: admin
+priority: optional
+maintainer: ZioZoni95 <noreply@github.com>
+description: |
+  Scudo zero-trust locale nel kernel Linux (eBPF XDP + LSM).
+  Protegge i segreti (chiavi SSH, kubeconfig, token) da processi non autorizzati,
+  scarta LLMNR/mDNS/NBT-NS in ingresso, esche anti-ransomware via fanotify.
+  Progetto sperimentale: leggere /usr/share/doc/zeroshield/TEST_SANDBOX.md.
+vendor: ZioZoni95
+homepage: https://github.com/ZioZoni95/ZeroShield
+license: MIT
+depends:
+  - systemd
+recommends:
+  - ufw
+suggests:
+  - zeroshield-gui
+  - fido2-tools
+contents:
+  - src: bin/zt-shield
+    dst: /usr/sbin/zt-shield
+    file_info: { mode: 0755 }
+  - src: bin/zt-probe
+    dst: /usr/sbin/zt-probe
+    file_info: { mode: 0755 }
+  - src: bin/zt-tui
+    dst: /usr/bin/zt-tui
+    file_info: { mode: 0755 }
+  - src: packaging/zt-shield.service
+    dst: /usr/lib/systemd/system/zt-shield.service
+  # Config: mai sovrascritta agli aggiornamenti (regole scritte a mano).
+  - src: configs/shield.example.yaml
+    dst: /etc/zt-shield/shield.yaml
+    type: config|noreplace
+    file_info: { mode: 0644 }
+  - src: scripts/harden_system.sh
+    dst: /usr/share/zeroshield/scripts/harden_system.sh
+    file_info: { mode: 0755 }
+  - src: scripts/setup_fido2.sh
+    dst: /usr/share/zeroshield/scripts/setup_fido2.sh
+    file_info: { mode: 0755 }
+  - src: scripts/check_prereqs.sh
+    dst: /usr/share/zeroshield/scripts/check_prereqs.sh
+    file_info: { mode: 0755 }
+  - src: README.md
+    dst: /usr/share/doc/zeroshield/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/zeroshield/copyright
+  - src: docs/TEST_SANDBOX.md
+    dst: /usr/share/doc/zeroshield/TEST_SANDBOX.md
+  - src: docs/TESTING_LAB.md
+    dst: /usr/share/doc/zeroshield/TESTING_LAB.md
+  - src: docs/CANARY.md
+    dst: /usr/share/doc/zeroshield/CANARY.md
+scripts:
+  postinstall: packaging/postinstall.sh
+  preremove: packaging/preremove.sh
+  postremove: packaging/postremove.sh

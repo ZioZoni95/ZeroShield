@@ -36,4 +36,4 @@ Il demone nega l'open se lo scanner dice male. Solo hook + config
 
 ## Ordine
 
-kill-switch → auto-VPN → (canary già in lavoro, propedeutico a 4) → egress.
+kill-switch → auto-VPN → (canary fatto e collaudato, propedeutico a 4) → egress.

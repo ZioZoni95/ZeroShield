@@ -1,0 +1,30 @@
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
+# Unit installata dal pacchetto .deb. Stessa logica di scripts/install_service.sh,
+# ma l'utente da proteggere sta in /etc/zt-shield/shield.yaml (`user:`).
+[Unit]
+Description=ZeroShield — Local Zero-Trust Shield (eBPF)
+Documentation=file:///usr/share/doc/zeroshield/README.md
+After=network-online.target
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Service]
+ExecStartPre=/bin/sh -c 'grep -qw bpf /sys/kernel/security/lsm || (echo "BPF LSM non attivo: aggiungi bpf alla lista lsm= e riavvia" >&2; exit 1)'
+ExecStart=/usr/sbin/zt-shield -config /etc/zt-shield/shield.yaml
+Restart=on-failure
+WatchdogSec=30
+NotifyAccess=main
+
+NoNewPrivileges=yes
+# Home in sola lettura: il demone fa solo stat dei segreti.
+# ATTENZIONE canary: le esche vanno create nella home. Se abiliti `canary:`
+# aggiungi un override con le sue cartelle, es.:
+#   sudo systemctl edit zt-shield
+#   [Service]
+#   ReadWritePaths=/home/<utente>/Documents
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

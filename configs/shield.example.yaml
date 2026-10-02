@@ -7,8 +7,9 @@
 #   paranoid     enforce, come public-wifi (+ hardening DNS più severo in harden_system.sh)
 profile: home
 
-# Utente di cui proteggere la home (obbligatorio se non usi sudo / SHIELD_USER)
-user: mario
+# Utente di cui proteggere la home. OBBLIGATORIO come servizio (sotto systemd
+# non esistono SUDO_USER ne' una $HOME utile): es. user: mario
+user: ""
 
 # audit  = logga soltanto (consigliato la prima settimana)
 # enforce = nega l'accesso (-EACCES)
@@ -40,8 +41,9 @@ rescan_seconds: 30
 #   burst_secs: 10
 #   exclude_exe: ["restic", "cc1", "rsync"]
 
-# Blocca anche la scrittura (O_WRONLY/O_TRUNC) per regola. Default false:
-# con true, ssh-keygen e backup su quei file vengono negati anche a root.
+# Blocca anche la scrittura (O_WRONLY) per regola. Default false: O_TRUNC,
+# truncate, unlink e rename passano comunque dalla whitelist. Con true ogni
+# scrittura da binari fuori da `allow` (root compreso) viene negata.
 # Usalo solo su segreti immutabili (es. CA offline):
 # extra_rules:
 #   - name: rootca

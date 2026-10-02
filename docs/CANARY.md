@@ -1,66 +1,183 @@
-# Canary + fanotify — guida e design per ZeroShield
+# Canary anti-ransomware — guida d'uso e design
 
-## 1. File canary: l'esca
+Il canary è il terzo livello di ZeroShield accanto a LSM (segreti) e XDP (rete):
+file-esca piazzati dove un ransomware guarda per primo, sorvegliati con
+**fanotify**. Chi tocca un'esca viene segnalato (audit) o ucciso (enforce).
+Collaudato su kernel reale il 2026-10-02 ([`TEST_SANDBOX.md`](TEST_SANDBOX.md)).
 
-Un **canary** (canarino in miniera) è un file finto e appetibile piazzato dove
-il ransomware guarda per primo: `~/Documents/000_passwords.xlsx`,
-`~/.canary_wallet.dat`. Tu non lo tocchi mai; qualunque accesso è sospetto.
-Il ransomware commodity cifra in massa e in ordine: becca l'esca entro secondi
-dal via, molto prima di finire i tuoi file veri.
+## 1. Cosa fa, in concreto
 
-- Costo: zero. Un file, qualche byte.
-- Limite onesto: ransomware mirato che evita esche passa oltre. Per quello
-  serve anche il punto 3 (euristica di massa).
+Due allarmi, indipendenti:
 
-## 2. fanotify: le orecchie sul filesystem
-
-**fanotify** è una API Linux (userspace, niente kernel da scrivere) che dice
-al demone *ogni* open/write/rename/unlink in una directory, con PID e path
-del colpevole. Differenze pratiche:
-
-| Strumento | Vede | Blocca prima | Costo |
+| Trigger | Cosa lo scatena | `audit` | `enforce` |
 |---|---|---|---|
-| `inotify` | eventi, ma senza PID affidabile né blocco | no | basso, ma cieco |
-| `fanotify` | eventi + PID + path, può negare l'operazione | sì (`FAN_DENY`) | medio, una syscall per evento |
-| eBPF LSM (già tuo) | solo `open`, con identità binario | sì | basso, ma cieco su rename/unlink |
+| **Tocco esca** | qualsiasi processo apre, modifica o chiude in scrittura un file esca | log + evento UI + notifica | **`SIGKILL` al processo** + log + evento + notifica |
+| **Massa** | un singolo PID fa ≥ `burst_count` scritture/cancellazioni/rinomine in `burst_secs` secondi nelle cartelle sorvegliate | log + evento UI | log + evento UI (**mai kill**: troppi falsi positivi) |
 
-Per ransomware serve proprio ciò che LSM non ha: **rename/unlink in massa**
-(la cifratura tipica è scrivi `.locked` + cancella originale) e **PID da killare**.
+- La modalità è quella globale (`mode:` nel config): niente impostazione separata.
+- Il kill non colpisce mai PID 1 né il demone stesso.
+- Un'esca è un file di 4 KB di byte casuali: non contiene nulla, si può cancellare.
 
-## 3. Design in ZeroShield
+Perché funziona: il ransomware commodity cifra in massa e in ordine alfabetico
+o di directory. Un'esca chiamata `.canary-accounts.xlsx` in `~/Documents` viene
+toccata nei primi secondi, molto prima dei tuoi file veri.
+
+## 2. Quando usarlo (e quando no)
+
+- **Sì** su una workstation dove ransomware o wiper sono un rischio reale e hai
+  già un backup offline (il canary riduce il danno, non lo annulla).
+- **Prima in `audit` per almeno una settimana**: devi scoprire chi tocca le esche
+  in modo legittimo (backup, indicizzatori, sincronizzazioni cloud).
+- **No** come unica difesa: non sostituisce backup né aggiornamenti.
+
+## 3. Attivazione passo passo
+
+### 3.1 Config
+
+In `/etc/zt-shield/shield.yaml`:
+
+```yaml
+mode: audit                 # prima settimana: solo log
+canary:
+  enabled: true
+  dirs: ["Documents"]       # relative alla home o assolute
+  names: [".canary-accounts.xlsx", ".canary-wallet.dat", ".canary-backup.zip"]
+  burst_count: 50           # soglia allarme di massa...
+  burst_secs: 10            # ...in questa finestra
+  exclude_exe: ["restic", "rsync", "cc1"]   # esclusi SOLO dall'allarme di massa
+```
+
+Se `dirs`/`names`/soglie mancano, valgono i default mostrati sopra.
+Nomi con il punto iniziale: i file manager li nascondono, quindi tu non li apri per sbaglio.
+
+### 3.2 Servizio systemd (obbligatorio)
+
+La unit monta la home in sola lettura (`ProtectHome=read-only`), ma le esche vanno
+create proprio lì. Senza questo override il canary non parte (log
+`⚠️ canary non attivo: canary write ...: read-only file system`):
+
+```bash
+sudo systemctl edit zt-shield
+# nell'editor:
+[Service]
+ReadWritePaths=/home/<utente>/Documents
+```
+
+Una riga `ReadWritePaths=` per ogni cartella in `dirs`.
+
+### 3.3 Avvio e verifica
+
+```bash
+sudo systemctl restart zt-shield
+journalctl -u zt-shield -n 30
+```
+
+Righe attese:
+
+```text
+🐤 esca creata: /home/mario/Documents/.canary-accounts.xlsx (non aprirla mai: ogni tocco e' allarme)
+🐤 Watcher canary attivo.
+```
+
+`fanotify` richiede root (`CAP_SYS_ADMIN`): se il demone non lo è, il canary non
+parte ma LSM e XDP restano attivi.
+
+## 4. Cosa vedi quando scatta
+
+Log (journal o terminale):
+
+```text
+🐤 [CANARY-ALERT] pid=4242 exe=/usr/bin/python3.12 kind=open path=/home/mario/Documents/.canary-wallet.dat motivo=tocco esca canary (audit: solo log)
+🐤 [CANARY-KILL] pid=4242 exe=/usr/bin/python3.12 kind=open path=/home/mario/Documents/.canary-wallet.dat motivo=tocco esca canary
+🐤 [CANARY-ALERT] pid=5151 exe=/usr/bin/gpg kind=delete path= motivo=massa rename/delete oltre soglia
+```
+
+- **TUI** (`zt-tui`): tab Eventi, righe `🐤 CANARY` / `🐤 KILL` in testa.
+- **GUI** (`zt-gui`): tabella eventi + notifica desktop per ogni tocco (anche in audit).
+- `[CANARY-KILL-FALLITO]`: il processo era già uscito o non uccidibile, guarda il PID.
+
+Cosa fare dopo un `CANARY-KILL`: isola la macchina dalla rete, guarda `exe=` e il
+processo padre nel journal, controlla i file modificati di recente, ripristina dal backup.
+
+## 5. Taratura in `audit`
+
+1. Lascia `mode: audit` per una settimana di lavoro normale.
+2. `journalctl -u zt-shield | grep CANARY` ogni giorno.
+3. Per ogni `exe` legittimo:
+   - **tocca un'esca** (backup, sync cloud, antivirus, indicizzatore): escludi la
+     cartella delle esche dal suo percorso. Esempi: `restic backup --exclude '.canary-*'`,
+     `rsync --exclude='.canary-*'`, Déjà Dup → "Cartelle da ignorare".
+     `exclude_exe` **non** basta: protegge solo dall'allarme di massa, il tocco
+     esca resta un kill in enforce.
+   - **supera la soglia di massa** (compilazioni, `git checkout`, estrazione archivi):
+     aggiungi una sottostringa del suo path a `exclude_exe`, oppure togli quella
+     cartella da `dirs`.
+4. Quando per qualche giorno compaiono solo allarmi che non sai spiegare, passa a `mode: enforce`.
+
+## 6. Provarlo senza rischi
+
+In **audit** (nessun kill), dalla tua sessione:
+
+```bash
+cat ~/Documents/.canary-wallet.dat > /dev/null      # -> CANARY-ALERT kind=open
+mkdir -p ~/Documents/zt-mass && cd ~/Documents/zt-mass
+for i in $(seq 1 60); do echo x > f$i; rm f$i; done  # -> allarme di massa
+cd .. && rmdir zt-mass
+```
+
+In **enforce**, solo in VM: `sh -c 'exec 3<~/Documents/.canary-wallet.dat; sleep 30'`
+deve morire subito (`Killed`). Gli stessi controlli sono automatici in
+`make test-root` (`internal/canary/start_root_test.go`).
+
+## 7. Disattivare e pulire
+
+```bash
+sudoedit /etc/zt-shield/shield.yaml      # canary.enabled: false
+sudo systemctl restart zt-shield
+rm ~/Documents/.canary-*                 # il demone non le cancella mai da solo
+```
+
+Le esche esistenti non vengono mai sovrascritte (potrebbero essere file tuoi con lo
+stesso nome): se le cancelli, vengono ricreate al prossimo avvio con `enabled: true`.
+
+## 8. Design interno
 
 ```
-~/Documents/.canary-01 ──tocco──▶ fanotify ──▶ demone (root)
-                                          ├─▶ kill PID offensore
-                                          ├─▶ evento IPC → TUI/GUI + notifica
-                                          └─▶ log con PID, exe, path
+~/Documents/.canary-* ─open/modify/close_write─▶ gruppo fanotify "esche" (con fd)
+                                                    └─ path via /proc/self/fd ─▶ Detector
+~/Documents/          ─delete/move/close_write─▶ gruppo fanotify "dir" (FAN_REPORT_FID)
+                                                    └─ solo PID ─────────────▶ Detector
+Detector ─ esca? ─▶ kill (enforce) / alert (audit)
+         ─ ≥ soglia per PID in finestra? ─▶ alert (+ cooldown = 1 allarme per finestra)
+         └─▶ callback demone ─▶ log + IPC (TUI/GUI) con testo sanificato
 ```
 
-- **Trigger 1 — tocco canary:** qualsiasi write/unlink/rename di un canary =
-  kill immediato del PID + notifica. Falsi positivi solo se lo tocchi tu:
-  i tuoi editor vanno in allowlist, e i canary hanno nomi che non apri mai.
-- **Trigger 2 — euristica massa:** più di N (es. 50) rename/unlink in 10s fuori
-  dalle dir escluse (cache browser, build) = allarme + opzione freeze
-  (default: avvisa; kill solo canary). Taratura in `audit` prima.
-- **Modalità:** riusa `audit`/`enforce` esistenti. In audit logga e basta.
+Perché due gruppi: il kernel accetta `FAN_DELETE`/`FAN_MOVED_*` solo su gruppi
+`FAN_REPORT_FID`, che però non consegnano fd (quindi niente path). Le esche hanno
+bisogno del path, la massa solo del PID. Con un gruppo solo il canary non partiva
+(`EINVAL`, bug trovato sul kernel reale). La chiusura ferma i loop con `poll()` su
+un pipe di stop prima di chiudere gli fd, per evitare che un fd riusato rubi eventi.
 
-## 4. Cosa NON fa (limiti accettati)
+## 9. Confronto con le alternative
 
-- Non ferma ransomware che cifra **in-place** senza rename e schiva i canary.
-- Non recupera file già cifrati: serve backup offline (unico antidoto reale).
-- `fanotify` vede tutto il filesystem: su dir enormi (build, `.cache`) va
-  escluso o il demone macina CPU. Allowlist di path rumorosi obbligatoria.
-- Root locale lo stacca come gli hook eBPF (stesso limite del resto).
+| Strumento | Vede | Blocca | Note |
+|---|---|---|---|
+| `inotify` | eventi senza PID | no | inutile per attribuire |
+| **`fanotify`** (usato) | eventi + PID (+ path con fd) | kill a posteriori | userspace, nessun codice kernel |
+| `fanotify` `FAN_OPEN_PERM` | come sopra | **nega prima** dell'apertura | estensione possibile, costa latenza su ogni open |
+| eBPF LSM di ZeroShield | open/unlink/rename/truncate dei segreti | nega prima | per i segreti, non per i documenti |
 
-## 5. Piano di test in lab (VM, dati finti)
+## 10. Limiti
 
-1. Simulatori benigni: script che tocca canary → kill + notifica attesa.
-2. Simulatore massa: rinomina 200 file fake → allarme euristica, nessun kill
-   in audit.
-3. Falsi positivi: compila progetto, naviga cache → zero allarmi dopo allowlist.
-4. Misura CPU del demone durante copia massiccia (target <5%).
+- Non ferma un ransomware che cifra **in-place** senza rinomine e salta le esche.
+- Il kill arriva **dopo** il tocco: qualche file può essere già cifrato.
+- Non recupera nulla: l'unico antidoto è il backup offline.
+- Root locale lo spegne come il resto dello scudo.
+- Cartelle enormi in `dirs` (build, `.cache`) costano CPU e danno falsi allarmi di massa.
+- Aperti (vedi [`PUNTI_APERTI.md`](PUNTI_APERTI.md)): esche create con proprietario
+  root, override systemd manuale.
 
-## 6. Fonti online e codice di riferimento
+## 11. Fonti e codice di riferimento
 
 Documentazione ufficiale:
 

@@ -2,8 +2,8 @@
 
 Procedure per validare i livelli di protezione in un ambiente controllato: i test di rete di base usano i Network Namespaces di Linux (senza macchine esterne richieste), ma è documentata anche la procedura di **penetration test da macchina remota (LAN / Wi-Fi)**.
 
-> **Leggi prima:** [PUNTI_APERTI.md](PUNTI_APERTI.md) elenca i bug noti che rendono alcuni esiti di questo documento diversi da quelli attesi. I più importanti per i test sono:
-> - Il drop XDP dei protocolli broadcast controlla solo `dport`, quindi la **risposta** avvelenata di Responder non viene bloccata ([Test 3](#-test-3--broadcast-poisoning--xdp--systemd-resolved)).
+> **Leggi prima:** [TEST_SANDBOX.md](TEST_SANDBOX.md) dice cosa è già stato verificato su kernel reale (XDP, canary, verifier LSM) e [PUNTI_APERTI.md](PUNTI_APERTI.md) cosa manca. Da tenere a mente:
+> - **Passo 0:** `make probe` prima di tutto. Se un programma risulta ❌ il demone non partirà; se gli LSM risultano ⚠️ il kernel non li supporta.
 > - `block_subnets` scarta le risposte, quindi bloccare la rete del gateway o del DNS disconnette la macchina ([Test 2](#-test-2--drop-di-rete--xdp)).
 > - La whitelist è per identità del binario (dev+inode), non per nome processo. I binari in whitelist restano vettori: `git hash-object ~/.kube/config` apre il file ([Test 1](#-test-1--isolamento-segreti--lsm)).
 
@@ -13,7 +13,8 @@ Procedure per validare i livelli di protezione in un ambiente controllato: i tes
 
 | # | Livello | Minaccia simulata | Esito atteso |
 | :--- | :--- | :--- | :--- |
-| [1](#-test-1--isolamento-segreti--lsm) | eBPF LSM `file_open` | Script o dipendenza malevola legge `~/.kube/config` | `-EACCES` in `enforce`, evento nel log in `audit` |
+| 0 | Kernel | Il kernel accetta i programmi? | `make probe`: tutti ✅, XDP droppa su loopback |
+| [1](#-test-1--isolamento-segreti--lsm) | eBPF LSM `file_open`/`unlink`/`rename`/`truncate` | Script o dipendenza malevola legge, cancella o svuota `~/.kube/config` | `-EACCES` in `enforce`, evento nel log in `audit` |
 | [2](#-test-2--drop-di-rete--xdp) | eBPF XDP | Host ostile sulla stessa LAN | Pacchetti scartati prima dello stack TCP/IP |
 | [3](#-test-3--broadcast-poisoning--xdp--systemd-resolved) | XDP + `systemd-resolved` | Responder / Inveigh rubano hash NTLM | Nessuna query broadcast in uscita |
 | [4](#-test-4--fido2--ssh-agent) | FIDO2 | Malware con shell firma commit a tuo nome | Fallisce senza il tocco fisico sul token |
@@ -45,11 +46,9 @@ sudo sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=\"|GRUB_CMDLINE_LINUX_DEFAULT=\"lsm=$
 sudo update-grub && sudo reboot
 ```
 
-In alternativa, senza riavvio e solo per una sessione (non persistente):
-
-```bash
-sudo sh -c 'echo "lockdown,capability,landlock,yama,apparmor,ima,evm,bpf" > /sys/kernel/security/lsm'
-```
+Non esiste un modo per attivarlo senza riavvio: `/sys/kernel/security/lsm` è in sola
+lettura, la lista si decide al boot. Se il file non esiste, monta prima securityfs:
+`sudo mount -t securityfs securityfs /sys/kernel/security`.
 
 ### 2. Configurazione di test
 
@@ -96,14 +95,17 @@ sudo ./bin/zt-shield -config /tmp/zt-test.yaml
 **Primo passo obbligatorio dopo l'avvio:** l'hook deve apparire fra i programmi LSM caricati. Se qui non c'e', il servizio e' attivo ma non protegge nulla.
 
 ```bash
-sudo bpftool prog show | grep -E 'zt_file_open|xdp_shield'
+sudo bpftool prog show | grep -E 'zt_|xdp_shield'
 ```
 
-Attesi entrambi:
+Attesi cinque programmi (id e tag variano):
 
 ```text
-123: prog zt_file_open  tag 0x7e2d5f4b0b0a1c3d  xdp  used 1  name zt_file_open
-124: prog xdp_shield     tag 0x9f8e7d6c5b4a3928  xdp  used 1  name xdp_shield
+123: lsm  name zt_file_open      tag ...
+124: lsm  name zt_file_unlink    tag ...
+125: lsm  name zt_file_rename    tag ...
+126: lsm  name zt_path_truncate  tag ...
+127: xdp  name xdp_shield        tag ...
 ```
 
 Anche i contatori: con `kernel.bpf_stats_enabled=1`, `run_cnt` cresce a ogni invocazione.

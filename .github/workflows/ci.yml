@@ -110,10 +110,17 @@ jobs:
           sudo ./bin/zt-probe -xdp-lo | tee probe.txt
           { echo '### zt-probe (kernel del runner)'; echo '```'; cat probe.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           grep -E '^(✅|⚠️|❌)' probe.txt | while IFS= read -r l; do echo "::notice title=zt-probe::$l"; done
+      - name: Pacchetto .deb (zeroshield)
+        run: |
+          make package BPFTOOL="$BPFTOOL"
+          dpkg-deb -I dist/zeroshield_*.deb
+          dpkg-deb -c dist/zeroshield_*.deb
       - uses: actions/upload-artifact@v4
         with:
           name: zt-shield-linux-amd64
-          path: bin/
+          path: |
+            bin/
+            dist/
 
   gui:
     name: GUI (Vite + Wails Go)
@@ -144,6 +151,12 @@ jobs:
         run: |
           go vet -tags webkit2_41 .
           go build -tags webkit2_41 -o /dev/null .
+      - name: Pacchetto .deb (zeroshield-gui)
+        run: make package-gui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zeroshield-gui-deb
+          path: dist/
       - name: govulncheck (GUI)
         working-directory: zt-gui
         run: go run golang.org/x/vuln/cmd/govulncheck@latest -tags webkit2_41 .
