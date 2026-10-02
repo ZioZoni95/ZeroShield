@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
 # Genera una chiave SSH FIDO2 residente (o ripiega su ED25519 software) e configura la firma dei commit Git.
 #
 # Questo e' l'unico livello di protezione di zt-shield che regge davvero a una

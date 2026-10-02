@@ -1,10 +1,12 @@
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
 # Build di zt-shield.
 #
 # La catena e' obbligata: vmlinux.h -> bpf2go -> go build. Il .o eBPF viene
 # incorporato nel binario Go, quindi `go build` da solo produce un eseguibile
 # che non contiene i programmi kernel.
 
-.PHONY: all deps vmlinux generate build test lint check clean
+.PHONY: all deps vmlinux generate build build-tui build-mock gui test lint check clean
 
 all: build
 
@@ -34,8 +36,23 @@ generate: bpf/vmlinux.h
 	go generate ./bpf/...
 
 # -o specifica la directory: il binario va in bin/ per non sporcare la root del repo.
-build: generate
+build: generate build-tui
 	go build -o bin/zt-shield ./cmd/zt-shield
+
+# TUI: pura Go, nessuna toolchain eBPF. Compila anche senza kernel/BTF.
+build-tui:
+	go build -o bin/zt-tui ./cmd/zt-tui
+
+# Mock: finto demone per verificare la TUI senza root/eBPF (dati inventati).
+# Uso sicuro ovunque: ./bin/zt-mockd & ./bin/zt-tui
+build-mock:
+	go build -o bin/zt-mockd ./cmd/zt-mockd
+
+# GUI desktop (Wails, stile macOS). Richiede: wails CLI, Node,
+# libgtk-3-dev + libwebkit2gtk-4.1-dev (Ubuntu 24.04: tag webkit2_41).
+# Lancia: ./zt-gui/build/bin/zt-gui (con demone o mock attivi).
+gui:
+	cd zt-gui && wails build -tags webkit2_41
 
 # Test: solo i pacchetti con logica testabile, quindi config.
 # Nessun test richiede root o eBPF: per quello c'è TESTING.md.

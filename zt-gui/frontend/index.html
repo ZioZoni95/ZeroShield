@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Zero-Trust Shield</title>
+    <link rel="stylesheet" href="./src/style.css"/>
+</head>
+<body>
+<div id="app">
+    <aside id="sidebar">
+        <div class="brand">🛡️ Shield</div>
+        <nav>
+            <button data-view="status" class="active">Stato</button>
+            <button data-view="events">Eventi <span id="ev-count" class="pill"></span></button>
+            <button data-view="rules">Regole</button>
+            <button data-view="net">Rete</button>
+        </nav>
+        <div class="side-foot">
+            <div id="mode-badge" class="badge off">…</div>
+            <div id="conn" class="conn">connessione…</div>
+        </div>
+    </aside>
+    <main id="content"></main>
+</div>
+<script src="./src/main.js" type="module"></script>
+</body>
+</html>

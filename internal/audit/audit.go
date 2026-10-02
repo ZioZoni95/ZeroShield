@@ -1,3 +1,6 @@
+// Copyright (c) 2026 ZioZoni95
+// SPDX-License-Identifier: MIT
+
 // Package audit consuma gli eventi del ring buffer e li stampa in formato text o JSON.
 //
 // Il ring buffer e' l'unico canale dal kernel verso questo processo. Quando il
@@ -68,10 +71,22 @@ func decodeEvent(raw []byte) (Event, bool) {
 	return ev, true
 }
 
+// ParsedEvent: un evento decodificato e arricchito, pronto per log e IPC.
+// Introdotto per le UI: il demone lo pubblica sul socket oltre a loggarlo.
+type ParsedEvent struct {
+	Action string
+	PID    uint32
+	Comm   string
+	Exe    string
+	Rule   string
+	Inode  uint64
+}
+
 // Run legge finche' il reader non viene chiuso. ruleName traduce l'id regola in nome.
+// emit, se non nil, riceve ogni evento non soppresso dal rate-limit (per IPC UI).
 //
 // Va eseguito in una goroutine: il loop e' bloccante per costruzione.
-func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string) {
+func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, emit func(ParsedEvent)) {
 	// Encoder riusabile: non va ricreato per ogni evento, altrimenti si perde
 	// il buffer interno. Su stdout perche' il log di testo va su stderr (log) e
 	// il JSON su stdout: cosi' `zt-shield | jq` funziona senza miscelare i due.
@@ -80,9 +95,9 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string) {
 	// journal/disco (ogni deny = un log). Oltre 50 ev/s si sopprime e si
 	// riepiloga ogni 5s. Prima: nessun limite, DoS log banale.
 	const (
-		maxPerSec      = 50
-		summaryEvery   = 5 * time.Second
-		errBackoff    = 50 * time.Millisecond
+		maxPerSec    = 50
+		summaryEvery = 5 * time.Second
+		errBackoff   = 50 * time.Millisecond
 	)
 	windowStart := time.Now()
 	inWindow := 0
@@ -140,11 +155,15 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string) {
 		if ev.Action == 1 {
 			action = "blocked"
 		}
+		rule := ruleName(ev.Rule)
+		if emit != nil {
+			emit(ParsedEvent{Action: action, PID: ev.PID, Comm: comm, Exe: exe, Rule: rule, Inode: ev.Inode})
+		}
 
 		if format == "json" {
 			enc.Encode(jsonEntry{
 				Time: time.Now().UTC().Format(time.RFC3339), Action: action, PID: ev.PID,
-				Comm: comm, Exe: exe, Rule: ruleName(ev.Rule), Inode: ev.Inode,
+				Comm: comm, Exe: exe, Rule: rule, Inode: ev.Inode,
 			})
 			continue
 		}
@@ -156,6 +175,6 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string) {
 		}
 		// `exe` e' il path del binario autoreale; vuoto se il processo e' gia' sparito.
 		// Comunque compare, perche' e' la pista che dice quale regola va allargata.
-		log.Printf("%s regola=%s PID=%d comm='%s' exe=%s inode=%d", icon, ruleName(ev.Rule), ev.PID, comm, exe, ev.Inode)
+		log.Printf("%s regola=%s PID=%d comm='%s' exe=%s inode=%d", icon, rule, ev.PID, comm, exe, ev.Inode)
 	}
 }

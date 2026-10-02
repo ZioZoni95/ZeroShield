@@ -1,3 +1,6 @@
+// Copyright (c) 2026 ZioZoni95
+// SPDX-License-Identifier: MIT
+
 // zt-shield: agente Zero-Trust locale (eBPF XDP + LSM).
 //
 // Flusso di avvio, in ordine:
@@ -34,6 +37,7 @@ import (
 	"zt-shield/internal/config"
 	"zt-shield/internal/lsm"
 	"zt-shield/internal/xdp"
+	"zt-shield/pkg/ipc"
 )
 
 // Indici nella mappa `settings` di zerotrust.c. Devono corrispondere alle #define li'.
@@ -102,16 +106,27 @@ func main() {
 	defer mgr.Close()
 	log.Println("🛡️ Hook LSM 'file_open' attivo.")
 
+	// Avvisa su filesystem dove la chiave dev+inode non matcha (btrfs/overlay):
+	// prima la protezione era inerte in silenzio, ora almeno un log a avvio.
+	lsm.CheckFilesystem(home)
+
 	// Rescan periodico in background: copre i file creati dopo l'avvio (es. una nuova
 	// chiave generata dal tool) e i binari sostituiti dagli aggiornamenti di apt, che
 	// cambiano inode. reconcile() rimuove anche le voci che non esistono piu'.
 	//
-	// Nota: time.Tick non ha canale di stop, quindi la goroutine vive per tutta la
-	// vita del processo. Dato che il processo vive finche' gira il servizio, non
-	// e' un leak reale, ma e' il pattern che i linter segnalano.
+	// NewTicker (non Tick): il ticker va fermato a chiusura, altrimenti la goroutine
+	// vive oltre il necessario e i linter segnalano leak.
+	// publishStatus fotografa demone per le UI (definita dopo il server IPC,
+	// usata anche dal rescan: dichiarata qui per visibilita').
+	var publishStatus func()
+
+	ticker := time.NewTicker(time.Duration(cfg.RescanSeconds) * time.Second)
+	defer ticker.Stop()
 	go func() {
-		for range time.Tick(time.Duration(cfg.RescanSeconds) * time.Second) {
-			mgr.Sync()
+		for range ticker.C {
+			p, a = mgr.Sync()
+			log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
+			publishStatus()
 		}
 	}()
 
@@ -119,24 +134,72 @@ func main() {
 	// Se XDP non parte si continua: la protezione dei segreti (LSM) e' indipendente
 	// e resta attiva. Il log e' un warning perche' l'utente deve sapere che la rete
 	// non e' filtrata, ma non ha senso morire per questo.
-	xl, iface, err := xdp.Attach(objs.XdpShield, cfg.Interface)
-	if err != nil {
-		log.Printf("⚠️ XDP non attivo: %v", err)
-	} else {
+	// Multi-interfaccia: `interface` accetta csv ("wlan0,eth0"); un attach fallito
+	// non blocca gli altri e le UP scoperte vengono segnalate nel log.
+	xlinks, xifaces := xdp.AttachAll(objs.XdpShield, cfg.Interface)
+	for _, xl := range xlinks {
 		defer xl.Close()
-		log.Printf("🔥 XDP attivo su %s (poisoning drop: %v)", iface.Name, cfg.BlockPoisoning)
-		xdp.BlockSubnets(objs.InfectedSubnets, cfg.BlockSubnets)
 	}
+	var xdpNames []string
+	for _, fi := range xifaces {
+		xdpNames = append(xdpNames, fi.Name)
+	}
+	if len(xifaces) == 0 {
+		log.Printf("⚠️ XDP non attivo su alcuna interfaccia")
+	} else {
+		log.Printf("🔥 XDP attivo su %v (poisoning drop: %v)", xdpNames, cfg.BlockPoisoning)
+		n := xdp.BlockSubnets(objs.InfectedSubnets, cfg.BlockSubnets)
+		log.Printf("🚫 Subnet bloccate: %d/%d", n, len(cfg.BlockSubnets))
+	}
+
+	// --- IPC per le UI ----------------------------------------------------------------
+	// Socket Unix sola-lettura per TUI/GUI (stato + stream eventi). Non fatale:
+	// senza socket il demone protegge comunque, solo senza interfaccia.
+	var srv *ipc.Server
+	if s, err := ipc.NewServer(); err != nil {
+		log.Printf("⚠️ IPC non attivo (niente TUI/GUI): %v", err)
+	} else {
+		srv = s
+		defer srv.Close()
+	}
+	// publishStatus fotografa demone per le UI. Chiamata a ogni cambio rilevante
+	// (avvio, rescan) perche' il protocollo ritrasmette ai connessi.
+	publishStatus = func() {
+		if srv == nil {
+			return
+		}
+		var rules []ipc.RuleSummary
+		for _, r := range cfg.AllRules() {
+			rules = append(rules, ipc.RuleSummary{Name: r.Name, Paths: r.Paths, Allow: r.Allow})
+		}
+		srv.UpdateStatus(ipc.Status{
+			Profile: cfg.Profile, Mode: cfg.Mode, Home: home,
+			HookLSM: true, XDP: xdpNames,
+			Protected: p, Allowed: a,
+			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
+			Rules: rules,
+		})
+	}
+	publishStatus()
 
 	// --- Audit ------------------------------------------------------------------------
 	// Lettore del ring buffer: una sola lettura per programma, poi il consumer gira
-	// in background finche' il reader non viene chiuso.
+	// in background finche' il reader non viene chiuso. Oltre al log, ogni evento
+	// viene pubblicato sul socket IPC per le UI live.
 	rd, err := ringbuf.NewReader(objs.AuditLogs)
 	if err != nil {
 		log.Fatalf("Errore apertura ringbuf: %v", err)
 	}
 	defer rd.Close()
-	go audit.Run(rd, cfg.LogFormat, mgr.RuleName)
+	go audit.Run(rd, cfg.LogFormat, mgr.RuleName, func(ev audit.ParsedEvent) {
+		if srv == nil {
+			return
+		}
+		srv.Publish(ipc.WireEvent{
+			Action: ev.Action, PID: ev.PID, Comm: ev.Comm,
+			Exe: ev.Exe, Rule: ev.Rule, Inode: ev.Inode,
+		})
+	})
 
 	// --- Ciclo di vita ----------------------------------------------------------------
 	// Resta in attesa di un segnale. Alla fine le defer girano in ordine inverso:

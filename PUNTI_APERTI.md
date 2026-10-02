@@ -67,6 +67,18 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
 
 ## Fatto
 
+- [x] Nome ufficiale **ZeroShield**, licenza MIT © 2026 ZioZoni95 (`LICENSE`).
+  Binari invariati (`zt-shield`, `zt-tui`, `zt-gui`).
+
+- [x] TUI `zt-tui` (Bubble Tea): tab Stato/Eventi/Regole/Rete, live via socket,
+  diagnosi se demone spento. IPC `pkg/ipc` + `audit emit` collegati.
+- [x] Mock `zt-mockd`: finto demone con dati sintetici per verificare le UI
+  senza root/eBPF (`ZT_SOCKET=/tmp/z.sock`, niente `/run`).
+- [x] GUI `zt-gui` (Wails, stile macOS): sidebar, badge mode, eventi live,
+  regole, rete. Build `make gui` (tag `webkit2_41` su Ubuntu 24.04), avvio
+  verificato headless. Nota: lanciare fuori da env snap (unset GTK_PATH/
+  GIO_MODULE_DIR) o le lib snap avvelenano il loader.
+  Dettagli in `UI_RESEARCH.md`. Notifiche desktop/portal restano futuri.
 - [x] Fix statici senza esecuzione test (dettagli in `FIX_APPLICATI.md`):
   XDP `sport`+`dport`/VLAN/frammenti, LSM `mm` a stadi + `FMODE_READ`,
   `resolveExe` con fallback + log, `Validate` severa (`/<8`, allow vuota,

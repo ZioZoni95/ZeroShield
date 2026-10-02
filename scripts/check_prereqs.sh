@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
 # Verifica kernel, BTF, LSM bpf e toolchain. Exit != 0 se manca qualcosa di bloccante.
 #
 # Usato come gate prima di `make build`: fallire qui con un messaggio chiaro e'

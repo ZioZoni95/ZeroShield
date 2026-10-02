@@ -1,3 +1,6 @@
+// Copyright (c) 2026 ZioZoni95
+// SPDX-License-Identifier: MIT
+
 // Codice kernel-space di zt-shield.
 //
 // Due programmi eBPF, caricati in un unico oggetto:

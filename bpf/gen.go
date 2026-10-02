@@ -1,3 +1,6 @@
+// Copyright (c) 2026 ZioZoni95
+// SPDX-License-Identifier: MIT
+
 // Package bpf contiene il codice eBPF (zerotrust.c) e gli stub Go generati da bpf2go.
 //
 // bpf2go compila zerotrust.c con clang, poi genera shield_*_bpfel.go: gli stub

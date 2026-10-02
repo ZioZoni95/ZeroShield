@@ -1,0 +1,85 @@
+/* Zero-Trust Shield GUI — stile macOS (chiaro + scuro automatico). */
+:root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --panel: #ffffff;
+    --side: #ececf1;
+    --text: #1d1d1f;
+    --dim: #86868b;
+    --accent: #0071e3;
+    --green: #1d8127;
+    --red: #d70015;
+    --amber: #9a6a00;
+    --border: #d2d2d7;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1c1c1e;
+        --panel: #2c2c2e;
+        --side: #232326;
+        --text: #f5f5f7;
+        --dim: #98989d;
+        --border: #48484a;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; font-family: -apple-system, "SF Pro Text", Inter, Segoe UI, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+}
+#app { display: flex; height: 100vh; }
+#sidebar {
+    width: 220px; background: var(--side); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 16px 12px;
+}
+.brand { font-size: 18px; font-weight: 700; padding: 4px 8px 16px; }
+#sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+#sidebar button {
+    border: 0; background: transparent; color: var(--text); text-align: left;
+    padding: 7px 10px; border-radius: 8px; font-size: 14px; cursor: pointer;
+}
+#sidebar button:hover { background: rgba(127,127,127,.18); }
+#sidebar button.active { background: rgba(127,127,127,.28); font-weight: 600; }
+.pill {
+    float: right; background: var(--accent); color: #fff; border-radius: 10px;
+    font-size: 11px; padding: 1px 8px;
+}
+.side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+.badge {
+    display: inline-block; padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; text-align: center;
+}
+.badge.audit { background: #fff4cc; color: var(--amber); }
+.badge.enforce { background: #ffd9de; color: var(--red); }
+.badge.off { background: #e5e5ea; color: var(--dim); }
+.conn { font-size: 11px; color: var(--dim); padding: 0 4px; }
+#content { flex: 1; overflow-y: auto; padding: 24px 28px; }
+h2 { margin: 0 0 4px; font-size: 22px; }
+.sub { color: var(--dim); margin-bottom: 16px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px;
+}
+.card .k { font-size: 12px; color: var(--dim); }
+.card .v { font-size: 20px; font-weight: 700; margin-top: 2px; }
+.dot-ok { color: var(--green); } .dot-off { color: var(--red); }
+table { width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden; font-size: 13px; }
+th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--dim); font-weight: 600; background: rgba(127,127,127,.08); }
+tr:last-child td { border-bottom: 0; }
+.mono { font-family: var(--mono); font-size: 12px; }
+.tag-block { color: var(--red); font-weight: 700; }
+.tag-audit { color: var(--accent); }
+.rule { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.rule h3 { margin: 0 0 6px; font-size: 15px; }
+.warn {
+    background: #fff4cc; color: var(--amber); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 12px;
+}
+.offline { max-width: 560px; }
+code { font-family: var(--mono); background: rgba(127,127,127,.18);
+    padding: 1px 6px; border-radius: 6px; font-size: 13px; }

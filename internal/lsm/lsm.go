@@ -1,3 +1,6 @@
+// Copyright (c) 2026 ZioZoni95
+// SPDX-License-Identifier: MIT
+
 // Package lsm sincronizza le mappe eBPF (file protetti, binari autorizzati) e gestisce l'hook file_open.
 //
 // Il confine userspace/kernel e' fatto di numeri, non di stringhe: per ogni file

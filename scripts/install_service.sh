@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
 # Installa zt-shield come servizio systemd.
 # Uso: sudo scripts/install_service.sh <utente-da-proteggere> [profilo]
 #

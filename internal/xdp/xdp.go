@@ -1,3 +1,6 @@
+// Copyright (c) 2026 ZioZoni95
+// SPDX-License-Identifier: MIT
+
 // Package xdp gestisce attach XDP (generic mode) e la trie LPM delle subnet bloccate.
 //
 // Nota di contesto: il programma XDP di questo progetto fa due cose, drop di 4
@@ -11,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -108,8 +112,8 @@ func firstOfList(custom string) string {
 // splitList divide "eth0, wlan0" in nomi puliti, senza vuoti.
 func splitList(s string) []string {
 	var out []string
-	for _, p := range splitCSV(s) {
-		if p = trimSpace(p); p != "" {
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}
 	}

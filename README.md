@@ -1,4 +1,9 @@
-# 🛡️ Local Zero-Trust Shield (`zt-shield`)
+# 🛡️ ZeroShield (ex `zt-shield`)
+
+> **Nome ufficiale: ZeroShield.** I binari restano `zt-shield` / `zt-tui` /
+> `zt-gui` per compatibilità. Licenza MIT © 2026 ZioZoni95 (vedi `LICENSE`).
+>
+> **Kernel-Enforced Local Security Agent for Linux Workstations**
 
 > **Kernel-Enforced Local Security Agent for Linux Workstations**  
 > *Difesa in profondità locale a livello kernel contro reti ostili, malware che ruba credenziali e movimenti laterali.*
@@ -86,6 +91,10 @@ personal_zeroT/
 │   ├── zerotrust.c             # Kernel C: XDP (rete) e LSM (file_open)
 │   └── gen.go                  # go:generate bpf2go (stub Go generati, non versionati)
 ├── cmd/zt-shield/main.go       # Entrypoint del demone
+├── cmd/zt-tui/main.go          # TUI Bubble Tea (stato/eventi live, senza root)
+├── cmd/zt-mockd/main.go        # Finto demone con dati sintetici (verifica UI senza root/eBPF)
+├── pkg/ipc/                    # Socket Unix stato+eventi (demone root → UI utente)
+├── zt-gui/                     # GUI desktop Wails stile macOS (vedi UI_RESEARCH.md)
 ├── internal/
 │   ├── config/                 # Profili, regole, parsing YAML, validazione (+ test)
 │   ├── lsm/                    # Sync mappe file/binari, attach hook LSM
@@ -222,6 +231,26 @@ kubectl get pods                                         # consentito
 * **Non sostituisce una VPN:** su Wi-Fi pubblico lo scudo riduce la superficie ma non cifra il traffico.
 * **Browser:** i percorsi predefiniti coprono deb e snap; Flatpak e installazioni custom vanno aggiunti in `extra_rules`. Verifica in `audit` prima di passare a `enforce`, altrimenti il browser può perdere i cookie.
 * **btrfs (subvolume):** `st_dev` userspace ≠ `s_dev` kernel, la chiave dev+inode non matcha. Su ext4/xfs funziona.
+
+---
+
+## 🖥️ Interfacce: TUI + GUI (senza root)
+
+Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock` (`pkg/ipc`). Le interfacce girano come utente, in sola lettura: niente eBPF toccato dalle UI.
+
+| Strumento | Cosa è | Avvio |
+|---|---|---|
+| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete, live) | `./bin/zt-tui` (demone attivo) |
+| `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &` + `ZT_SOCKET=/tmp/z.sock ./bin/zt-tui` |
+| `zt-gui` | Finestra desktop stile macOS (sidebar, badge mode, eventi live) | `make gui`, poi `./zt-gui/build/bin/zt-gui` |
+
+```bash
+make build-tui   # TUI (pura Go, senza toolchain eBPF)
+make build-mock  # mock (idem)
+make gui         # GUI (richiede wails CLI, Node, libgtk-3-dev, libwebkit2gtk-4.1-dev)
+```
+
+Anteprima TUI senza TTY: `./bin/zt-tui --dump`. Nota: fuori da env snap le GUI GTK vanno lanciate con `GTK_PATH`/`GIO_MODULE_DIR` ripuliti (vedi `PUNTI_APERTI.md`). Dettagli ricerca in [`UI_RESEARCH.md`](UI_RESEARCH.md).
 
 ---
 

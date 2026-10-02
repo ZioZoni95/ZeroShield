@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
 # Hardening di sistema per profilo: firewall, resolver, sysctl di rete.
 # Uso: sudo scripts/harden_system.sh [home|corporate|public-wifi|paranoid]
 #

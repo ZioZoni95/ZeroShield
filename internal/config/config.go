@@ -1,3 +1,6 @@
+// Copyright (c) 2026 ZioZoni95
+// SPDX-License-Identifier: MIT
+
 // Package config gestisce profili, regole di protezione e parsing del file YAML.
 //
 // Modello: un profilo (home/corporate/public-wifi/paranoid) fornisce i default,
