@@ -139,6 +139,41 @@ func logOtherUpInterfaces(covered string) {
 	}
 }
 
+// xdpStat rispecchia struct xdp_stat in zerotrust.c (16 byte: 4+4+8).
+type xdpStat struct {
+	Poison uint32
+	Subnet uint32
+	LastNs uint64
+}
+
+// SourceStat: una sorgente che XDP ha droppato, pronta per radar/UI.
+type SourceStat struct {
+	IP     [4]byte
+	Poison uint32
+	Subnet uint32
+	LastNs uint64
+}
+
+// ReadStats svuota la mappa LRU xdp_stats in slice (ordine casuale).
+// La chiave e' letta come [4]byte per conservare il network order:
+// come uint32 host verrebbe invertita e gli IP risulterebbero sbagliati.
+// Chiamato dal demone ogni rescan: 1024 entry max, costo una passata.
+func ReadStats(m *ebpf.Map) []SourceStat {
+	var out []SourceStat
+	var k [4]byte
+	var v xdpStat
+	it := m.Iterate()
+	for it.Next(&k, &v) {
+		out = append(out, SourceStat{IP: k, Poison: v.Poison, Subnet: v.Subnet, LastNs: v.LastNs})
+	}
+	return out
+}
+
+// IPString rende "192.168.1.5" dai 4 byte network order.
+func IPString(ip [4]byte) string {
+	return net.IPv4(ip[0], ip[1], ip[2], ip[3]).String()
+}
+
 // BlockSubnets inserisce i CIDR IPv4 nella trie.
 //
 // net.ParseCIDR restituisce due indirizzi: quello passato e quello mascherato alla

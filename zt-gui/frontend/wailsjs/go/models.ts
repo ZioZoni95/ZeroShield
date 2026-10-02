@@ -16,6 +16,26 @@ export namespace ipc {
 	        this.allow = source["allow"];
 	    }
 	}
+	export class SourceStat {
+	    ip: string;
+	    poison: number;
+	    subnet: number;
+	    total: number;
+	    last_seen: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SourceStat(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ip = source["ip"];
+	        this.poison = source["poison"];
+	        this.subnet = source["subnet"];
+	        this.total = source["total"];
+	        this.last_seen = source["last_seen"];
+	    }
+	}
 	export class Status {
 	    profile: string;
 	    mode: string;
@@ -26,6 +46,7 @@ export namespace ipc {
 	    allowed: number;
 	    block_poisoning: boolean;
 	    block_subnets: string[];
+	    top_sources: SourceStat[];
 	    rules: RuleSummary[];
 	    time: string;
 	
@@ -44,6 +65,7 @@ export namespace ipc {
 	        this.allowed = source["allowed"];
 	        this.block_poisoning = source["block_poisoning"];
 	        this.block_subnets = source["block_subnets"];
+	        this.top_sources = this.convertValues(source["top_sources"], SourceStat);
 	        this.rules = this.convertValues(source["rules"], RuleSummary);
 	        this.time = source["time"];
 	    }

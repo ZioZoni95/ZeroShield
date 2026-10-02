@@ -1,0 +1,28 @@
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Format
+        run: test -z "$(gofmt -l cmd internal pkg bpf 2>/dev/null)"
+      - name: Vet
+        run: go vet ./cmd/... ./pkg/... ./internal/...
+      - name: Unit tests (no root, no eBPF)
+        run: go test ./internal/... ./pkg/...
+      - name: Shell syntax
+        run: bash -n scripts/check_prereqs.sh && bash -n scripts/harden_system.sh && bash -n scripts/install_service.sh && bash -n scripts/setup_fido2.sh
+      - name: Build TUI + mock (pure Go)
+        run: go build -o /tmp/zt-tui ./cmd/zt-tui && go build -o /tmp/zt-mockd ./cmd/zt-mockd
+      # Il demone e la GUI restano fuori CI: servono clang/BTF/webkit + root.
+      # Verifica locale: make build && make gui (vedi TESTING_LAB.md).

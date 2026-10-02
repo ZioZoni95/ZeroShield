@@ -3,21 +3,25 @@
 <head>
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>Zero-Trust Shield</title>
+    <title>ZeroShield</title>
     <link rel="stylesheet" href="./src/style.css"/>
 </head>
 <body>
 <div id="app">
     <aside id="sidebar">
-        <div class="brand">🛡️ Shield</div>
+        <div class="brand">
+            <svg viewBox="0 0 24 24" class="brand-ico" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" fill="#0071e3"/><path d="M8.5 12l2.4 2.4L15.5 9.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>ZeroShield</span>
+        </div>
         <nav>
-            <button data-view="status" class="active">Stato</button>
-            <button data-view="events">Eventi <span id="ev-count" class="pill"></span></button>
-            <button data-view="rules">Regole</button>
-            <button data-view="net">Rete</button>
+            <button data-view="status" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13a8 8 0 1 1 16 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 13l4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="13" r="1.6" fill="currentColor"/></svg>Stato</button>
+            <button data-view="events"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="6" r="1.4" fill="currentColor"/><circle cx="4" cy="12" r="1.4" fill="currentColor"/><circle cx="4" cy="18" r="1.4" fill="currentColor"/></svg>Eventi <span id="ev-count" class="pill"></span></button>
+            <button data-view="rules"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="15" r="1.6" fill="currentColor"/></svg>Regole</button>
+            <button data-view="net"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Rete</button>
+            <button data-view="radar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 12l6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="15" r="1.6" fill="currentColor"/></svg>Radar</button>
         </nav>
         <div class="side-foot">
-            <div id="mode-badge" class="badge off">…</div>
+            <div id="mode-badge" class="badge off"><span class="dot"></span>…</div>
             <div id="conn" class="conn">connessione…</div>
         </div>
     </aside>

@@ -132,6 +132,46 @@ struct {
     __type(value, __u32);
 } allowed_exes SEC(".maps");
 
+// Statistiche drop XDP per IP sorgente: il radar delle UI.
+// LRU da 1024: gli IP vecchi escono da soli, niente reconcile userspace.
+// Chiave = saddr grezzo (__be32 in network order, copiato con memcpy).
+// Valore: contatori separati per motivo + ultimo drop (ns ktime).
+// Aggiornata su OGNI drop: costo una lookup+update in hash, trascurabile vs XDP.
+struct xdp_stat {
+    __u32 poison_drops;
+    __u32 subnet_drops;
+    __u64 last_ns;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 1024);
+    __type(key, __u32);
+    __type(value, struct xdp_stat);
+} xdp_stats SEC(".maps");
+
+// Helper: registra un drop per (saddr, motivo). reason: 0=poisoning, 1=subnet.
+// __always_inline: niente chiamate esterne in BPF.
+static __always_inline void count_drop(__u32 saddr, int reason) {
+    struct xdp_stat *st = bpf_map_lookup_elem(&xdp_stats, &saddr);
+    __u64 now = bpf_ktime_get_ns();
+    if (st) {
+        if (reason == 0)
+            st->poison_drops++;
+        else
+            st->subnet_drops++;
+        st->last_ns = now;
+    } else {
+        struct xdp_stat init = {};
+        if (reason == 0)
+            init.poison_drops = 1;
+        else
+            init.subnet_drops = 1;
+        init.last_ns = now;
+        bpf_map_update_elem(&xdp_stats, &saddr, &init, BPF_ANY);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Eventi verso userspace
 // ---------------------------------------------------------------------------
@@ -233,8 +273,14 @@ int xdp_shield(struct xdp_md *ctx) {
                     if (sport == 5355 || dport == 5355 ||
                         sport == 5353 || dport == 5353 ||
                         sport == 137 || dport == 137 ||
-                        sport == 138 || dport == 138)
+                        sport == 138 || dport == 138) {
+                        // Radar eBPF: conta il drop per IP sorgente prima di scartare.
+                        // saddr copiato grezzo: la chiave resta in network order.
+                        __u32 src;
+                        __builtin_memcpy(&src, &ip->saddr, 4);
+                        count_drop(src, 0);
                         return XDP_DROP;
+                    }
                 }
             }
         }
@@ -249,8 +295,13 @@ int xdp_shield(struct xdp_md *ctx) {
     __builtin_memcpy(key.addr, &ip->saddr, 4);
 
     __u32 *blocked = bpf_map_lookup_elem(&infected_subnets, &key);
-    if (blocked && *blocked == 1)
+    if (blocked && *blocked == 1) {
+        // Radar eBPF: anche i drop da subnet alimentano le statistiche.
+        __u32 src;
+        __builtin_memcpy(&src, &ip->saddr, 4);
+        count_drop(src, 1);
         return XDP_DROP;
+    }
 
     // Nota: il drop e' su saddr, quindi scarta il traffico PROVENIENTE dalle subnet
     // bloccate, risposte comprese. Dopo una compromissione di rete l'attaccante e' gia'

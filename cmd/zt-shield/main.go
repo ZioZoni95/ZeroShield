@@ -26,6 +26,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -122,10 +123,44 @@ func main() {
 
 	ticker := time.NewTicker(time.Duration(cfg.RescanSeconds) * time.Second)
 	defer ticker.Stop()
+	// Radar eBPF: tracker userspace sopra la LRU kernel. La mappa conta per IP,
+	// qui si aggiunge wall-clock (lastSeen quando i contatori crescono) e top-12.
+	type seen struct {
+		poison, subnet uint32
+		last           time.Time
+	}
+	tracker := map[[4]byte]*seen{}
+	var topSrc []ipc.SourceStat
+	refreshRadar := func() {
+		for _, s := range xdp.ReadStats(objs.XdpStats) {
+			tot := s.Poison + s.Subnet
+			e, ok := tracker[s.IP]
+			if !ok {
+				e = &seen{}
+				tracker[s.IP] = e
+			}
+			if tot > e.poison+e.subnet {
+				e.last = time.Now()
+			}
+			e.poison, e.subnet = s.Poison, s.Subnet
+		}
+		topSrc = topSrc[:0]
+		for ip, e := range tracker {
+			topSrc = append(topSrc, ipc.SourceStat{
+				IP: xdp.IPString(ip), Poison: e.poison, Subnet: e.subnet,
+				Total: e.poison + e.subnet, LastSeen: e.last.UTC().Format(time.RFC3339),
+			})
+		}
+		sort.Slice(topSrc, func(i, j int) bool { return topSrc[i].Total > topSrc[j].Total })
+		if len(topSrc) > 12 {
+			topSrc = topSrc[:12]
+		}
+	}
 	go func() {
 		for range ticker.C {
 			p, a = mgr.Sync()
 			log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
+			refreshRadar()
 			publishStatus()
 		}
 	}()
@@ -177,7 +212,7 @@ func main() {
 			HookLSM: true, XDP: xdpNames,
 			Protected: p, Allowed: a,
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
-			Rules: rules,
+			TopSources: topSrc, Rules: rules,
 		})
 	}
 	publishStatus()

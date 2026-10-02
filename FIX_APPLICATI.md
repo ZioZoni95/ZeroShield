@@ -91,11 +91,8 @@ Ogni voce: problema → fix → file → cosa riverificare in lab.
 - `reconcile` riscrive tutto ogni sync: costo accettato per immunità da disallineamenti.
 - Timestamp eventi `time.Now()` userspace: skew con backlog ringbuf, noto.
 
-## 7. DA APPLICARE (pianificati, codice non ancora toccato)
+## 7. DA APPLICARE (codice non ancora toccato)
 
-- [ ] `cmd/zt-shield/main.go`: `time.Tick` → `NewTicker`+`Stop`; `log.Fatal`
-  dopo attach → cleanup + `return` (Fatal salta i defer, hook non staccati);
-  usa `AttachAll` + log conteggio `BlockSubnets`; chiama `lsm.CheckFilesystem`.
 - [ ] `scripts/harden_system.sh`: `ufw allow OpenSSH` prima di `enable`
   (lockout); fallback se manca sezione `[Resolve]`; `restart resolved` e
   `sysctl --system` tolleranti (`||` warning invece di abort con `set -e`).
@@ -106,3 +103,15 @@ Ogni voce: problema → fix → file → cosa riverificare in lab.
   incoerenti) che rompono il copia-incolla.
 - [ ] Verifier reale: `sudo SHIELD_USER=$USER ./bin/zt-shield` + `bpftool prog show`,
   test btrfs/overlay, misura `run_cnt` con `bpf_stats_enabled=1`.
+  (Nota: `NewTicker`, `AttachAll`, `CheckFilesystem`, conteggio subnet sono
+  stati applicati durante il lavoro UI.)
+
+## 8. Radar eBPF (in corso, kernel mai caricato)
+
+- Kernel: mappa `xdp_stats` (LRU_HASH 1024, chiave saddr network order,
+  valore poisoning/subnet/last_ns) + `count_drop()` su entrambi i drop XDP.
+- Go: `xdp.ReadStats` (chiave `[4]byte` per non invertire gli IP),
+  tracker wall-clock + top-12 in `main`, `ipc.TopSources` nel protocollo.
+- Demo sicura senza kernel/root: `mockd` pubblica `TopSources` finte,
+  TUI `--dump` e GUI le mostrano. Verifier del nuovo codice non ancora visto:
+  primo load solo in VM con snapshot.

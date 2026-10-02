@@ -33,18 +33,14 @@ esac
 echo "🧱 Profilo: $PROFILE"
 
 # --- Firewall ---
-# BUG BLOCCANTE: manca `ufw allow OpenSSH` PRIMA di `ufw --force enable`.
-# Con default deny incoming e nessuna regola allow, l'ingresso SSH viene negato.
-# La sessione corrente sopravvive (catena stateful established/related), quindi
-# sembra funzionare: il lockout si manifesta alla connessione successiva, spesso
-# dopo un reboot o un cambio di rete, che e' il momento peggiore.
-#
-# Fix, da inserire prima dell'enable (e solo se si usa SSH):
-#   ufw allow OpenSSH
-# Poi verificare SEMPRE con una seconda sessione prima di chiudere la prima.
+# FIX applicato: `allow OpenSSH` PRIMA di `enable`. Senza, default deny incoming
+# nega l'SSH in ingresso e il lockout si vede alla connessione successiva.
+# Senza listener SSH la regola allow e' innocua. Verifica SEMPRE con una seconda
+# sessione prima di chiudere la prima.
 if command -v ufw >/dev/null; then
     ufw default deny incoming
     ufw default allow outgoing
+    ufw allow OpenSSH
     # Log ridotto nelle reti ostili: la LAN puo' generare volumi di log e riempire /var.
     case "$PROFILE" in public-wifi|paranoid) ufw logging low ;; esac
     ufw --force enable
@@ -60,10 +56,13 @@ RESOLVED_CONF="/etc/systemd/resolved.conf"
 set_resolved() {
     if grep -qE "^#?$1=" "$RESOLVED_CONF"; then
         sed -i -E "s|^#?$1=.*|$1=$2|" "$RESOLVED_CONF"
-    else
-        # Se il file non ha una sezione [Resolve], questa sed non inserisce nulla e
-        # non lo segnala: la chiave semplicemente non viene applicata.
+    elif grep -q "^\[Resolve\]" "$RESOLVED_CONF"; then
         sed -i "/^\[Resolve\]/a $1=$2" "$RESOLVED_CONF"
+    else
+        # FIX: prima se mancava la sezione [Resolve] la chiave andava persa in
+        # silenzio. Ora si crea la sezione in coda e si avvisa nel log.
+        printf '\n[Resolve]\n%s=%s\n' "$1" "$2" >> "$RESOLVED_CONF"
+        echo "⚠️  sezione [Resolve] assente, creata in coda a $RESOLVED_CONF"
     fi
 }
 if [ -f "$RESOLVED_CONF" ]; then
@@ -95,7 +94,9 @@ if [ -f "$RESOLVED_CONF" ]; then
             echo "ℹ️  DNS di rete mantenuti (profilo $PROFILE): DoT non forzato per non rompere i nomi interni."
             ;;
     esac
-    systemctl restart systemd-resolved
+    # FIX: con set -e, un resolver non gestito da systemd faceva abortire lo
+    # script qui, prima di sysctl/avahi. Ora tollerante con avviso.
+    systemctl restart systemd-resolved || echo "⚠️  restart systemd-resolved fallito, continuo"
 fi
 
 # --- sysctl di rete ---
@@ -134,7 +135,9 @@ CONF
         ;;
     esac
 } > "$SYSCTL_FILE"
-sysctl --system > /dev/null
+# FIX: `sysctl --system` nascondeva l'output ma con set -e una chiave ignota
+# abortiva tutto. Ora mostra gli errori e non blocca il resto.
+sysctl --system || echo "⚠️  sysctl --system con errori (vedi sopra), continuo"
 
 # --- Servizi di discovery su LAN ostili ---
 # avahi implementa mDNS e NBT-NS: se resta attivo, continua a emettere e ad

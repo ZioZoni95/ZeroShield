@@ -1,11 +1,39 @@
-# 🛡️ ZeroShield (ex `zt-shield`)
+<p align="center">
+  <img src="zt-gui/build/appicon.png" width="128" alt="ZeroShield"/>
+</p>
+<h1 align="center">ZeroShield</h1>
+<p align="center"><b>Lo scudo zero-trust nel tuo kernel Linux.</b><br/>
+Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e ladri di token — senza server, senza cloud, senza account.</p>
+<p align="center">
+  <a href="#-provalo-in-60-secondi-senza-root">Provalo in 60 secondi</a> ·
+  <a href="#%EF%B8%8F-interfacce-tui--gui-senza-root">TUI + GUI</a> ·
+  <a href="#-profili">Profili</a> ·
+  <a href="TESTING_LAB.md">Lab di test</a>
+</p>
+<p align="center"><i>MIT © 2026 ZioZoni95 · binari: <code>zt-shield</code> <code>zt-tui</code> <code>zt-gui</code></i></p>
 
-> **Nome ufficiale: ZeroShield.** I binari restano `zt-shield` / `zt-tui` /
-> `zt-gui` per compatibilità. Licenza MIT © 2026 ZioZoni95 (vedi `LICENSE`).
->
+---
+
+## ⚡ Provalo in 60 secondi (senza root)
+
+Niente kernel, niente rischi: dati finti, solo per vedere le interfacce.
+
+```bash
+make build-tui build-mock
+ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &
+ZT_SOCKET=/tmp/z.sock ./bin/zt-tui   # tab Stato · Eventi · Regole · Rete · Radar
+```
+
+## 🛡️ Come ti protegge (quando lo attivi)
+
+| 🛡️ | Livello | Esempio concreto |
+|---|---|---|
+| 🔒 | **Segreti** (eBPF LSM) | `cat ~/.aws/credentials` da script malevolo → `Permesso negato`, `kubectl` continua a funzionare |
+| 📡 | **Radar rete** (eBPF XDP) | Poisoning LLMNR/mDNS e scansioni droppate prima dello stack, sorgenti sul radar |
+| 🧱 | **Sistema** | Firewall deny-incoming, DNS cifrato, anti ARP-spoof |
+| 🔑 | **Identità** (FIDO2) | Commit firmati col tocco fisico: senza token, niente firma |
+
 > **Kernel-Enforced Local Security Agent for Linux Workstations**
-
-> **Kernel-Enforced Local Security Agent for Linux Workstations**  
 > *Difesa in profondità locale a livello kernel contro reti ostili, malware che ruba credenziali e movimenti laterali.*
 
 ---
@@ -251,6 +279,23 @@ make gui         # GUI (richiede wails CLI, Node, libgtk-3-dev, libwebkit2gtk-4.
 ```
 
 Anteprima TUI senza TTY: `./bin/zt-tui --dump`. Nota: fuori da env snap le GUI GTK vanno lanciate con `GTK_PATH`/`GIO_MODULE_DIR` ripuliti (vedi `PUNTI_APERTI.md`). Dettagli ricerca in [`UI_RESEARCH.md`](UI_RESEARCH.md).
+
+<details><summary>Anteprima tab Radar (dati di esempio)</summary>
+
+```
+🛡️ zt-shield  ● AUDIT (logga)
+ 1 Stato   2 Eventi   3 Regole   4 Rete  [5 Radar]
+
+        ···●·······
+     ····         ····
+ ·   ··  ···   ···  ··   ·
+ ·   ·   ·   +∙∙∙∙∙●∙∙∙∙∙·
+   ··   ··········●   ··
+
+192.168.100.7      34  █████ poisoning
+192.168.100.23    128  ██████████████████ subnet
+```
+</details>
 
 ---
 

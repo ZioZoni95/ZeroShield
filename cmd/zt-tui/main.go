@@ -13,6 +13,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"math"
 	"os"
 	"regexp"
 	"strings"
@@ -43,9 +45,10 @@ const (
 	tabEvents
 	tabRules
 	tabNet
+	tabRadar
 )
 
-var tabNames = []string{"Stato", "Eventi", "Regole", "Rete"}
+var tabNames = []string{"Stato", "Eventi", "Regole", "Rete", "Radar"}
 
 // --- messaggi ----------------------------------------------------------------
 
@@ -58,6 +61,9 @@ type eventMsg struct{ ev ipc.WireEvent }
 
 type tickMsg struct{}
 
+// sweepMsg avanza la spazzata del radar (solo eye-candy: i dati restano eBPF).
+type sweepMsg struct{}
+
 // --- modello -----------------------------------------------------------------
 
 type model struct {
@@ -67,6 +73,7 @@ type model struct {
 	events   []ipc.WireEvent
 	paused   bool
 	offset   int // scroll lista eventi (0 = fondo/live)
+	sweep    int // angolo spazzata radar, gradi
 	width    int
 	height   int
 	quitting bool
@@ -74,7 +81,7 @@ type model struct {
 
 func initialModel() model { return model{tab: tabStatus} }
 
-func (m model) Init() tea.Cmd { return tea.Batch(fetchStatus, tickStatus) }
+func (m model) Init() tea.Cmd { return tea.Batch(fetchStatus, tickStatus, tickSweep) }
 
 func fetchStatus() tea.Msg {
 	st, err := ipc.GetStatus()
@@ -85,6 +92,11 @@ func tickStatus() tea.Msg {
 	time.Sleep(2 * time.Second)
 	st, err := ipc.GetStatus()
 	return statusMsg{st: st, err: err}
+}
+
+func tickSweep() tea.Msg {
+	time.Sleep(300 * time.Millisecond)
+	return sweepMsg{}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -103,7 +115,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab", "h", "left":
 			m.tab = (m.tab + len(tabNames) - 1) % len(tabNames)
 			m.offset = 0
-		case "1", "2", "3", "4":
+		case "1", "2", "3", "4", "5":
 			m.tab = int(msg.String()[0] - '1')
 			m.offset = 0
 		case "r":
@@ -142,6 +154,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickStatus
 	case tickMsg:
 		return m, fetchStatus
+	case sweepMsg:
+		m.sweep = (m.sweep + 15) % 360
+		return m, tickSweep
 	case eventMsg:
 		m.events = append(m.events, msg.ev)
 		if len(m.events) > 200 {
@@ -173,9 +188,11 @@ func (m model) View() string {
 			b.WriteString(m.rulesView())
 		case tabNet:
 			b.WriteString(m.netView())
+		case tabRadar:
+			b.WriteString(m.radarView())
 		}
 	}
-	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-4 vai · r aggiorna · q esci") +
+	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-5 vai · r aggiorna · q esci") +
 		helpStyle.Render("   |   eventi: spazio pausa · ↑/↓ scorri · fine torna live"))
 	return b.String()
 }
@@ -313,6 +330,120 @@ func (m model) netView() string {
 	return strings.Join(rows, "\n")
 }
 
+// radarAngle distribuisce un IP sul giro a partire dall'hash: stabile tra frame,
+// cosi' ogni sorgente tiene la sua posizione mentre la spazzata gira.
+func radarAngle(ip string) float64 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(ip))
+	return float64(h.Sum32()%360) * math.Pi / 180
+}
+
+// radarView: sweep ASCII + blip per sorgente droppata da XDP.
+// Raggio dal totale drop (scala log: 1 pacchetto si vede, 1000 non esplodono).
+// Colori: blip rosso se domina subnet, ambra se domina poisoning.
+func (m model) radarView() string {
+	src := m.st.TopSources
+	if len(src) == 0 {
+		return dimStyle.Render("Radar vuoto: XDP non ha droppato nulla da ultimo avvio.\nGenera traffico di poisoning in lab per vedere i blip.")
+	}
+	const W, H = 27, 13
+	cx, cy := W/2, H/2
+	rx, ry := float64(W/2-1), float64(H/2-1)
+	grid := make([][]rune, H)
+	for y := range grid {
+		grid[y] = []rune(strings.Repeat(" ", W))
+	}
+	// Anelli.
+	for deg := 0; deg < 360; deg += 3 {
+		a := float64(deg) * math.Pi / 180
+		for _, f := range []float64{0.33, 0.66, 1.0} {
+			x := int(math.Round(float64(cx) + math.Cos(a)*rx*f))
+			y := int(math.Round(float64(cy) + math.Sin(a)*ry*f))
+			if x >= 0 && x < W && y >= 0 && y < H && grid[y][x] == ' ' {
+				grid[y][x] = '·'
+			}
+		}
+	}
+	// Spazzata.
+	sa := float64(m.sweep) * math.Pi / 180
+	for f := 0.0; f <= 1.0; f += 0.05 {
+		x := int(math.Round(float64(cx) + math.Cos(sa)*rx*f))
+		y := int(math.Round(float64(cy) + math.Sin(sa)*ry*f))
+		if x >= 0 && x < W && y >= 0 && y < H {
+			grid[y][x] = '∙'
+		}
+	}
+	grid[cy][cx] = '+'
+	// Blip: max totale per scala.
+	var max uint32 = 1
+	for _, s := range src {
+		if s.Total > max {
+			max = s.Total
+		}
+	}
+	type blip struct{ x, y int }
+	blips := map[blip]ipc.SourceStat{}
+	for _, s := range src {
+		frac := math.Log10(float64(s.Total)+1) / math.Log10(float64(max)+1)
+		r := 0.15 + 0.85*frac
+		a := radarAngle(s.IP)
+		x := int(math.Round(float64(cx) + math.Cos(a)*rx*r))
+		y := int(math.Round(float64(cy) + math.Sin(a)*ry*r))
+		if x < 0 {
+			x = 0
+		}
+		if x >= W {
+			x = W - 1
+		}
+		if y < 0 {
+			y = 0
+		}
+		if y >= H {
+			y = H - 1
+		}
+		blips[blip{x, y}] = s
+	}
+	var sb strings.Builder
+	for y := 0; y < H; y++ {
+		for x := 0; x < W; x++ {
+			if s, ok := blips[blip{x, y}]; ok {
+				if s.Subnet >= s.Poison {
+					sb.WriteString(evBlock.Render("●"))
+				} else {
+					sb.WriteString(evAudit.Render("●"))
+				}
+				continue
+			}
+			c := grid[y][x]
+			if c == '∙' {
+				sb.WriteString(dimStyle.Render(string(c)))
+			} else {
+				sb.WriteRune(c)
+			}
+		}
+		sb.WriteString("\n")
+	}
+	// Legenda + top con barre.
+	sb.WriteString(dimStyle.Render("● subnet  ") + evBlock.Render("●") + dimStyle.Render("  ● poisoning  ") + evAudit.Render("●") + "\n")
+	barMax := 18
+	for _, s := range src {
+		n := 1
+		if max > 0 {
+			n = int(math.Round(float64(s.Total) / float64(max) * float64(barMax)))
+			if n < 1 {
+				n = 1
+			}
+		}
+		bar := strings.Repeat("█", n)
+		kind := "poisoning"
+		if s.Subnet >= s.Poison {
+			kind = "subnet"
+		}
+		sb.WriteString(fmt.Sprintf("%-15s %5d  %s %s (visto %s)\n", s.IP, s.Total, evBlock.Render(bar), kind, s.LastSeen[11:19]))
+	}
+	return sb.String()
+}
+
 var ansiRe = regexp.MustCompile("\x1b\\[[0-9;?]*[a-zA-Z]")
 
 // dump rende ogni tab con dati di esempio e li stampa senza ANSI,
@@ -325,6 +456,11 @@ func dump() string {
 		HookLSM: true, XDP: []string{"enp0s3"},
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
+		TopSources: []ipc.SourceStat{
+			{IP: "192.168.100.7", Poison: 34, Subnet: 0, Total: 34, LastSeen: "2026-10-02T10:35:01Z"},
+			{IP: "192.168.100.23", Poison: 0, Subnet: 128, Total: 128, LastSeen: "2026-10-02T10:35:00Z"},
+			{IP: "10.201.50.99", Poison: 5, Subnet: 0, Total: 5, LastSeen: "2026-10-02T10:34:12Z"},
+		},
 		Rules: []ipc.RuleSummary{
 			{Name: "ssh-keys", Paths: []string{".ssh/id_*"}, Allow: []string{"ssh", "ssh-add", "ssh-agent"}},
 			{Name: "cloud-creds", Paths: []string{".kube/config", ".aws/credentials"}, Allow: []string{"kubectl", "helm"}},

@@ -41,6 +41,17 @@ type RuleSummary struct {
 	Allow []string `json:"allow"`
 }
 
+// SourceStat: una sorgente droppata da XDP, per il radar delle UI.
+// Total = Poison+Subnet. LastSeen wall-clock del demone (ktime kernel non
+// convertibile direttamente: il demone timestampa quando vede crescere i contatori).
+type SourceStat struct {
+	IP       string `json:"ip"`
+	Poison   uint32 `json:"poison"`
+	Subnet   uint32 `json:"subnet"`
+	Total    uint32 `json:"total"`
+	LastSeen string `json:"last_seen"`
+}
+
 // Status: fotografia del demone. Inviata a ogni nuova connessione e su UpdateStatus.
 type Status struct {
 	Type           string        `json:"-"`
@@ -53,6 +64,7 @@ type Status struct {
 	Allowed        int           `json:"allowed"`
 	BlockPoisoning bool          `json:"block_poisoning"`
 	BlockSubnets   []string      `json:"block_subnets"`
+	TopSources     []SourceStat  `json:"top_sources"`
 	Rules          []RuleSummary `json:"rules"`
 	Time           string        `json:"time"`
 }

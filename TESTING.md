@@ -67,11 +67,12 @@ rescan_seconds: 10   # più basso del default per vedere gli aggiornamenti duran
 ```
 
 ```bash
-# Sostituisci $USER con il tuo utente reale
-sed "s/\$USER/$(whoami)/" > /tmp/zt-test.yaml <<'YAML'
+# Genera il file con il tuo utente reale (niente sed su placeholder incoerenti:
+# prima il comando usava __USER__ con sed su $USER = no-op che lasciava il file rotto)
+cat > /tmp/zt-test.yaml <<YAML
 profile: home
 mode: enforce
-user: __USER__
+user: $(whoami)
 block_poisoning: true
 log_format: text
 rescan_seconds: 10
@@ -243,16 +244,16 @@ Atteso: 3 risposte, 0% loss.
 XDP va agganciato a `veth-host`, e la subnet da bloccare va messa **nel file di configurazione**. Non esiste una variabile d'ambiente per l'interfaccia: si usa la chiave `interface`.
 
 ```bash
-cat > /tmp/zt-xdp.yaml <<'YAML'
+# Stesso fix del Test 1: utente interpolato subito, niente placeholder+sed
+cat > /tmp/zt-xdp.yaml <<YAML
 profile: home
 mode: audit
-user: __UTENTE__
+user: $(whoami)
 interface: veth-host
 block_poisoning: true
 block_subnets:
   - 192.168.100.0/24
 YAML
-sed -i "s/__UTENTE__/$(whoami)/" /tmp/zt-xdp.yaml
 ```
 
 Ferma lo scudo precedente, poi riavvialo:
@@ -440,16 +441,15 @@ ip -brief addr
 
 Crea il file `/tmp/zt-remote-test.yaml`:
 ```bash
-cat > /tmp/zt-remote-test.yaml <<'YAML'
+cat > /tmp/zt-remote-test.yaml <<YAML
 profile: public-wifi
 mode: enforce
-user: __UTENTE__
+user: $(whoami)
 interface: wlan0     # sostituisci con la tua interfaccia (es. wlan0 o eth0)
 block_poisoning: true
 block_subnets:
   - 192.168.1.50/32  # opzionale: IP esatto della macchina attaccante
 YAML
-sed -i "s/__UTENTE__/$(whoami)/" /tmp/zt-remote-test.yaml
 ```
 
 Avvia `zt-shield`:

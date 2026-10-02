@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=ZeroShield
+Comment=Local Zero-Trust Shield — stato ed eventi di sicurezza
+Exec=/home/acucchiara/Scrivania/personal_zeroT/zt-gui/build/bin/zt-gui
+Icon=/home/acucchiara/Scrivania/personal_zeroT/zt-gui/build/appicon.png
+Terminal=false
+Categories=Security;System;
+StartupWMClass=zt-gui

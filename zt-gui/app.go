@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/gen2brain/beeep"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"zt-shield/pkg/ipc"
@@ -51,9 +53,34 @@ func (a *App) startup(ctx context.Context) {
 	}()
 
 	go func() {
+		// Notifiche desktop sui blocchi (non sugli audit: troppo rumore).
+		// Throttle 1/10s con conteggio soppressi: senza, un flood di open()
+		// riempie il centro notifiche come riempiva i log prima del rate-limit.
+		var last time.Time
+		suppressed := 0
+		notify := func(ev ipc.WireEvent) {
+			if ev.Action != "blocked" {
+				return
+			}
+			now := time.Now()
+			if now.Sub(last) < 10*time.Second {
+				suppressed++
+				return
+			}
+			msg := fmt.Sprintf("%s (pid %d) negato su %s", ev.Exe, ev.PID, ev.Rule)
+			if suppressed > 0 {
+				msg += fmt.Sprintf(" (+%d altri)", suppressed)
+				suppressed = 0
+			}
+			last = now
+			// Errore ignorato: su server senza notify-send non c'e' centro
+			// notifiche, la tabella Eventi resta la fonte primaria.
+			_ = beeep.Notify("ZeroShield — accesso bloccato", msg, "")
+		}
 		for {
 			err := ipc.Subscribe(ctx, func(ev ipc.WireEvent) {
 				runtime.EventsEmit(a.ctx, "shield:event", ev)
+				notify(ev)
 			})
 			if ctx.Err() != nil {
 				return

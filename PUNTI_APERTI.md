@@ -42,6 +42,10 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
   `configs/shield.example.yaml`. Token brevi dove possibile, resto in LSM.
 - [ ] **Test lab furto-token** in VM isolata (vedi `TESTING_LAB.md` Fase 2/5):
   infostealer simulato, reverse shell host-only, flood log con rate-limit.
+- [x] **Radar rete da eBPF.** Mappa kernel `xdp_stats` + `TopSources` su IPC,
+  tab Radar TUI (sweep ASCII + blip) e vista Radar GUI (canvas animato).
+  Demo senza kernel: `mockd` serve sorgenti finte. Resta: verifier del nuovo
+  codice mai visto → primo load solo in VM con snapshot.
 - [ ] **Applicare fix pendenti** elencati in `FIX_APPLICATI.md` sez. 7
   (`main.go` multi-iface/Ticker/cleanup, UFW `allow OpenSSH`, unit
   `StartLimit`+`ExecStartPre`, sed `TESTING.md`).
@@ -72,8 +76,10 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
 
 - [x] TUI `zt-tui` (Bubble Tea): tab Stato/Eventi/Regole/Rete, live via socket,
   diagnosi se demone spento. IPC `pkg/ipc` + `audit emit` collegati.
-- [x] Mock `zt-mockd`: finto demone con dati sintetici per verificare le UI
-  senza root/eBPF (`ZT_SOCKET=/tmp/z.sock`, niente `/run`).
+- [x] Miglioramenti: script fixati (UFW SSH, resolved fallback, sysctl/restart
+  tolleranti, unit StartLimit+ExecStartPre, sed TESTING), unit test
+  ipc/audit/config + fuzz seed + CI GitHub, notifiche desktop GUI su blocchi
+  (throttle 10s). Programma vero mai avviato.
 - [x] GUI `zt-gui` (Wails, stile macOS): sidebar, badge mode, eventi live,
   regole, rete. Build `make gui` (tag `webkit2_41` su Ubuntu 24.04), avvio
   verificato headless. Nota: lanciare fuori da env snap (unset GTK_PATH/

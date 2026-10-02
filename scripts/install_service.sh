@@ -15,11 +15,14 @@ TARGET_USER="${1:-${SUDO_USER:-}}"
 PROFILE="${2:-home}"
 [ -n "$TARGET_USER" ] || { echo "Uso: sudo $0 <utente> [profilo]"; exit 1; }
 [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
-[ -x bin/zt-shield ] || { echo "❌ bin/zt-shield mancante: esegui 'make build'"; exit 1; }
+# FIX: percorso repo risolto dallo script, non dalla cwd: prima falliva se
+# lanciato fuori dalla root del repo.
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+[ -x "$SCRIPT_DIR/bin/zt-shield" ] || { echo "❌ $SCRIPT_DIR/bin/zt-shield mancante: esegui 'make build'"; exit 1; }
 
 # Binario in /usr/local/sbin: non nella home dell'utente, perche' l'utente non deve
 # poter sostituirlo (girerebbe con root).
-install -o root -g root -m 0755 bin/zt-shield /usr/local/sbin/zt-shield
+install -o root -g root -m 0755 "$SCRIPT_DIR/bin/zt-shield" /usr/local/sbin/zt-shield
 install -d -o root -g root -m 0755 /etc/zt-shield
 
 # Configurazione: non si sovrascrive se esiste gia', per non perdere le regole
@@ -41,18 +44,20 @@ cat > /etc/systemd/system/zt-shield.service << 'UNIT'
 Description=Local Zero-Trust Shield (eBPF)
 After=network-online.target
 
-# BUG: manca StartLimitBurst in [Unit]. Con Restart=on-failure, se AttachLSM
-# fallisce (per esempio 'bpf' non e' nella lista LSM) il processo esce non-zero,
-# systemd riprova, riprova, e dopo 5 tentativi si arrende DEFINITIVAMENTE.
-# Risultato: il servizio e' morto e silenzioso, e il fail-closed di main.go
-# (log.Fatal se l'hook non si aggancia) viene annullato proprio quando serviva.
-# Fix: StartLimitBurst=3 in [Unit] e StartLimitIntervalSec=60.
-#
-# Fix ulteriore consigliato in [Service]:
-#   ExecStartPre=/bin/sh -c 'grep -qw bpf /sys/kernel/security/lsm'
-# Fallisce subito, con un messaggio chiaro in journalctl, invece di ripetere 5 volte.
+# FIX: prima con Restart=on-failure e senza limiti, se AttachLSM falliva
+# ('bpf' non in lista LSM) systemd riprovava 5 volte e moriva in silenzio,
+# annullando il fail-closed proprio quando serviva. Ora: pochi tentativi
+# ravvicinati, poi stop visibile + ExecStartPre con messaggio chiaro.
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+# (Raccomandati ma non attivi: ProtectSystem=strict, CapabilityBoundingSet con
+# CAP_BPF/CAP_NET_ADMIN/CAP_PERFMON. Testare in VM: rischiano di rompere il load.)
 
 [Service]
+# Fallisce subito con messaggio chiaro in journal se BPF LSM non e' attivo,
+# invece di 5 crash criptici.
+ExecStartPre=/bin/sh -c 'grep -qw bpf /sys/kernel/security/lsm || (echo "BPF LSM non attivo: aggiungi bpf alla lista lsm= e riavvia" >&2; exit 1)'
 ExecStart=/usr/local/sbin/zt-shield -config /etc/zt-shield/shield.yaml
 Restart=on-failure
 
