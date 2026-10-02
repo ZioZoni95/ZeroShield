@@ -2,6 +2,8 @@ module zt-gui
 
 go 1.26.2
 
+toolchain go1.26.8
+
 require (
 	github.com/gen2brain/beeep v0.11.2
 	github.com/wailsapp/wails/v2 v2.16.0
