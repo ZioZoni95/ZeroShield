@@ -63,6 +63,10 @@ jobs:
           for f in $(go test -list '^Fuzz' ./internal/config | grep ^Fuzz); do
             go test -run '^$' -fuzz "^$f\$" -fuzztime 20s ./internal/config
           done
+      - name: Canary fanotify reale (root)
+        # Test con fanotify vero: avvio, tocco esca, massa, kill in enforce.
+        # GOCACHE separata: root non deve sporcare la cache dell'utente runner.
+        run: sudo -E env "PATH=$PATH" GOCACHE=/tmp/gocache-root go test -count=1 -run Root -v ./internal/canary
       - uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -95,6 +99,17 @@ jobs:
           go build -trimpath -o bin/zt-shield ./cmd/zt-shield
           go build -trimpath -o bin/zt-tui ./cmd/zt-tui
           go build -trimpath -o bin/zt-mockd ./cmd/zt-mockd
+          go build -trimpath -o bin/zt-probe ./cmd/zt-probe
+      - name: Kernel reale (zt-probe)
+        # Verifier per programma sul kernel del runner + XDP su loopback.
+        # Fallisce su un rifiuto del verifier o se XDP non droppa; un tipo di
+        # programma non supportato dal kernel (LSM) e' solo segnalato.
+        # L'esito per programma va nel riepilogo della run e come annotazioni,
+        # cosi' si vede subito se il verifier ha accettato gli hook LSM.
+        run: |
+          sudo ./bin/zt-probe -xdp-lo | tee probe.txt
+          { echo '### zt-probe (kernel del runner)'; echo '```'; cat probe.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(✅|⚠️|❌)' probe.txt | while IFS= read -r l; do echo "::notice title=zt-probe::$l"; done
       - uses: actions/upload-artifact@v4
         with:
           name: zt-shield-linux-amd64

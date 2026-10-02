@@ -170,10 +170,29 @@ func DeployCanaries(home string, dirs, names []string) ([]string, error) {
 	return out, nil
 }
 
-// Watcher: fd fanotify + loop eventi. Chiudere con Close.
+// Watcher: due gruppi fanotify + un loop per gruppo. Chiudere con Close.
+//
+// FIX: prima un solo gruppo senza FAN_REPORT_FID. Il kernel accetta
+// FAN_DELETE/FAN_MOVED_* solo su gruppi FID, quindi fanotify_mark sulle dir
+// falliva con EINVAL e il canary non partiva mai (verificato su kernel reale).
+// Ma un gruppo FID non consegna fd negli eventi, e senza fd il path dell'esca
+// non si ricava. Da qui due gruppi:
+//   - baits: classico (fd negli eventi), esche con OPEN/MODIFY/CLOSE_WRITE -> path noto.
+//   - dirs:  FAN_REPORT_FID, dir con DELETE/MOVED/CLOSE_WRITE dei figli -> conta
+//     per massa, basta il PID (path non necessario).
 type Watcher struct {
-	fd  int
-	det *Detector
+	baits int
+	dirs  int
+	det   *Detector
+
+	// FIX: prima Close() chiudeva gli fd mentre i loop erano ancora in Read.
+	// Il numero di fd veniva riusato dal prossimo fanotify_init e il vecchio loop
+	// leggeva (e attribuiva al detector sbagliato) gli eventi del nuovo gruppo:
+	// riprodotto con test ripetuti su kernel reale. Ora i loop aspettano in poll()
+	// anche sul pipe di stop, escono, e solo dopo gli fd vengono chiusi.
+	stopR, stopW int
+	wg           sync.WaitGroup
+	closeOnce    sync.Once
 }
 
 // Start arma dir (eventi figli) ed esche (open/write/close). enforce decide kill/alert.
@@ -183,11 +202,23 @@ func Start(home string, dirs, names []string, exclude []string, burstCount, burs
 	if err != nil {
 		return nil, err
 	}
-	fd, err := unix.FanotifyInit(unix.FAN_CLASS_NOTIF|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK, unix.O_RDONLY|unix.O_LARGEFILE)
+	baits, err := unix.FanotifyInit(unix.FAN_CLASS_NOTIF|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK, unix.O_RDONLY|unix.O_LARGEFILE)
 	if err != nil {
 		return nil, fmt.Errorf("fanotify_init (serve CAP_SYS_ADMIN/root): %w", err)
 	}
-	w := &Watcher{fd: fd, det: NewDetector(burstCount, burstSecs, exclude, paths)}
+	dfd, err := unix.FanotifyInit(unix.FAN_CLASS_NOTIF|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK|unix.FAN_REPORT_FID, unix.O_RDONLY|unix.O_LARGEFILE)
+	if err != nil {
+		unix.Close(baits)
+		return nil, fmt.Errorf("fanotify_init FID (kernel >= 5.1): %w", err)
+	}
+	var pipe [2]int
+	if err := unix.Pipe2(pipe[:], unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
+		unix.Close(baits)
+		unix.Close(dfd)
+		return nil, fmt.Errorf("pipe: %w", err)
+	}
+	w := &Watcher{baits: baits, dirs: dfd, det: NewDetector(burstCount, burstSecs, exclude, paths),
+		stopR: pipe[0], stopW: pipe[1]}
 	// Dir: conta massa sui figli. OPEN escluso qui (troppo rumore: ogni ls).
 	for _, dir := range dirs {
 		d := dir
@@ -195,37 +226,64 @@ func Start(home string, dirs, names []string, exclude []string, burstCount, burs
 			d = filepath.Join(home, d)
 		}
 		mask := uint64(unix.FAN_CLOSE_WRITE | unix.FAN_DELETE | unix.FAN_MOVED_FROM | unix.FAN_MOVED_TO | unix.FAN_EVENT_ON_CHILD)
-		if err := unix.FanotifyMark(fd, unix.FAN_MARK_ADD, mask, unix.AT_FDCWD, d); err != nil {
-			unix.Close(fd)
+		if err := unix.FanotifyMark(dfd, unix.FAN_MARK_ADD, mask, unix.AT_FDCWD, d); err != nil {
+			w.Close()
 			return nil, fmt.Errorf("fanotify_mark dir %s: %w", d, err)
 		}
 	}
 	// Esche: trip diretto su open/write/close (path noto via fd evento).
 	for _, p := range paths {
 		mask := uint64(unix.FAN_OPEN | unix.FAN_MODIFY | unix.FAN_CLOSE_WRITE)
-		if err := unix.FanotifyMark(fd, unix.FAN_MARK_ADD, mask, unix.AT_FDCWD, p); err != nil {
-			unix.Close(fd)
+		if err := unix.FanotifyMark(baits, unix.FAN_MARK_ADD, mask, unix.AT_FDCWD, p); err != nil {
+			w.Close()
 			return nil, fmt.Errorf("fanotify_mark esca %s: %w", p, err)
 		}
 	}
-	go w.loop(enforce, onHit)
+	w.wg.Add(2)
+	go w.loop(baits, enforce, onHit)
+	go w.loop(dfd, enforce, onHit)
 	return w, nil
 }
 
-func (w *Watcher) Close() error { return unix.Close(w.fd) }
+// Close ferma i loop, li aspetta e solo allora chiude gli fd. Idempotente.
+func (w *Watcher) Close() error {
+	var err error
+	w.closeOnce.Do(func() {
+		_, _ = unix.Write(w.stopW, []byte{1})
+		w.wg.Wait()
+		for _, fd := range []int{w.baits, w.dirs, w.stopR, w.stopW} {
+			if e := unix.Close(fd); e != nil && err == nil {
+				err = e
+			}
+		}
+	})
+	return err
+}
 
 // metadata fanotify: event_len u32, vers u8, res u8, metadata_len u16,
 // mask u64, fd i32, pid i32 = 24 byte little-endian (layout kernel stabile).
-func (w *Watcher) loop(enforce bool, onHit func(Hit)) {
+// Nei gruppi FID fd vale FAN_NOFD (-1) e seguono record info: event_len li
+// comprende, quindi saltarli e' gratis.
+func (w *Watcher) loop(fd int, enforce bool, onHit func(Hit)) {
+	defer w.wg.Done()
 	buf := make([]byte, 8192)
+	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}, {Fd: int32(w.stopR), Events: unix.POLLIN}}
 	for {
-		n, err := unix.Read(w.fd, buf)
-		if err != nil {
-			if err == unix.EAGAIN {
-				time.Sleep(200 * time.Millisecond)
+		if _, err := unix.Poll(fds, -1); err != nil {
+			if err == unix.EINTR {
 				continue
 			}
-			return // fd chiuso: stop
+			return
+		}
+		if fds[1].Revents != 0 {
+			return // Close(): stop prima che l'fd venga chiuso e riusato
+		}
+		n, err := unix.Read(fd, buf)
+		if err != nil {
+			if err == unix.EAGAIN || err == unix.EINTR {
+				continue
+			}
+			return
 		}
 		off := 0
 		for off+24 <= n {

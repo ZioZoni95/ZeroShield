@@ -100,8 +100,10 @@ struct allow_key {
 
 // Impostazioni lette dai programmi a ogni invocazione. Array invece che hash: le
 // chiavi sono due interi costanti, quindi lookup O(1) senza hash.
-// La mappa vive in userspace: Go la aggiorna, il kernel la legge. Se manca una voce,
-// setting() restituisce il default, quindi un programma caricato da solo funziona.
+// La mappa vive in userspace: Go la aggiorna, il kernel la legge.
+// ATTENZIONE: in un ARRAY le voci esistono sempre e partono da 0, quindi il
+// `def` di setting() non scatta mai: senza le Put del demone enforce=0 (audit) e
+// poisoning=0 (spento). Verificato con zt-probe su kernel reale (2026-10-02).
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 2);
