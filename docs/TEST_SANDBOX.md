@@ -54,8 +54,8 @@ Lo step `Kernel reale (zt-probe)` del job `ebpf` (PR #12) sul kernel `ubuntu-24.
 | Canary fanotify (test root) | ✅ |
 
 Prima verifica del verifier sugli hook LSM: il codice C dei segreti è accettato dal
-kernel. Non è stato agganciato (sul runner `bpf` non è nella lista LSM attivi), quindi
-il blocco effettivo dei file resta da vedere.
+kernel. `zt-probe` carica i programmi ma non li aggancia (di proposito: un hook
+attivo sul runner bloccherebbe file a caso), quindi il blocco effettivo resta da vedere.
 
 ## Cosa resta da provare (serve una VM con BPF LSM attivo)
 
