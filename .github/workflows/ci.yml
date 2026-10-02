@@ -4,28 +4,158 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # Settimanale: nuove CVE nelle dipendenze anche senza commit.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  check:
+  lint:
+    name: Lint (gofmt, vet, staticcheck, shellcheck)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
-      - name: Format
-        run: test -z "$(gofmt -l cmd internal pkg bpf 2>/dev/null)"
-      - name: Vet
-        # cmd/zt-shield escluso: richiede gli stub bpf2go (gitignored,
-        # generati da make generate con clang+BTF). Tutto il resto compila
-        # senza toolchain eBPF proprio grazie al disaccoppiamento.
+          # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
+          # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
+          go-version: "1.26.x"
+          check-latest: true
+      - name: gofmt
+        run: |
+          out="$(gofmt -l cmd internal pkg bpf zt-gui/*.go)"
+          if [ -n "$out" ]; then echo "File non formattati:"; echo "$out"; exit 1; fi
+      - name: go vet (senza stub eBPF)
+        # cmd/zt-shield richiede gli stub bpf2go: lo copre il job ebpf.
         run: go vet ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
-      - name: Unit tests (no root, no eBPF)
-        run: go test ./cmd/zt-tui ./cmd/zt-mockd ./internal/... ./pkg/...
-      - name: Shell syntax
-        run: bash -n scripts/check_prereqs.sh && bash -n scripts/harden_system.sh && bash -n scripts/install_service.sh && bash -n scripts/setup_fido2.sh
-      - name: Build TUI + mock (pure Go)
-        run: go build -o /tmp/zt-tui ./cmd/zt-tui && go build -o /tmp/zt-mockd ./cmd/zt-mockd
-      # Il demone e la GUI restano fuori CI: servono clang/BTF/webkit + root.
-      # Verifica locale: make build && make gui (vedi TESTING_LAB.md).
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
+      - name: shellcheck
+        run: shellcheck -S warning scripts/*.sh
+
+  test:
+    name: Test (race + coverage)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
+          # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
+          go-version: "1.26.x"
+          check-latest: true
+      - name: go test -race
+        # Nessun test richiede root o kernel: quelli stanno in docs/TESTING.md.
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./cmd/zt-tui ./cmd/zt-mockd ./internal/... ./pkg/...
+      - name: Riepilogo coverage
+        run: go tool cover -func=coverage.out | tail -1 | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Fuzz smoke (config)
+        run: |
+          for f in $(go test -list '^Fuzz' ./internal/config | grep ^Fuzz); do
+            go test -run '^$' -fuzz "^$f\$" -fuzztime 20s ./internal/config
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  ebpf:
+    name: eBPF (clang + bpf2go + demone)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
+          # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
+          go-version: "1.26.x"
+          check-latest: true
+      - name: Toolchain eBPF
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang llvm libbpf-dev linux-tools-generic
+          echo "BPFTOOL=$(ls /usr/lib/linux-tools/*/bpftool | head -1)" >> "$GITHUB_ENV"
+      - name: vmlinux.h + bpf2go
+        # CO-RE: il BTF del runner basta per compilare, le rilocazioni si
+        # risolvono sul kernel di destinazione al load.
+        run: make generate BPFTOOL="$BPFTOOL"
+      - name: go vet completo (demone incluso)
+        run: go vet ./...
+      - name: Build demone + TUI + mock
+        run: |
+          go build -trimpath -o bin/zt-shield ./cmd/zt-shield
+          go build -trimpath -o bin/zt-tui ./cmd/zt-tui
+          go build -trimpath -o bin/zt-mockd ./cmd/zt-mockd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zt-shield-linux-amd64
+          path: bin/
+
+  gui:
+    name: GUI (Vite + Wails Go)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: zt-gui/frontend/package-lock.json
+      - name: Frontend
+        working-directory: zt-gui/frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run build
+      - name: Librerie GTK/WebKit
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libgtk-3-dev libwebkit2gtk-4.1-dev
+      - name: go vet + build (webkit2_41)
+        working-directory: zt-gui
+        run: |
+          go vet -tags webkit2_41 .
+          go build -tags webkit2_41 -o /dev/null .
+      - name: govulncheck (GUI)
+        working-directory: zt-gui
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest -tags webkit2_41 .
+
+  security:
+    name: Sicurezza (govulncheck, gosec)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
+          # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
+          go-version: "1.26.x"
+          check-latest: true
+      - name: govulncheck (modulo principale)
+        # Bloccante: una CVE raggiungibile nelle dipendenze ferma la pipeline.
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
+      - name: gosec (SARIF)
+        # Non bloccante: ha falsi positivi noti (G115 sui layout kernel, G302 sul
+        # socket 0666 voluto). I risultati vanno in Security > Code scanning.
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 -no-fail -exclude-generated -fmt sarif -out gosec.sarif ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('gosec.sarif') != ''
+        with:
+          sarif_file: gosec.sarif
+          category: gosec

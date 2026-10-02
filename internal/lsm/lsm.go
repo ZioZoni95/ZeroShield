@@ -120,6 +120,7 @@ func (m *Manager) Sync() (protected, allowed int) {
 	// da ragionare e il costo e' dominato dai walk su filesystem, non dalle Put.
 	wantFiles := map[key]uint32{}
 	wantExes := map[key]uint32{}
+	owner := homeOwner(m.home)
 
 	for i, r := range m.rules {
 		id := uint32(i + 1) // id 0 è riservato: in una map, 0 come valore significa "non protetto"
@@ -131,7 +132,7 @@ func (m *Manager) Sync() (protected, allowed int) {
 			log.Printf("⛔ regola %q: deny_write attivo, scrittura negata anche a root", r.Name)
 		}
 		for _, p := range r.Paths {
-			for _, f := range expand(m.home, p) {
+			for _, f := range expand(m.home, p, owner) {
 				if k, ok := fileKey(f); ok {
 					wantFiles[k] = val
 				}
@@ -227,9 +228,30 @@ func (m *Manager) reconcile(mp *ebpf.Map, want map[key]uint32) {
 // os.Stat e non Lstat, quindi segue i symlink: conta l'inode del TARGET, che e'
 // quello che il kernel vede all'apertura. Coerente con il fatto che la chiave e'
 // (dev, ino) del file effettivamente aperto.
-func expand(home, pattern string) []string {
+//
+// FIX (DoS di sistema): i path relativi alla home sono controllati dall'utente,
+// che puo' piazzare `~/.ssh/id_x -> /lib/x86_64-linux-gnu/libc.so.6`. Seguendo il
+// symlink, il demone root metteva libc tra i segreti e in enforce nessun
+// processo (root compreso) poteva piu' aprirla: macchina bloccata da un processo
+// senza privilegi. Ora per i pattern relativi si proteggono solo file del
+// proprietario della home (owner); i pattern assoluti, scritti dall'admin nel
+// config, restano senza filtro (owner < 0).
+func expand(home, pattern string, owner int64) []string {
 	if !filepath.IsAbs(pattern) {
 		pattern = filepath.Join(home, pattern)
+	} else {
+		owner = -1
+	}
+	ownedOK := func(path string, fi os.FileInfo) bool {
+		if owner < 0 {
+			return true
+		}
+		st, ok := fi.Sys().(*syscall.Stat_t)
+		if ok && int64(st.Uid) == owner {
+			return true
+		}
+		log.Printf("⚠️ %q non appartiene all'utente protetto: ignorato (symlink verso file di sistema?)", path)
+		return false
 	}
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
@@ -252,7 +274,9 @@ func expand(home, pattern string) []string {
 			continue
 		}
 		if fi.Mode().IsRegular() {
-			out = append(out, match)
+			if ownedOK(match, fi) {
+				out = append(out, match)
+			}
 			continue
 		}
 		if fi.IsDir() {
@@ -270,7 +294,7 @@ func expand(home, pattern string) []string {
 				if err != nil {
 					return nil
 				}
-				if st.Mode().IsRegular() {
+				if st.Mode().IsRegular() && ownedOK(p, st) {
 					out = append(out, p)
 					if n++; n >= maxFilesPerPath {
 						truncated = true
@@ -287,6 +311,17 @@ func expand(home, pattern string) []string {
 		}
 	}
 	return out
+}
+
+// homeOwner: uid del proprietario della home, -1 se non leggibile (nessun filtro:
+// meglio proteggere tutto che niente, il log lo segnala).
+func homeOwner(home string) int64 {
+	var st syscall.Stat_t
+	if err := syscall.Stat(home, &st); err != nil {
+		log.Printf("⚠️ stat home %q: %v (filtro proprietario disattivato)", home, err)
+		return -1
+	}
+	return int64(st.Uid)
 }
 
 // resolveExe trasforma una voce di `allow` nel path assoluto del binario.

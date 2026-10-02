@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
 	"time"
 
 	"github.com/gen2brain/beeep"
@@ -67,7 +68,9 @@ func (a *App) startup(ctx context.Context) {
 				suppressed++
 				return
 			}
-			msg := fmt.Sprintf("%s (pid %d) negato su %s", ev.Exe, ev.PID, ev.Rule)
+			// notifyText: exe scelto dal processo osservato; i server di notifica
+			// con body-markup interpretano <a href>/<img>, quindi escape HTML.
+			msg := fmt.Sprintf("%s (pid %d) negato su %s", notifyText(ev.Exe), ev.PID, notifyText(ev.Rule))
 			if suppressed > 0 {
 				msg += fmt.Sprintf(" (+%d altri)", suppressed)
 				suppressed = 0
@@ -106,7 +109,7 @@ func (a *App) startup(ctx context.Context) {
 					title += " (audit)"
 				}
 				_ = beeep.Notify(title,
-					fmt.Sprintf("pid %d (%s) %s %s — %s", al.PID, al.Exe, al.Kind, al.Path, al.Reason), "")
+					fmt.Sprintf("pid %d (%s) %s %s — %s", al.PID, notifyText(al.Exe), notifyText(al.Kind), notifyText(al.Path), notifyText(al.Reason)), "")
 			})
 			if ctx.Err() != nil {
 				return
@@ -130,3 +133,7 @@ func (a *App) GetStatus() (ipc.Status, error) {
 func (a *App) SocketPath() string {
 	return ipc.SocketPath
 }
+
+// notifyText rende innocua una stringa esterna per il corpo della notifica:
+// niente sequenze di controllo, niente markup interpretato dal notification server.
+func notifyText(s string) string { return html.EscapeString(ipc.SafeText(s)) }

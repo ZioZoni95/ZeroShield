@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf/ringbuf"
+
+	"zt-shield/pkg/ipc"
 )
 
 // Event ha lo stesso layout di audit_event in zerotrust.c.
@@ -146,11 +148,14 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, emit f
 		}
 		inWindow++
 		// comm arriva senza terminatore: va ripulito prima di stampare.
-		comm := string(bytes.TrimRight(ev.Comm[:], "\x00"))
+		// SafeText: comm e' scelto dal processo (prctl) e finirebbe grezzo nel
+		// terminale/journal con eventuali sequenze ANSI.
+		comm := ipc.SafeText(string(bytes.TrimRight(ev.Comm[:], "\x00")))
 		// Best effort: il processo potrebbe essere già terminato. Utile per sapere quale binario autorizzare.
 		// NOTA: /proc/PID/exe e' racy, se il PID e' stato riusato punta al processo sbagliato.
 		// Non e' un problema di sicurezza (decide il kernel, non questo log), solo di affidabilita' del dato.
 		exe, _ := os.Readlink(fmt.Sprintf("/proc/%d/exe", ev.PID))
+		exe = ipc.SafeText(exe)
 		action := "audit"
 		if ev.Action == 1 {
 			action = "blocked"

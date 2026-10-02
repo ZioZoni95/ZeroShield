@@ -2,6 +2,8 @@ module zt-shield
 
 go 1.26.2
 
+toolchain go1.26.8
+
 require (
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.0.0

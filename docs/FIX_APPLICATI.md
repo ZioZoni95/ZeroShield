@@ -141,3 +141,33 @@ puliti. **Verifier non visto**: i nuovi hook vanno caricati in VM prima dell'uso
 - **Data race in `main`.** `p`/`a`/`topSrc`/`publishStatus` letti e scritti da
   goroutine diverse, ticker avviato prima di `publishStatus`. Ora la goroutine
   di rescan parte dopo IPC e primo `publishStatus`, unica proprietaria dello stato.
+
+## 10. Pipeline e caccia alle falle 2026-10-02 — APPLICATI
+
+Strumenti eseguiti: staticcheck, shellcheck, gosec, `go test -race`, fuzz
+`FuzzConfigLoad`, `npm audit`. govulncheck non raggiungibile dalla sandbox:
+gira in CI.
+
+- **Iniezione ANSI/OSC nel terminale.** `comm` (via `prctl`) e il path
+  dell'exe sono scelti dal processo osservato e finivano grezzi in TUI e log
+  testuale: `\x1b]52;...` scrive la clipboard di chi guarda, `\x1b[2J` cancella
+  gli eventi veri. Ora `ipc.SafeText` (non stampabili → `\xNN`) in audit, canary
+  e TUI; nella GUI anche escape HTML per le notifiche desktop (body-markup).
+  TUI: `Time[11:19]` non va piu' in panic su timestamp corti (`clock`).
+- **DoS di sistema da utente non privilegiato.** `~/.ssh/id_x -> libc.so.6`:
+  il demone seguiva il symlink e proteggeva libc; in enforce nessuno (root
+  incluso) la apriva piu'. Ora i pattern relativi alla home proteggono solo file
+  del proprietario della home; i pattern assoluti dell'admin restano liberi.
+  Test: `TestExpandSkipsForeignSymlink`.
+- **CI riscritta** (`.github/workflows/ci.yml`): job lint (gofmt anche GUI,
+  vet, staticcheck, shellcheck), test (race, coverage, fuzz smoke), eBPF
+  (clang + bpf2go + `go vet ./...` completo + build demone, artefatto binari),
+  GUI (Vite, `npm audit`, vet/build Wails con WebKitGTK, govulncheck),
+  sicurezza (govulncheck bloccante, gosec SARIF in Code scanning), cron
+  settimanale per nuove CVE. Dependabot per gomod (root+GUI), npm, actions.
+  `Makefile`: `BPFTOOL` sovrascrivibile.
+
+gosec, triage dei risultati restanti (non bloccanti, in SARIF):
+G115 su layout kernel/fanotify e `Mask.Size()` (valori limitati, falsi
+positivi); G302/G301 socket IPC 0666 (scelta documentata); G304 config da
+`-config` (input dell'admin); G704 `NOTIFY_SOCKET` (impostato da systemd).
