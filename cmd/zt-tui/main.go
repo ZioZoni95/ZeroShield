@@ -265,6 +265,17 @@ func (m model) statusView() string {
 	return strings.Join(rows, "\n")
 }
 
+// clock estrae hh:mm:ss da un timestamp RFC3339 senza panic su stringhe corte
+// (prima ev.Time[11:19] andava in panic con un time malformato dal socket).
+func clock(ts string) string {
+	if len(ts) < 19 {
+		return "--:--:--"
+	}
+	return ts[11:19]
+}
+
+// SafeText su comm/exe/path: li sceglie il processo osservato, quindi
+// potenzialmente un attaccante che inietta sequenze ANSI nel terminale.
 func (m model) eventsView() string {
 	var rows []string
 	// Canary in testa: kill/allarmi anti-ransomware meritano visibilita' massima.
@@ -274,7 +285,7 @@ func (m model) eventsView() string {
 			icon = evBlock.Render("🐤 KILL    ")
 		}
 		rows = append(rows, fmt.Sprintf("%s %s  pid=%-6d %s %s (%s)",
-			icon, a.Time[11:19], a.PID, a.Exe, a.Path, a.Reason))
+			icon, clock(a.Time), a.PID, ipc.SafeText(a.Exe), ipc.SafeText(a.Path), ipc.SafeText(a.Reason)))
 	}
 	if len(m.events) == 0 && len(rows) == 0 {
 		return dimStyle.Render("Nessun evento ancora. In audit gli accessi legittimi compaiono qui;\npassa a enforce solo quando i log sono puliti.")
@@ -300,12 +311,12 @@ func (m model) eventsView() string {
 		if ev.Action == "blocked" {
 			icon = evBlock.Render("🚨 BLOCCO ")
 		}
-		exe := ev.Exe
+		exe := ipc.SafeText(ev.Exe)
 		if exe == "" {
 			exe = dimStyle.Render("(processo uscito)")
 		}
 		rows = append(rows, fmt.Sprintf("%s %s  %-14s pid=%-6d %s %s",
-			icon, ev.Time[11:19], ev.Rule, ev.PID, ev.Comm, exe))
+			icon, clock(ev.Time), ipc.SafeText(ev.Rule), ev.PID, ipc.SafeText(ev.Comm), exe))
 	}
 	if m.offset > 0 {
 		rows = append(rows, dimStyle.Render(fmt.Sprintf("… +%d sopra (fine = torna live)", m.offset)))

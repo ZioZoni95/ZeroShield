@@ -289,6 +289,8 @@ func main() {
 		w, err := canary.Start(home, cfg.Canary.Dirs, cfg.Canary.Names,
 			cfg.Canary.ExcludeExe, cfg.Canary.BurstCount, cfg.Canary.BurstSecs,
 			cfg.Enforce(), func(hit canary.Hit) {
+				// exe e path sono scelti dal processo osservato: niente ANSI grezzo.
+				hit.Exe, hit.Path = ipc.SafeText(hit.Exe), ipc.SafeText(hit.Path)
 				icon := "🐤 [CANARY-ALERT]"
 				if hit.Verdict == canary.VerdictKill {
 					if hit.Killed {

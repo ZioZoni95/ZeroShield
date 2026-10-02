@@ -23,8 +23,12 @@ deps:
 # Nota su bpftool: va usata la versione compatibile con il kernel in esecuzione,
 # altrimenti il dump puo' fallire o produrre tipi incoerenti. Su Ubuntu il pacchetto
 # linux-tools-$(uname -r) fornisce la versione giusta.
+# BPFTOOL sovrascrivibile: in CI (e su Ubuntu senza wrapper) il binario sta in
+# /usr/lib/linux-tools/<versione>/bpftool. Es: make generate BPFTOOL=/percorso/bpftool
+BPFTOOL ?= bpftool
+
 bpf/vmlinux.h:
-	bpftool btf dump file /sys/kernel/btf/vmlinux format c > $@
+	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@
 
 # Sottoscritto, non semplice: `make vmlinux` quando il file esiste gia' dice
 # "up to date" senza fare nulla, e `generate` non dipenderebbe dal file.

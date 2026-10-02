@@ -1,0 +1,16 @@
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: /zt-gui
+    schedule: { interval: weekly }
+  - package-ecosystem: npm
+    directory: /zt-gui/frontend
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

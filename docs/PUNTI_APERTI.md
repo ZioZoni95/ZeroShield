@@ -67,6 +67,12 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
   rivaluta", il codice gestisce un solo tag. Allineare codice o commento.
 - [ ] **`ftruncate` su kernel ≥ 6.2** non coperto (hook `lsm/file_truncate`,
   da caricare opzionale per non rompere i kernel vecchi).
+- [ ] **Saturazione mappe da utente:** milioni di file in una dir protetta
+  (es. `~/.gnupg/private-keys-v1.d`) esauriscono `maxFilesPerPath`/16384 voci e
+  le chiavi vere possono restare fuori mappa. Serve priorita' ai pattern file
+  e un tetto per regola.
+- [ ] **Finestra di rescan:** un segreto riscritto via rename (nuovo inode) e'
+  scoperto fino al prossimo rescan (30s). Valutare inotify sulle dir protette.
 - [ ] **Verifier:** caricare in VM i nuovi hook (`path_truncate`, rename su
   destinazione, `f_flags`).
 
