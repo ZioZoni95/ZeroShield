@@ -154,7 +154,7 @@ jobs:
         # Non bloccante: ha falsi positivi noti (G115 sui layout kernel, G302 sul
         # socket 0666 voluto). I risultati vanno in Security > Code scanning.
         run: go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 -no-fail -exclude-generated -fmt sarif -out gosec.sarif ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('gosec.sarif') != ''
         with:
           sarif_file: gosec.sarif
