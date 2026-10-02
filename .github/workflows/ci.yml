@@ -104,7 +104,12 @@ jobs:
         # Verifier per programma sul kernel del runner + XDP su loopback.
         # Fallisce su un rifiuto del verifier o se XDP non droppa; un tipo di
         # programma non supportato dal kernel (LSM) e' solo segnalato.
-        run: sudo ./bin/zt-probe -xdp-lo
+        # L'esito per programma va nel riepilogo della run e come annotazioni,
+        # cosi' si vede subito se il verifier ha accettato gli hook LSM.
+        run: |
+          sudo ./bin/zt-probe -xdp-lo | tee probe.txt
+          { echo '### zt-probe (kernel del runner)'; echo '```'; cat probe.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(✅|⚠️|❌)' probe.txt | while IFS= read -r l; do echo "::notice title=zt-probe::$l"; done
       - uses: actions/upload-artifact@v4
         with:
           name: zt-shield-linux-amd64
