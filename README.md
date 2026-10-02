@@ -11,6 +11,15 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
   <a href="docs/TESTING_LAB.md">Lab di test</a>
 </p>
 <p align="center"><i>MIT © 2026 ZioZoni95 · binari: <code>zt-shield</code> <code>zt-tui</code> <code>zt-gui</code></i></p>
+<p align="center">
+  <a href="https://github.com/ZioZoni95/personal_zeroT/actions/workflows/ci.yml"><img src="https://github.com/ZioZoni95/personal_zeroT/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go"/>
+  <img src="https://img.shields.io/badge/eBPF-cilium%2Febpf-8A2BE2" alt="eBPF"/>
+  <img src="https://img.shields.io/badge/TUI-Bubble_Tea-FF75B7" alt="TUI"/>
+  <img src="https://img.shields.io/badge/GUI-Wails-EB1C24" alt="GUI"/>
+  <img src="https://img.shields.io/badge/GTK-WebKitGTK-green" alt="GTK"/>
+  <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT"/>
+</p>
 
 ---
 
@@ -246,15 +255,19 @@ kubectl get pods                                         # consentito
 
 ---
 
-## 🚧 Limiti noti
+## 🚧 Limiti noti (riletti 2026-10-02, fedeli al codice)
 
-* **Root locale = game over:** chi ha root può scaricare gli hook eBPF. Lo scudo difende da processi utente compromessi e dalla rete, non da un privilege escalation riuscito.
-* **Solo `file_open`:** niente hook su `unlink`/`rename`/`ptrace`. Un processo con lo stesso UID può fare `ptrace` su un `ssh` in esecuzione (mitigato da `kernel.yama.ptrace_scope=1`, default Ubuntu).
-* **Whitelist per binario, non per catena:** un `git` lanciato da uno script malevolo può leggere `.git-credentials`. Il segreto forte è la chiave FIDO2.
-* **XDP solo IPv4, un solo tag VLAN, niente IPv6.** LLMNR/mDNS IPv6 coperti solo da `systemd-resolved`. `interface` accetta lista (`"wlan0,eth0"`); interfacce UP scoperte segnalate nel log.
-* **Non sostituisce una VPN:** su Wi-Fi pubblico lo scudo riduce la superficie ma non cifra il traffico.
-* **Browser:** i percorsi predefiniti coprono deb e snap; Flatpak e installazioni custom vanno aggiunti in `extra_rules`. Verifica in `audit` prima di passare a `enforce`, altrimenti il browser può perdere i cookie.
-* **btrfs (subvolume):** `st_dev` userspace ≠ `s_dev` kernel, la chiave dev+inode non matcha. Su ext4/xfs funziona.
+* **Root locale = game over:** chi ha root scarica gli hook e legge tutto. Difende da processi utente e rete, non da privilege escalation. Aiutano solo LUKS + backup offline.
+* **Solo `file_open`:** niente hook su `unlink`/`rename`/`ptrace`. Un ransomware che cifra passa; `ptrace` sullo stesso UID legge la memoria di `ssh` (mitigato da `yama.ptrace_scope=1`).
+* **Write-only passa di proposito:** creazione chiavi e backup funzionano, ma anche la scrittura malevola. Bloccata solo la lettura/esfiltrazione.
+* **Whitelist per binario, non per catena:** ogni binario in lista legge i suoi file per chiunque lo invochi (`git` fuori da `ssh-keys`, ma dentro `dev-tokens`). Il segreto forte è la chiave FIDO2.
+* **`io_uring` = fail-open:** worker senza `mm` passa senza evento. Scelta contro falsi blocchi, resta bypass tecnico.
+* **XDP: solo IPv4, un tag VLAN, niente IPv6.** IPv6 coperto solo da `systemd-resolved`. `interface` accetta lista; UP scoperte segnalate nel log.
+* **`block_subnets` scarta anche le risposte:** mai gateway/DNS dentro; prefissi `/<8` rifiutati.
+* **btrfs/overlay = protezione inerte:** chiave non matcha, ora con warning a avvio (`CheckFilesystem`). Su ext4/xfs funziona.
+* **Servizio fermo = zero protezione:** nessun pinning; `StartLimit`+`ExecStartPre` evitano solo il morto-silenzioso.
+* **FIDO2 software = segreto su disco:** senza token fisico, firma senza tocco.
+* **Non è antivirus/IDS/egress e non cifra:** su Wi-Fi ostile serve comunque la VPN. Browser Flatpak/custom vanno in `extra_rules`, verifica in `audit` prima di `enforce`.
 
 ---
 

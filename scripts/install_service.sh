@@ -60,6 +60,11 @@ StartLimitIntervalSec=60
 ExecStartPre=/bin/sh -c 'grep -qw bpf /sys/kernel/security/lsm || (echo "BPF LSM non attivo: aggiungi bpf alla lista lsm= e riavvia" >&2; exit 1)'
 ExecStart=/usr/local/sbin/zt-shield -config /etc/zt-shield/shield.yaml
 Restart=on-failure
+# Watchdog: il demone pinga a ogni rescan; se hung oltre 30s, restart.
+# (Niente pinning bpffs di proposito: hook orfani senza demone sarebbero
+# protezione a metà. Vedi internal/watchdog.)
+WatchdogSec=30
+NotifyAccess=main
 
 # --- Hardening della unit ---
 # Il demone ha bisogno di root per caricare eBPF e agganciare XDP/LSM, quindi non

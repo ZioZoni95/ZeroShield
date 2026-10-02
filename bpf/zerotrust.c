@@ -207,6 +207,10 @@ static __always_inline __u32 setting(__u32 key, __u32 def) {
     return v ? *v : def;
 }
 
+// Prototipo: check_access e' definito dopo file_open ma usato da esso.
+// Senza, clang fallisce (niente dichiarazioni implicite in BPF).
+static __always_inline int check_access(struct file_key fk, __u32 rule);
+
 // ---------------------------------------------------------------------------
 // 1. XDP: protocolli di poisoning + subnet ostili
 // ---------------------------------------------------------------------------
@@ -332,15 +336,8 @@ int xdp_shield(struct xdp_md *ctx) {
 // e' una conseguenza di mettere in whitelist binari che leggono file.
 SEC("lsm/file_open")
 int BPF_PROG(zt_file_open, struct file *file) {
-    // Write-only open (creazione chiavi, truncate, backup in scrittura): non
-    // esfiltra nulla in lettura, quindi si lascia passare. Senza questo check
-    // ssh-keygen su ~/.ssh/id_* nuova e i backup venivano negati anche a root.
-    // f_mode e' letto con CORE perche' l'offset cambia tra versioni kernel.
-    fmode_t fmode = BPF_CORE_READ(file, f_mode);
-    if (!(fmode & FMODE_READ))
-        return 0;
-
-    // Il file che sta per essere aperto.
+    // Il file che sta per essere aperto (serve prima del check f_mode perche'
+    // il flag deny_write e' codificato nel valore della mappa: vedi sotto).
     struct inode *inode = BPF_CORE_READ(file, f_inode);
     if (!inode)
         return 0; // impossibile in pratica: fail-open
@@ -356,13 +353,40 @@ int BPF_PROG(zt_file_open, struct file *file) {
     __u32 *rp = bpf_map_lookup_elem(&protected_files, &fk);
     if (!rp)
         return 0; // file non protetto: percorso caldo, esce subito
-    __u32 rule = *rp; // id della regola che protegge questo file
+    // Valore: bit31 = deny_write della regola, bit0-30 = id regola.
+    // Cosi' niente nuova mappa: una lookup sola resta una lookup sola.
+    __u32 rule = *rp & 0x7FFFFFFF;
+    int deny_write = (*rp >> 31) & 1;
+
+    // Write-only open: passa, A MENO che la regola abbia deny_write.
+    // Default (deny_write=0): creazione chiavi e backup funzionano.
+    // Con deny_write=1: anche ssh-keygen e i backup vengono negati, anche a root.
+    // Usalo solo su segreti che non cambiano mai (es. root CA offline).
+    fmode_t fmode = BPF_CORE_READ(file, f_mode);
+    if (!(fmode & FMODE_READ) && !deny_write)
+        return 0;
 
     // -- Identita' del processo chiamante -------------------------------------------------
     // exe_file e' l'immagine eseguibile del processo (per uno script e' l'interprete).
     // Lettura a stadi con null-check: il verifier rifiuta la catena singola
     // task->mm->exe_file->f_inode e i kernel thread hanno mm=NULL.
     // Senza stadi, rischio di reject al load o fault su thread kernel.
+    // Helper condiviso con unlink/rename qui sotto: stessa whitelist, stesso audit.
+    return check_access(fk, rule);
+}
+
+// check_access: cuore comune di file_open/unlink/rename. 0 = consenti,
+// -EACCES = nega in enforce (in audit logga e consente).
+// NOTA (io_uring): le open via IORING_OP_OPENAT girano in un worker il cui mm
+// puo' essere NULL o diverso dal richiedente. Un worker senza mm passa in
+// fail-open (accesso consentito + nessun evento): falso NEGATIVO mirato,
+// preferito al falso positivo di blocco (tool legittimi con EACCES inspiegabile).
+//
+// NOTA (uid): non c'e' un controllo sull'uid del chiamante, di proposito. Il demone
+// gira come root e l'hook e' globale, quindi anche root e' vincolato. Effetto
+// collaterale: se un binario legittimo non finisce in whitelist, nemmeno root
+// riesce piu' a leggere quel file (backup, rsync, recovery).
+static __always_inline int check_access(struct file_key fk, __u32 rule) {
     struct task_struct *task = bpf_get_current_task_btf();
     if (!task)
         return 0;
@@ -382,18 +406,6 @@ int BPF_PROG(zt_file_open, struct file *file) {
             return 0; // binario autorizzato per questa regola
     }
 
-    // NOTA (io_uring): le open via IORING_OP_OPENAT girano in un worker il cui mm
-    // puo' essere NULL o diverso dal richiedente. Con il null-check sopra, un worker
-    // senza mm passa in fail-open (accesso consentito + nessun evento): falso NEGATIVO
-    // mirato, preferito al falso positivo di blocco che c'era prima (tool legittimi
-    // con EACCES inspiegabile). Il trade-off e' noto: io_uring resta un canale
-    // di bypass per chi sa usarlo, da chiudere con hook dedicati in futuro.
-    //
-    // NOTA (uid): non c'e' un controllo sull'uid del chiamante, di proposito. Il demone
-    // gira come root e l'hook e' globale, quindi anche root e' vincolato. Effetto
-    // collaterale: se un binario legittimo non finisce in whitelist, nemmeno root
-    // riesce piu' a leggere quel file (backup, rsync, recovery).
-
     // -- Audit + decisione ----------------------------------------------------------------
     __u32 enforce = setting(SETTING_ENFORCE, 1);
 
@@ -411,8 +423,49 @@ int BPF_PROG(zt_file_open, struct file *file) {
     }
 
     // In audit si restituisce 0: l'accesso passa e l'utente non se ne accorge.
-    // In enforce si nega. NOTA: gli open write-only passano (check FMODE_READ
-    // in testa): creazione chiavi e backup in scrittura funzionano, resta
-    // bloccata solo la lettura/esfiltrazione.
+    // In enforce si nega. Gli open write-only passano salvo deny_write=1
+    // (vedi testa funzione): creazione chiavi e backup funzionano di default.
     return enforce ? -EACCES : 0;
+}
+
+// ---------------------------------------------------------------------------
+// 3. LSM: anti-cancellazione e anti-rename dei segreti
+// ---------------------------------------------------------------------------
+//
+// Ransomware e wiper non leggono: cifrano altrove, poi unlink/rename
+// dell'originale. Senza questi hook la protezione dei segreti copriva solo
+// la lettura. Ora unlink e rename di un file protetto passano dalla stessa
+// whitelist di file_open: `rm ~/.ssh/id_ed25519` da shell non whitelistata
+// viene negato in enforce.
+//
+// Limite: rename sposta anche FUORI protezione? No: l'hook vede l'inode
+// sorgente (protetto) e nega prima dello spostamento. La rmdir di una
+// directory contenente segreti NON e' coperta (solo file regolari in mappa).
+SEC("lsm/inode_unlink")
+int BPF_PROG(zt_file_unlink, struct inode *dir, struct dentry *dentry) {
+    struct inode *victim = BPF_CORE_READ(dentry, d_inode);
+    if (!victim)
+        return 0;
+    struct file_key fk = {};
+    fk.ino = BPF_CORE_READ(victim, i_ino);
+    fk.dev = BPF_CORE_READ(victim, i_sb, s_dev);
+    __u32 *rp = bpf_map_lookup_elem(&protected_files, &fk);
+    if (!rp)
+        return 0;
+    return check_access(fk, *rp & 0x7FFFFFFF);
+}
+
+SEC("lsm/inode_rename")
+int BPF_PROG(zt_file_rename, struct inode *old_dir, struct dentry *old_dentry,
+             struct inode *new_dir, struct dentry *new_dentry) {
+    struct inode *victim = BPF_CORE_READ(old_dentry, d_inode);
+    if (!victim)
+        return 0;
+    struct file_key fk = {};
+    fk.ino = BPF_CORE_READ(victim, i_ino);
+    fk.dev = BPF_CORE_READ(victim, i_sb, s_dev);
+    __u32 *rp = bpf_map_lookup_elem(&protected_files, &fk);
+    if (!rp)
+        return 0;
+    return check_access(fk, *rp & 0x7FFFFFFF);
 }

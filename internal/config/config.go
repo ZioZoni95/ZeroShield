@@ -40,23 +40,36 @@ const (
 // leggere ".kube/config". Serve a contenere i danni se un tool viene compilato
 // con un bug o con una dipendenza malevola.
 type Rule struct {
-	Name  string   `yaml:"name"`
-	Paths []string `yaml:"paths"` // relativi alla home, oppure assoluti; glob ammessi; le directory sono ricorsive
-	Allow []string `yaml:"allow"` // nomi (risolti via PATH) o percorsi assoluti di binari
+	Name      string   `yaml:"name"`
+	Paths     []string `yaml:"paths"`      // relativi alla home, oppure assoluti; glob ammessi; le directory sono ricorsive
+	Allow     []string `yaml:"allow"`      // nomi (risolti via PATH) o percorsi assoluti di binari
+	DenyWrite bool     `yaml:"deny_write"` // se true, nega anche O_WRONLY/O_TRUNC (default false: chiavi e backup scrivibili)
+}
+
+// CanaryConfig: esche anti-ransomware via fanotify (vedi docs/CANARY.md).
+// Disabilitato di default: va tarato in audit sui propri pattern di scrittura.
+type CanaryConfig struct {
+	Enabled    bool     `yaml:"enabled"`
+	Dirs       []string `yaml:"dirs"`        // relativi alla home o assoluti
+	Names      []string `yaml:"names"`       // nomi esca (mai aperti dall'utente)
+	BurstCount int      `yaml:"burst_count"` // rename/delete oltre soglia in finestra = allarme
+	BurstSecs  int      `yaml:"burst_secs"`
+	ExcludeExe []string `yaml:"exclude_exe"` // sottostringhe exe escluse dal conteggio massa
 }
 
 // Config: file YAML completo. I campi non presenti nel file restano quelli del profilo.
 type Config struct {
-	Profile        string   `yaml:"profile"`
-	Mode           string   `yaml:"mode"` // audit | enforce
-	User           string   `yaml:"user"`
-	Interface      string   `yaml:"interface"`
-	BlockPoisoning bool     `yaml:"block_poisoning"`
-	BlockSubnets   []string `yaml:"block_subnets"`
-	Rules          []Rule   `yaml:"rules"`       // sostituisce le regole del profilo
-	ExtraRules     []Rule   `yaml:"extra_rules"` // si aggiunge a quelle del profilo
-	LogFormat      string   `yaml:"log_format"`  // text | json
-	RescanSeconds  int      `yaml:"rescan_seconds"`
+	Profile        string       `yaml:"profile"`
+	Mode           string       `yaml:"mode"` // audit | enforce
+	User           string       `yaml:"user"`
+	Interface      string       `yaml:"interface"`
+	BlockPoisoning bool         `yaml:"block_poisoning"`
+	BlockSubnets   []string     `yaml:"block_subnets"`
+	Rules          []Rule       `yaml:"rules"`       // sostituisce le regole del profilo
+	ExtraRules     []Rule       `yaml:"extra_rules"` // si aggiunge a quelle del profilo
+	Canary         CanaryConfig `yaml:"canary"`
+	LogFormat      string       `yaml:"log_format"` // text | json
+	RescanSeconds  int          `yaml:"rescan_seconds"`
 }
 
 // Gruppi di regole predefiniti.
@@ -251,6 +264,21 @@ func (c *Config) Validate() error {
 	// Sotto i 5 secondi il rescan diventa un busy-loop di Put su mappe grandi.
 	if c.RescanSeconds < 5 {
 		return fmt.Errorf("rescan_seconds deve essere >= 5")
+	}
+	if c.Canary.Enabled {
+		// Default sensati se abilitato ma non dettagliato: Documents + 3 esche.
+		if len(c.Canary.Dirs) == 0 {
+			c.Canary.Dirs = []string{"Documents"}
+		}
+		if len(c.Canary.Names) == 0 {
+			c.Canary.Names = []string{".canary-accounts.xlsx", ".canary-wallet.dat", ".canary-backup.zip"}
+		}
+		if c.Canary.BurstCount <= 0 {
+			c.Canary.BurstCount = 50
+		}
+		if c.Canary.BurstSecs <= 0 {
+			c.Canary.BurstSecs = 10
+		}
 	}
 	for i, r := range c.AllRules() {
 		if r.Name == "" || len(r.Paths) == 0 {

@@ -94,6 +94,31 @@ func (a *App) startup(ctx context.Context) {
 			_ = err
 		}
 	}()
+
+	// Canary: stesso retry, evento dedicato + notifica desktop sempre
+	// (anche in audit: un tocco esca merita attenzione anche solo loggato).
+	go func() {
+		for {
+			err := ipc.SubscribeCanary(ctx, func(al ipc.CanaryAlert) {
+				runtime.EventsEmit(a.ctx, "shield:canary", al)
+				title := "ZeroShield — esca canary toccata"
+				if al.Action != "killed" {
+					title += " (audit)"
+				}
+				_ = beeep.Notify(title,
+					fmt.Sprintf("pid %d (%s) %s %s — %s", al.PID, al.Exe, al.Kind, al.Path, al.Reason), "")
+			})
+			if ctx.Err() != nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
+			_ = err
+		}
+	}()
 }
 
 // GetStatus per il primo paint sincrono (poi arrivano gli eventi push).

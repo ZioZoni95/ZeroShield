@@ -52,6 +52,20 @@ type SourceStat struct {
 	LastSeen string `json:"last_seen"`
 }
 
+// CanaryAlert: trip esca o massa rilevati dal watcher fanotify.
+// Action: "killed" (enforce, PID terminato) o "alert" (loggato e basta).
+type CanaryAlert struct {
+	Type   string `json:"-"`
+	Time   string `json:"time"`
+	Action string `json:"action"`
+	PID    int    `json:"pid"`
+	Comm   string `json:"comm,omitempty"`
+	Exe    string `json:"exe,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Kind   string `json:"kind"`
+	Reason string `json:"reason"`
+}
+
 // Status: fotografia del demone. Inviata a ogni nuova connessione e su UpdateStatus.
 type Status struct {
 	Type           string        `json:"-"`
@@ -163,6 +177,25 @@ func (s *Server) Publish(ev WireEvent) {
 	s.mu.Unlock()
 }
 
+// PublishCanary invia un alert canary a tutti i connessi (drop se pieni).
+func (s *Server) PublishCanary(a CanaryAlert) {
+	a.Time = time.Now().UTC().Format(time.RFC3339)
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return
+	}
+	raw = append(raw, '\n')
+	line := markType(raw, "canary")
+	s.mu.Lock()
+	for ch := range s.subs {
+		select {
+		case ch <- line:
+		default:
+		}
+	}
+	s.mu.Unlock()
+}
+
 // Close chiude listener, connessioni e rimuove il socket.
 func (s *Server) Close() {
 	s.mu.Lock()
@@ -254,9 +287,28 @@ func GetStatus() (Status, error) {
 	return st, nil
 }
 
-// Subscribe resta connesso e chiama fn per ogni evento (salta le righe status).
+// Subscribe resta connesso e chiama fn per ogni evento (salta le altre righe).
 // Ritorna alla cancellazione del contesto o a errore di rete.
 func Subscribe(ctx context.Context, fn func(WireEvent)) error {
+	return subscribeType(ctx, "event", func(raw []byte) {
+		var ev WireEvent
+		if err := json.Unmarshal(raw, &ev); err == nil {
+			fn(ev)
+		}
+	})
+}
+
+// SubscribeCanary come Subscribe ma per gli alert canary (fanotify).
+func SubscribeCanary(ctx context.Context, fn func(CanaryAlert)) error {
+	return subscribeType(ctx, "canary", func(raw []byte) {
+		var a CanaryAlert
+		if err := json.Unmarshal(raw, &a); err == nil {
+			fn(a)
+		}
+	})
+}
+
+func subscribeType(ctx context.Context, typ string, fn func(raw []byte)) error {
 	d := net.Dialer{Timeout: 2 * time.Second}
 	conn, err := d.DialContext(ctx, "unix", SocketPath)
 	if err != nil {
@@ -274,14 +326,10 @@ func Subscribe(ctx context.Context, fn func(WireEvent)) error {
 		if err := json.Unmarshal(sc.Bytes(), &env); err != nil {
 			continue
 		}
-		if env.Type != "event" {
+		if env.Type != typ {
 			continue
 		}
-		var ev WireEvent
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
-			continue
-		}
-		fn(ev)
+		fn(sc.Bytes())
 	}
 	return sc.Err()
 }

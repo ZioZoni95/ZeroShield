@@ -79,6 +79,15 @@ function renderEvents() {
         return;
     }
     const rows = [...events].reverse().slice(0, 200).map(e => {
+        if (e.canary) {
+            const tag = e.action === 'killed'
+                ? `<span class="tag tag-block">🐤 KILL</span>`
+                : `<span class="tag tag-audit">🐤 canary</span>`;
+            const t = (e.time || '').slice(11, 19);
+            const cls = e.action === 'killed' ? 'row-block' : 'row-audit';
+            return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td>canary</td>
+            <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.kind || '')}</td><td class="mono">${esc(e.exe || '')} ${esc(e.path || '')}</td></tr>`;
+        }
         const tag = e.action === 'blocked'
             ? `<span class="tag tag-block">${ICO_BLOCK} BLOCCO</span>`
             : `<span class="tag tag-audit">${ICO_AUDIT} audit</span>`;
@@ -181,5 +190,36 @@ EventsOn('shield:event', ev => {
     if (events.length > 200) events = events.slice(-200);
     render();
 });
+
+// Throttle notifiche canary lato UI (il backend notifica già i blocked;
+// qui solo toast visivo: la riga resta comunque in tabella).
+let lastCanaryToast = 0;
+EventsOn('shield:canary', a => {
+    events.push({
+        canary: true, time: a.time, action: a.action, pid: a.pid,
+        kind: a.kind, exe: a.exe, path: a.path, rule: 'canary',
+    });
+    if (events.length > 200) events = events.slice(-200);
+    const now = Date.now();
+    if (now - lastCanaryToast > 10000) {
+        lastCanaryToast = now;
+        toast(`🐤 Canary: ${a.action} pid=${a.pid} (${a.kind})`);
+    }
+    render();
+});
+
+// Toast non bloccante in alto a destra, sparisce da solo.
+function toast(text) {
+    let el = document.getElementById('toast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'toast';
+        document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), 6000);
+}
 
 boot();

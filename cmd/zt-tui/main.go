@@ -59,6 +59,8 @@ type statusMsg struct {
 
 type eventMsg struct{ ev ipc.WireEvent }
 
+type canaryMsg struct{ a ipc.CanaryAlert }
+
 type tickMsg struct{}
 
 // sweepMsg avanza la spazzata del radar (solo eye-candy: i dati restano eBPF).
@@ -71,6 +73,7 @@ type model struct {
 	st       ipc.Status
 	connErr  error
 	events   []ipc.WireEvent
+	canaries []ipc.CanaryAlert
 	paused   bool
 	offset   int // scroll lista eventi (0 = fondo/live)
 	sweep    int // angolo spazzata radar, gradi
@@ -163,6 +166,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.events = m.events[len(m.events)-200:]
 		}
 		return m, nil
+	case canaryMsg:
+		m.canaries = append(m.canaries, msg.a)
+		if len(m.canaries) > 50 {
+			m.canaries = m.canaries[len(m.canaries)-50:]
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -218,8 +227,8 @@ func (m model) tabBar() string {
 		}
 	}
 	extra := ""
-	if m.tab == tabEvents && len(m.events) > 0 {
-		extra = dimStyle.Render(fmt.Sprintf("  %d eventi", len(m.events)))
+	if m.tab == tabEvents && len(m.events)+len(m.canaries) > 0 {
+		extra = dimStyle.Render(fmt.Sprintf("  %d eventi", len(m.events)+len(m.canaries)))
 		if m.paused {
 			extra += badgeAudit.Render("  ⏸ in pausa")
 		}
@@ -257,7 +266,17 @@ func (m model) statusView() string {
 }
 
 func (m model) eventsView() string {
-	if len(m.events) == 0 {
+	var rows []string
+	// Canary in testa: kill/allarmi anti-ransomware meritano visibilita' massima.
+	for _, a := range m.canaries {
+		icon := evAudit.Render("🐤 CANARY ")
+		if a.Action == "killed" {
+			icon = evBlock.Render("🐤 KILL    ")
+		}
+		rows = append(rows, fmt.Sprintf("%s %s  pid=%-6d %s %s (%s)",
+			icon, a.Time[11:19], a.PID, a.Exe, a.Path, a.Reason))
+	}
+	if len(m.events) == 0 && len(rows) == 0 {
 		return dimStyle.Render("Nessun evento ancora. In audit gli accessi legittimi compaiono qui;\npassa a enforce solo quando i log sono puliti.")
 	}
 	// Altezza visibile: terminale meno header/footer, con margine.
@@ -276,7 +295,6 @@ func (m model) eventsView() string {
 	if end > len(m.events) {
 		end = len(m.events)
 	}
-	var rows []string
 	for _, ev := range m.events[start:end] {
 		icon := evAudit.Render("👁 AUDIT  ")
 		if ev.Action == "blocked" {
@@ -474,6 +492,9 @@ func dump() string {
 		{Time: "2026-10-02T10:35:05Z", Action: "blocked", PID: 48921, Comm: "cat", Exe: "/usr/bin/cat", Rule: "cloud-creds", Inode: 9740993},
 		{Time: "2026-10-02T10:35:07Z", Action: "blocked", PID: 5317, Comm: "ssh", Exe: "/tmp/ssh", Rule: "ssh-keys", Inode: 112345},
 	}
+	m.canaries = []ipc.CanaryAlert{
+		{Time: "2026-10-02T10:35:09Z", Action: "killed", PID: 6666, Exe: "/usr/bin/python3", Path: "/home/utente/Documents/.canary-accounts.xlsx", Kind: "write", Reason: "tocco esca canary"},
+	}
 	var b strings.Builder
 	for i, n := range tabNames {
 		m.tab = i
@@ -492,23 +513,26 @@ func main() {
 		return
 	}
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
-	// Stream eventi in background: i messaggi viaggiano via p.Send, il loop
-	// resta reattivo anche senza demone (solo status in errore).
-	go func() {
-		_ = ipc.Subscribe(context.Background(), func(ev ipc.WireEvent) {
-			p.Send(eventMsg{ev: ev})
-		})
-		// Se il demone non c'e' o cade, Subscribe ritorna: riprova ogni 3s
-		// finche' il programma vive.
+	// Stream eventi + canary in background: i messaggi viaggiano via p.Send,
+	// il loop resta reattivo anche senza demone (solo status in errore).
+	// retryLoop: se il demone non c'e' o cade, riprova ogni 3s per sempre.
+	retryLoop := func(sub func(context.Context) error) {
+		if err := sub(context.Background()); err == nil {
+			return
+		}
 		for {
 			time.Sleep(3 * time.Second)
-			if err := ipc.Subscribe(context.Background(), func(ev ipc.WireEvent) {
-				p.Send(eventMsg{ev: ev})
-			}); err == nil {
+			if err := sub(context.Background()); err == nil {
 				return
 			}
 		}
-	}()
+	}
+	go retryLoop(func(ctx context.Context) error {
+		return ipc.Subscribe(ctx, func(ev ipc.WireEvent) { p.Send(eventMsg{ev: ev}) })
+	})
+	go retryLoop(func(ctx context.Context) error {
+		return ipc.SubscribeCanary(ctx, func(a ipc.CanaryAlert) { p.Send(canaryMsg{a: a}) })
+	})
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)

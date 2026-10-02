@@ -111,6 +111,15 @@ tr.row-block td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .net-ban { display: inline-flex; align-items: center; gap: 8px; }
 .net-ban svg { width: 16px; height: 16px; color: var(--red); }
 .offline { max-width: 560px; }
+#toast {
+    position: fixed; top: 14px; right: 14px; z-index: 50;
+    background: var(--red-soft); color: var(--red);
+    border: 1px solid var(--red); border-radius: 12px;
+    padding: 10px 16px; font-weight: 600; font-size: 13px;
+    opacity: 0; transform: translateY(-8px); transition: all .25s;
+    pointer-events: none; max-width: 360px;
+}
+#toast.show { opacity: 1; transform: none; }
 #radar {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 16px; max-width: 100%; height: auto; margin-bottom: 14px;

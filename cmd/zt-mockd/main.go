@@ -71,12 +71,21 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	ticker := time.NewTicker(1500 * time.Millisecond)
 	defer ticker.Stop()
+	// Canary finto ogni ~7s per vedere righe 🐤 e toast senza kernel.
+	canaryTick := time.NewTicker(7 * time.Second)
+	defer canaryTick.Stop()
 	i := 0
 	for {
 		select {
 		case <-ticker.C:
 			srv.Publish(script[i%len(script)])
 			i++
+		case <-canaryTick.C:
+			srv.PublishCanary(ipc.CanaryAlert{
+				Action: "killed", PID: 6666, Exe: "/usr/bin/python3",
+				Path: "/home/utente/Documents/.canary-accounts.xlsx",
+				Kind: "write", Reason: "tocco esca canary (mock)",
+			})
 		case <-stop:
 			fmt.Fprintln(os.Stderr, "mockd: stop.")
 			return

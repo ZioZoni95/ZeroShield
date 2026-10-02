@@ -80,6 +80,11 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
   tolleranti, unit StartLimit+ExecStartPre, sed TESTING), unit test
   ipc/audit/config + fuzz seed + CI GitHub, notifiche desktop GUI su blocchi
   (throttle 10s). Programma vero mai avviato.
+- [x] Limiti risolti: `deny_write` per-regola (bit31 valore mappa), hook LSM
+  `inode_unlink`/`inode_rename` con whitelist condivisa, watcher canary
+  fanotify (trip esca=kill in enforce, massa=alert), watchdog systemd
+  (pinning rifiutato: hook orfani peggio di down visibile). Egress/VPN
+  kill-switch pianificati in `docs/FEATURE_PLAN.md` (non implementati).
 - [x] GUI `zt-gui` (Wails, stile macOS): sidebar, badge mode, eventi live,
   regole, rete. Build `make gui` (tag `webkit2_41` su Ubuntu 24.04), avvio
   verificato headless. Nota: lanciare fuori da env snap (unset GTK_PATH/

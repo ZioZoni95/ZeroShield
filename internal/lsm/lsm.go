@@ -45,49 +45,57 @@ type key struct {
 	Extra uint32
 }
 
-// Manager: stato del lato userspace dell'hook LSM.
+// Manager: stato del lato userspace degli hook LSM.
 //
 // I tipi eBPF sono quelli generici di cilium/ebpf, NON gli stub generati da
 // bpf2go: cosi' il package compila e si testa senza toolchain eBPF né kernel
 // (gli stub vivono solo nel demone e sono gitignored). Il demone passa
-// objs.ProtectedFiles / objs.AllowedExes / objs.ZtFileOpen.
+// objs.ProtectedFiles / objs.AllowedExes e i programmi
+// (ZtFileOpen, ZtFileUnlink, ZtFileRename).
 type Manager struct {
 	protected *ebpf.Map
 	allowed   *ebpf.Map
-	prog      *ebpf.Program
+	progs     []*ebpf.Program
 	home      string
 	rules     []config.Rule
-	link      link.Link
+	links     []link.Link
 }
 
-func New(protected, allowed *ebpf.Map, prog *ebpf.Program, home string, rules []config.Rule) *Manager {
-	return &Manager{protected: protected, allowed: allowed, prog: prog, home: home, rules: rules}
+func New(protected, allowed *ebpf.Map, progs []*ebpf.Program, home string, rules []config.Rule) *Manager {
+	return &Manager{protected: protected, allowed: allowed, progs: progs, home: home, rules: rules}
 }
 
-// Attach aggancia l'hook LSM file_open.
+// Attach aggancia gli hook LSM (file_open + unlink + rename).
 //
 // Restituisce un errore invece di loggare: main lo tratta come fatale. Un hook
 // non agganciato mentre il demone dichiara "scudo attivo" e' il peggior caso
-// possibile, perche' l'utente si crede protetto.
+// possibile, perche' l'utente si crede protetto. Se uno qualsiasi fallisce,
+// quelli già agganciati vengono staccati e si esce: mai protezione a metà.
 //
-// Nota: il programma va agganciato una volta sola. Un secondo aggancio sullo stesso
-// hook crea una seconda istanza attiva, non sostituisce la prima.
+// Nota: ogni programma va agganciato una volta sola. Un secondo aggancio sullo
+// stesso hook crea una seconda istanza attiva, non sostituisce la prima.
 func (m *Manager) Attach() error {
-	l, err := link.AttachLSM(link.LSMOptions{Program: m.prog})
-	if err != nil {
-		return fmt.Errorf("attach LSM: %w (verifica che 'bpf' sia in /sys/kernel/security/lsm)", err)
+	for _, p := range m.progs {
+		l, err := link.AttachLSM(link.LSMOptions{Program: p})
+		if err != nil {
+			m.Close()
+			return fmt.Errorf("attach LSM: %w (verifica che 'bpf' sia in /sys/kernel/security/lsm)", err)
+		}
+		m.links = append(m.links, l)
 	}
-	m.link = l
 	return nil
 }
 
-// Close stacca l'hook. Da qui in poi la protezione non e' piu' attiva: e' il punto
+// Close stacca gli hook. Da qui in poi la protezione non e' piu' attiva: e' il punto
 // in cui il servizio e' fermo. Nessun pinning in bpffs, quindi non c'e' persistenza
 // oltre la vita del processo.
 func (m *Manager) Close() {
-	if m.link != nil {
-		m.link.Close()
+	for _, l := range m.links {
+		if l != nil {
+			l.Close()
+		}
 	}
+	m.links = nil
 }
 
 // RuleName: nome della regola dall'id (indice + 1) riportato negli eventi.
@@ -115,10 +123,17 @@ func (m *Manager) Sync() (protected, allowed int) {
 
 	for i, r := range m.rules {
 		id := uint32(i + 1) // id 0 è riservato: in una map, 0 come valore significa "non protetto"
+		// deny_write viaggia nel bit31 del valore (il kernel lo separa dall'id).
+		// Stessa mappa, stessa lookup: zero costo aggiuntivo nel percorso caldo.
+		val := id
+		if r.DenyWrite {
+			val |= 1 << 31
+			log.Printf("⛔ regola %q: deny_write attivo, scrittura negata anche a root", r.Name)
+		}
 		for _, p := range r.Paths {
 			for _, f := range expand(m.home, p) {
 				if k, ok := fileKey(f); ok {
-					wantFiles[k] = id
+					wantFiles[k] = val
 				}
 			}
 		}

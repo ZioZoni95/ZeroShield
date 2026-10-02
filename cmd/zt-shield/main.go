@@ -30,13 +30,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 
 	"zt-shield/bpf"
 	"zt-shield/internal/audit"
+	"zt-shield/internal/canary"
 	"zt-shield/internal/config"
 	"zt-shield/internal/lsm"
+	"zt-shield/internal/watchdog"
 	"zt-shield/internal/xdp"
 	"zt-shield/pkg/ipc"
 )
@@ -95,7 +98,9 @@ func main() {
 	// Un'hook non agganciato che si dichiara attivo e' peggio di un'hook assente:
 	// l'utente crede di essere protetto. Per questo Attach() fa restituire l'errore
 	// e main lo trasforma in uscita fatale invece di proseguire.
-	mgr := lsm.New(objs.ProtectedFiles, objs.AllowedExes, objs.ZtFileOpen, home, cfg.AllRules())
+	mgr := lsm.New(objs.ProtectedFiles, objs.AllowedExes,
+		[]*ebpf.Program{objs.ZtFileOpen, objs.ZtFileUnlink, objs.ZtFileRename},
+		home, cfg.AllRules())
 
 	// Popola le mappe PRIMA di agganciare l'hook: cosi' al primo open() dal sistema
 	// i file sono gia' protetti, senza una finestra in cui sono liberi.
@@ -162,6 +167,11 @@ func main() {
 			log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
 			refreshRadar()
 			publishStatus()
+			// Watchdog systemd (no-op senza NOTIFY_SOCKET): un demone hung
+			// viene riavviato invece di fingersi attivo.
+			if err := watchdog.Ping(); err != nil {
+				log.Printf("⚠️ watchdog: %v", err)
+			}
 		}
 	}()
 
@@ -235,6 +245,43 @@ func main() {
 			Exe: ev.Exe, Rule: ev.Rule, Inode: ev.Inode,
 		})
 	})
+
+	// --- Canary anti-ransomware (fanotify, solo userspace) ------------------------------
+	// Disabilitato di default (canary.enabled). Non fatale: senza CAP_SYS_ADMIN
+	// il watcher non parte ma LSM/XDP restano attivi. Vedi docs/CANARY.md.
+	if cfg.Canary.Enabled {
+		w, err := canary.Start(home, cfg.Canary.Dirs, cfg.Canary.Names,
+			cfg.Canary.ExcludeExe, cfg.Canary.BurstCount, cfg.Canary.BurstSecs,
+			cfg.Enforce(), func(hit canary.Hit) {
+				icon := "🐤 [CANARY-ALERT]"
+				if hit.Verdict == canary.VerdictKill {
+					if hit.Killed {
+						icon = "🐤 [CANARY-KILL]"
+					} else if hit.KillErr != nil {
+						icon = "🐤 [CANARY-KILL-FALLITO]"
+					}
+				}
+				log.Printf("%s pid=%d exe=%s kind=%s path=%s motivo=%s", icon,
+					hit.PID, hit.Exe, hit.Kind, hit.Path, hit.Reason)
+				if srv == nil {
+					return
+				}
+				action := "alert"
+				if hit.Verdict == canary.VerdictKill && hit.Killed {
+					action = "killed"
+				}
+				srv.PublishCanary(ipc.CanaryAlert{
+					Action: action, PID: hit.PID, Exe: hit.Exe, Path: hit.Path,
+					Kind: string(hit.Kind), Reason: hit.Reason,
+				})
+			})
+		if err != nil {
+			log.Printf("⚠️ canary non attivo: %v", err)
+		} else {
+			defer w.Close()
+			log.Println("🐤 Watcher canary attivo.")
+		}
+	}
 
 	// --- Ciclo di vita ----------------------------------------------------------------
 	// Resta in attesa di un segnale. Alla fine le defer girano in ordine inverso:

@@ -1,0 +1,39 @@
+# FEATURE_PLAN — egress, VPN kill-switch, antivirus (pianificazione, non implementato)
+
+Principio: ZeroShield non cifra e non ispeziona traffico altrui. La cifratura
+vera su Wi-Fi pubblico è WireGuard; qui si pianifica solo ciò che l'agente può
+fare da solo: impedire che traffico in chiaro esca quando non deve.
+
+## 1. VPN kill-switch (priorità alta, fattibile)
+
+Quando il profilo è `public-wifi`/`paranoid` e il tunnel è su:
+
+- nftables/iptables: OUTPUT solo verso endpoint VPN + DNS del tunnel,
+  INPUT solo da tunnel + DHCP essenziale. Tutto il resto DROP + log.
+- XDP resta per poisoning in ingresso (non vede egress).
+- Fail-safe: se il tunnel cade, niente esce (meglio offline che in chiaro).
+
+Serve: opzione `vpn:` in YAML (endpoint, interfaccia tunnel), script
+`vpn_killswitch.sh` idempotente + rollback, test in lab (kill tunnel → zero
+leak verificato con tcpdump su gateway).
+
+## 2. Auto-VPN su SSID ostili (media, facile)
+
+Dispatcher NetworkManager: se SSID non in allowlist → `wg-quick up` + profilo
+`public-wifi`. Solo script + docs, nessun kernel.
+
+## 3. Egress-filter per processo (bassa, costoso)
+
+Cgroup `INGRESS/EGRESS` eBPF: allowlist binari→porte (es. solo browser su
+443). Verifier nuovo, tuning lungo, rompe captive portal. Dopo 1+2.
+
+## 4. Antivirus: fuori scopo, integrazione invece che rewrite
+
+Non scriviamo motori AV. Gancio previsto: fanotify `FAN_OPEN_PERM` (stesso
+meccanismo del watcher canary) verso scanner esterno (es. ClamAV on-access).
+Il demone nega l'open se lo scanner dice male. Solo hook + config
+`av_socket:` — il motore resta altrui.
+
+## Ordine
+
+kill-switch → auto-VPN → (canary già in lavoro, propedeutico a 4) → egress.

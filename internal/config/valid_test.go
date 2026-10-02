@@ -52,6 +52,37 @@ func TestEmptyAllowAndDupesRejected(t *testing.T) {
 	}
 }
 
+func TestDenyWriteParsing(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	yaml := "profile: home\nextra_rules:\n  - name: rootca\n    paths: [\".pki/ca.crt\"]\n    allow: [\"openssl\"]\n    deny_write: true\n"
+	if err := os.WriteFile(p, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range c.AllRules() {
+		if r.Name == "rootca" {
+			found = true
+			if !r.DenyWrite {
+				t.Error("deny_write perso nel parsing")
+			}
+		}
+	}
+	if !found {
+		t.Error("extra_rule rootca sparita")
+	}
+	// Default: preset senza deny_write.
+	base, _ := Preset("home")
+	for _, r := range base.Rules {
+		if r.DenyWrite {
+			t.Errorf("regola builtin %q con deny_write inatteso", r.Name)
+		}
+	}
+}
+
 func TestUnknownKeyRejected(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
 	if err := os.WriteFile(p, []byte("profile: home\nblock_poisioning: true\n"), 0o600); err != nil {

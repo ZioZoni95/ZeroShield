@@ -73,3 +73,41 @@ func TestGetStatusNoDaemon(t *testing.T) {
 		t.Error("atteso errore senza demone")
 	}
 }
+
+func TestCanaryStream(t *testing.T) {
+	withTempSocket(t)
+	srv, err := NewServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	srv.UpdateStatus(Status{Profile: "home", Mode: "enforce"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got := make(chan CanaryAlert, 2)
+	evs := make(chan WireEvent, 2)
+	go func() {
+		_ = SubscribeCanary(ctx, func(a CanaryAlert) { got <- a })
+	}()
+	go func() {
+		_ = Subscribe(ctx, func(ev WireEvent) { evs <- ev })
+	}()
+	time.Sleep(200 * time.Millisecond)
+	srv.PublishCanary(CanaryAlert{Action: "killed", PID: 666, Kind: "write", Reason: "tocco esca"})
+
+	select {
+	case a := <-got:
+		if a.PID != 666 || a.Action != "killed" {
+			t.Errorf("alert alterato: %+v", a)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout alert canary")
+	}
+	// Il canary non deve inquinare lo stream eventi normale.
+	select {
+	case ev := <-evs:
+		t.Errorf("evento spurio sullo stream wire: %+v", ev)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
