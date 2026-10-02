@@ -43,11 +43,25 @@ solo da compilatore, test unitari e analisi statica.
    esistono sempre a 0, quindi il default di `setting()` non scatta mai. Il demone scrive
    sempre le impostazioni, quindi in produzione non cambia nulla; `zt-probe` ora le imposta.
 
-## Cosa resta da provare (serve una VM con BPF LSM caricabile)
+## Runner GitHub (CI, stesso giorno)
+
+Lo step `Kernel reale (zt-probe)` del job `ebpf` (PR #12) sul kernel `ubuntu-24.04`:
+
+| Programma | Esito |
+|---|---|
+| `xdp_shield` | ✅ accettato + test funzionale su `lo` superato |
+| `zt_file_open`, `zt_file_unlink`, `zt_file_rename`, `zt_path_truncate` | ✅ **accettati dal verifier** |
+| Canary fanotify (test root) | ✅ |
+
+Prima verifica del verifier sugli hook LSM: il codice C dei segreti è accettato dal
+kernel. Non è stato agganciato (sul runner `bpf` non è nella lista LSM attivi), quindi
+il blocco effettivo dei file resta da vedere.
+
+## Cosa resta da provare (serve una VM con BPF LSM attivo)
 
 Ubuntu 24.04 in VM con `lsm=...,bpf` sulla riga di comando del kernel, poi:
 
-- `make probe` → i 4 programmi LSM devono risultare ✅;
+- `make probe` → i 4 programmi LSM ✅ (già visto sul runner GitHub);
 - collaudo completo di [`TESTING_LAB.md`](TESTING_LAB.md): `cat ~/.kube/config` negato in
   enforce, whitelist per identità, `mv`/`: >`/`truncate` su una chiave negati, symlink verso
   file di sistema ignorato, watchdog systemd stabile oltre 2 minuti.

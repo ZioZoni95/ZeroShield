@@ -22,9 +22,9 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 </p>
 
 > [!WARNING]
-> **Progetto sperimentale, mai usato in produzione.** L'hook LSM che protegge i segreti
-> non è ancora stato caricato su un kernel reale: è verificato solo da compilatore,
-> test unitari e analisi statica. Usalo in **VM** e in modalità `audit` finché
+> **Progetto sperimentale, mai usato in produzione.** Gli hook LSM che proteggono i
+> segreti passano il verifier del kernel, ma non sono mai stati **agganciati** su una
+> macchina reale: il blocco effettivo dei file non è ancora stato visto funzionare. Usalo in **VM** e in modalità `audit` finché
 > `zt-probe` e il collaudo di [`docs/TESTING_LAB.md`](docs/TESTING_LAB.md) non passano
 > sulla tua macchina. Stato dettagliato in [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md).
 
@@ -34,7 +34,7 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 | Canary anti-ransomware (fanotify) | ✅ **testato su kernel reale** | tocco esca, allarme di massa, kill in enforce (`make test-root`) |
 | TUI / GUI / mock | ✅ testato | `zt-tui --dump` contro `zt-mockd`; build GUI in CI |
 | Config, IPC, audit, whitelist | ✅ test unitari | `go test -race`, fuzz, CI |
-| **Hook LSM (segreti)** | ⚠️ **compila, mai caricato** | kernel di test senza programmi LSM (`EPERM`): serve una VM |
+| **Hook LSM (segreti)** | 🟡 **verifier ok, mai agganciato** | `zt-probe` in CI: i 4 programmi accettati dal kernel del runner GitHub; attach + blocco reale da provare in VM |
 | Script (`harden_system.sh`, …) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
 
 ---
