@@ -171,3 +171,20 @@ gosec, triage dei risultati restanti (non bloccanti, in SARIF):
 G115 su layout kernel/fanotify e `Mask.Size()` (valori limitati, falsi
 positivi); G302/G301 socket IPC 0666 (scelta documentata); G304 config da
 `-config` (input dell'admin); G704 `NOTIFY_SOCKET` (impostato da systemd).
+
+## 11. Primo collaudo su kernel reale 2026-10-02 — APPLICATI
+
+Dettagli, ambiente e comandi in `docs/TEST_SANDBOX.md`.
+
+- **Canary mai partito.** `fanotify_mark` sulle cartelle → `EINVAL` (serve
+  `FAN_REPORT_FID`). Ora gruppo classico per le esche + gruppo FID per le dir.
+- **Race in `Watcher.Close()`.** fd chiusi con i loop vivi: il numero riusato dal
+  watcher successivo faceva "rubare" eventi. Ora `poll()` su fd + pipe di stop,
+  `WaitGroup`, chiusura dopo l'uscita dei loop. 10 ripetizioni con `-race` ok.
+- **`settings` ARRAY**: commento corretto (le voci partono da 0, nessun default).
+- **Nuovo `cmd/zt-probe`**: verifier per programma (rifiuto vero ≠ tipo non
+  supportato) e test funzionale XDP su loopback. `make probe`, step CI.
+- **Test root del canary** (`make test-root`, step CI con sudo).
+- **README**: avviso di maturità con tabella "cosa è testato", badge CI sulla
+  repo giusta, Go ≥ 1.26, `bpftool` da `linux-tools-generic` (autodetect nel
+  `Makefile`), struttura aggiornata.

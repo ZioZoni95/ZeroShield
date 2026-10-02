@@ -12,7 +12,7 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 </p>
 <p align="center"><i>MIT © 2026 ZioZoni95 · binari: <code>zt-shield</code> <code>zt-tui</code> <code>zt-gui</code></i></p>
 <p align="center">
-  <a href="https://github.com/ZioZoni95/personal_zeroT/actions/workflows/ci.yml"><img src="https://github.com/ZioZoni95/personal_zeroT/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/ZioZoni95/ZeroShield/actions/workflows/ci.yml"><img src="https://github.com/ZioZoni95/ZeroShield/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go"/>
   <img src="https://img.shields.io/badge/eBPF-cilium%2Febpf-8A2BE2" alt="eBPF"/>
   <img src="https://img.shields.io/badge/TUI-Bubble_Tea-FF75B7" alt="TUI"/>
@@ -20,6 +20,22 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
   <img src="https://img.shields.io/badge/GTK-WebKitGTK-green" alt="GTK"/>
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT"/>
 </p>
+
+> [!WARNING]
+> **Progetto sperimentale, mai usato in produzione.** L'hook LSM che protegge i segreti
+> non è ancora stato caricato su un kernel reale: è verificato solo da compilatore,
+> test unitari e analisi statica. Usalo in **VM** e in modalità `audit` finché
+> `zt-probe` e il collaudo di [`docs/TESTING_LAB.md`](docs/TESTING_LAB.md) non passano
+> sulla tua macchina. Stato dettagliato in [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md).
+
+| Componente | Stato | Come è stato verificato |
+|---|---|---|
+| XDP anti-poisoning + radar | ✅ **testato su kernel reale** | `zt-probe -xdp-lo`: verifier ok, 5355/5353 droppati, 9999 passa |
+| Canary anti-ransomware (fanotify) | ✅ **testato su kernel reale** | tocco esca, allarme di massa, kill in enforce (`make test-root`) |
+| TUI / GUI / mock | ✅ testato | `zt-tui --dump` contro `zt-mockd`; build GUI in CI |
+| Config, IPC, audit, whitelist | ✅ test unitari | `go test -race`, fuzz, CI |
+| **Hook LSM (segreti)** | ⚠️ **compila, mai caricato** | kernel di test senza programmi LSM (`EPERM`): serve una VM |
+| Script (`harden_system.sh`, …) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
 
 ---
 
@@ -107,7 +123,7 @@ flowchart TD
 ## 🗂️ Struttura della Repository
 
 ```text
-personal_zeroT/
+ZeroShield/
 ├── README.md                   # Questo file
 ├── LICENSE                     # MIT © 2026 ZioZoni95
 ├── docs/
@@ -116,23 +132,27 @@ personal_zeroT/
 │   ├── FIX_APPLICATI.md        # Fix applicati e ancora da applicare
 │   ├── TESTING.md              # Collaudo pratico (LSM, XDP, network namespaces)
 │   ├── TESTING_LAB.md          # Scenario lab reale in VM isolata (post-fix)
+│   ├── TEST_SANDBOX.md         # Cosa è stato testato davvero, dove e come
 │   ├── UI_RESEARCH.md          # Ricerca TUI/GUI e architettura IPC
 │   └── gemini-code-1790668303538.md # Specifiche iniziali e storico
 ├── Makefile                    # make build | build-tui | build-mock | gui | test | clean
 ├── go.mod
 ├── bpf/
-│   ├── zerotrust.c             # Kernel C: XDP (rete) e LSM (file_open)
+│   ├── zerotrust.c             # Kernel C: XDP (rete) e LSM (open/unlink/rename/truncate)
 │   └── gen.go                  # go:generate bpf2go (stub Go generati, non versionati)
 ├── cmd/zt-shield/main.go       # Entrypoint del demone
 ├── cmd/zt-tui/main.go          # TUI Bubble Tea (stato/eventi live, senza root)
 ├── cmd/zt-mockd/main.go        # Finto demone con dati sintetici (verifica UI senza root/eBPF)
+├── cmd/zt-probe/main.go        # Collaudo kernel: verifier per programma + XDP su loopback
 ├── pkg/ipc/                    # Socket Unix stato+eventi (demone root → UI utente)
 ├── zt-gui/                     # GUI desktop Wails stile macOS (vedi docs/UI_RESEARCH.md)
 ├── internal/
 │   ├── config/                 # Profili, regole, parsing YAML, validazione (+ test)
 │   ├── lsm/                    # Sync mappe file/binari, attach hook LSM
 │   ├── xdp/                    # Attach XDP (generic), trie LPM subnet
-│   └── audit/                  # Consumer ring buffer, output text/JSON
+│   ├── audit/                  # Consumer ring buffer, output text/JSON
+│   ├── canary/                 # Esche anti-ransomware (fanotify)
+│   └── watchdog/               # sd_notify per il watchdog systemd
 ├── configs/shield.example.yaml # Configurazione commentata
 └── scripts/
     ├── check_prereqs.sh        # Kernel, BTF, LSM bpf, toolchain
@@ -215,9 +235,10 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
 * **Toolchain:**
   ```bash
   sudo apt update
-  sudo apt install -y clang llvm libbpf-dev linux-tools-common linux-tools-generic bpftool golang-go make libfido2-dev fido2-tools ufw
+  sudo apt install -y clang llvm libbpf-dev linux-tools-common linux-tools-generic make libfido2-dev fido2-tools ufw
   ```
-  Serve Go >= 1.22 (se l'apt è più vecchio: `sudo snap install go --classic`).
+  `bpftool` arriva con `linux-tools-generic` (su Ubuntu 24.04 non esiste un pacchetto `bpftool`): il `Makefile` lo trova da solo, altrimenti `make build BPFTOOL=/percorso/bpftool`.
+  Serve **Go ≥ 1.26** (`go.mod` dichiara `toolchain go1.26.8`, che Go scarica da solo). Se l'apt è più vecchio: `sudo snap install go --classic`.
 
 ---
 
@@ -229,6 +250,9 @@ bash scripts/check_prereqs.sh
 
 # 2. Compila (genera vmlinux.h, stub eBPF, binario)
 make build
+
+# 2b. Il kernel accetta i programmi? (verifier per programma + XDP su loopback)
+make probe
 
 # 3. Prova in primo piano (profilo home = solo audit, non blocca nulla)
 sudo SHIELD_USER=$USER ./bin/zt-shield

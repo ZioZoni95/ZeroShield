@@ -1,7 +1,8 @@
 # Punti aperti — Local Zero-Trust Shield
 
 Stato: repo strutturata e implementata. `go vet` pulito, `go test ./internal/...` ok, `make build` produce `bin/zt-shield`.
-**Mai caricato nel kernel**: verifier non ancora visto.
+**Kernel reale (2026-10-02, `docs/TEST_SANDBOX.md`)**: XDP e canary collaudati;
+i 4 programmi LSM compilano ma il verifier non li ha ancora visti (serve VM con BPF LSM).
 Fix statici applicati e trascritti in `FIX_APPLICATI.md`; scenario lab aggiornato in `TESTING_LAB.md`.
 
 ## Origine e scopo (nota 2026-10-02)
@@ -53,7 +54,8 @@ furto-token (infostealer simulato, reverse shell) in VM isolata.
 
 ### Da revisione codice 2026-10-02 (fix applicati in `FIX_APPLICATI.md` sez. 9)
 
-- [ ] **Canary fanotify non parte.** `FAN_DELETE`/`FAN_MOVED_*` richiedono
+- [x] **Canary fanotify non parte.** Confermato e corretto su kernel reale
+  (2026-10-02, `docs/TEST_SANDBOX.md`): due gruppi fanotify. Testo originale: `FAN_DELETE`/`FAN_MOVED_*` richiedono
   `FAN_REPORT_FID` in `fanotify_init`, altrimenti `fanotify_mark` → `EINVAL`.
   Con FID pero' gli eventi non hanno fd e il path delle esche non si risolve:
   servono due gruppi (classico per le esche, FID per le dir). Riscrittura.

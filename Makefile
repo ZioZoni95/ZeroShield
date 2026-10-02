@@ -6,7 +6,7 @@
 # incorporato nel binario Go, quindi `go build` da solo produce un eseguibile
 # che non contiene i programmi kernel.
 
-.PHONY: all deps vmlinux generate build build-tui build-mock gui test lint check clean
+.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui test test-root lint check clean
 
 all: build
 
@@ -25,7 +25,9 @@ deps:
 # linux-tools-$(uname -r) fornisce la versione giusta.
 # BPFTOOL sovrascrivibile: in CI (e su Ubuntu senza wrapper) il binario sta in
 # /usr/lib/linux-tools/<versione>/bpftool. Es: make generate BPFTOOL=/percorso/bpftool
-BPFTOOL ?= bpftool
+# Default: bpftool nel PATH, altrimenti il primo in /usr/lib/linux-tools (Ubuntu
+# 24.04 non ha un pacchetto `bpftool`: lo porta linux-tools-generic).
+BPFTOOL ?= $(shell command -v bpftool 2>/dev/null || ls /usr/lib/linux-tools/*/bpftool 2>/dev/null | head -1)
 
 bpf/vmlinux.h:
 	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@
@@ -47,6 +49,14 @@ build: generate build-tui
 build-tui:
 	go build -o bin/zt-tui ./cmd/zt-tui
 
+# Probe: carica ogni programma eBPF da solo e prova XDP su loopback, senza
+# avviare il demone. Primo passo su una macchina nuova (vedi docs/TEST_SANDBOX.md).
+build-probe: generate
+	go build -o bin/zt-probe ./cmd/zt-probe
+
+probe: build-probe
+	sudo ./bin/zt-probe -xdp-lo
+
 # Mock: finto demone per verificare la TUI senza root/eBPF (dati inventati).
 # Uso sicuro ovunque: ./bin/zt-mockd & ./bin/zt-tui
 build-mock:
@@ -61,7 +71,11 @@ gui:
 # Test: solo i pacchetti con logica testabile, quindi config.
 # Nessun test richiede root o eBPF: per quello c'è TESTING.md.
 test:
-	go test ./internal/...
+	go test ./internal/... ./pkg/...
+
+# Test che richiedono root (fanotify reale del canary). In CI girano con sudo.
+test-root:
+	sudo -E env "PATH=$(PATH)" go test -count=1 -run Root -v ./internal/canary
 
 lint:
 	go vet ./...
