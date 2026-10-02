@@ -17,9 +17,12 @@ jobs:
       - name: Format
         run: test -z "$(gofmt -l cmd internal pkg bpf 2>/dev/null)"
       - name: Vet
-        run: go vet ./cmd/... ./pkg/... ./internal/...
+        # cmd/zt-shield escluso: richiede gli stub bpf2go (gitignored,
+        # generati da make generate con clang+BTF). Tutto il resto compila
+        # senza toolchain eBPF proprio grazie al disaccoppiamento.
+        run: go vet ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
       - name: Unit tests (no root, no eBPF)
-        run: go test ./internal/... ./pkg/...
+        run: go test ./cmd/zt-tui ./cmd/zt-mockd ./internal/... ./pkg/...
       - name: Shell syntax
         run: bash -n scripts/check_prereqs.sh && bash -n scripts/harden_system.sh && bash -n scripts/install_service.sh && bash -n scripts/setup_fido2.sh
       - name: Build TUI + mock (pure Go)
