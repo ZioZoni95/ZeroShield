@@ -20,5 +20,5 @@ configs/shield.yaml
 *.swp
 *~
 .DS_Store
-zt-gui
+zt-gui/zt-gui
 build/bin/
