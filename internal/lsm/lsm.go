@@ -114,13 +114,32 @@ func (m *Manager) Sync() (protected, allowed int) {
 			}
 		}
 		for _, a := range r.Allow {
-			if exe, ok := resolveExe(a); ok {
-				if k, ok := fileKey(exe); ok {
-					k.Extra = id
-					wantExes[k] = 1
-				}
+			// FIX: prima l'errore di risoluzione era scartato in silenzio da `continue`:
+			// binario legittimo fuori whitelist -> EACCES inspiegabile. Ora log esplicito
+			// con nome regola, cosi' l'utente sa cosa allargare o dove mettere path assoluto.
+			exe, ok := resolveExe(m.home, a)
+			if !ok {
+				log.Printf("⚠️ regola %q: binario %q non risolto (PATH demone: %q + /snap/bin + ~/.local/bin), NON in whitelist", r.Name, a, os.Getenv("PATH"))
+				continue
+			}
+			if k, ok := fileKey(exe); ok {
+				k.Extra = id
+				wantExes[k] = 1
 			}
 		}
+	}
+
+	// FIX: allarme capienza mappe. Oltre 16384 file / 1024 exe i Put falliscono con
+	// E2BIG e la protezione resta incompleta in silenzio. Ora avviso prima che accada.
+	const (
+		maxProtectedFiles = 16384
+		maxAllowedExes    = 1024
+	)
+	if len(wantFiles) > maxProtectedFiles {
+		log.Printf("⚠️ file protetti %d > capienza mappa %d: parte NON protetta, restringi le regole", len(wantFiles), maxProtectedFiles)
+	}
+	if len(wantExes) > maxAllowedExes {
+		log.Printf("⚠️ binari autorizzati %d > capienza mappa %d: parte NON in whitelist", len(wantExes), maxAllowedExes)
 	}
 
 	m.reconcile(m.objs.ProtectedFiles, wantFiles)
@@ -133,8 +152,8 @@ func (m *Manager) Sync() (protected, allowed int) {
 // Gli errori individuali vengono loggati e il sync prosegue. Un path che non si
 // risolve (binario non installato, profilo browser inesistente) non deve impedire
 // la protezione delle altre regole. Il caso peggiore resta quello in cui un tool
-// LEGITTIMO non entra in whitelist: l'utente riceve EACCES su un file suo e la
-// causa non e' nel log, solo nel conteggio "binari autorizzati: N".
+// LEGITTIMO non entra in whitelist: per questo Sync logga esplicitamente ogni
+// `allow` non risolto con il nome della regola (prima era silenzio).
 func (m *Manager) reconcile(mp *ebpf.Map, want map[key]uint32) {
 	// Fase 1: identificare le voci obsolete iterando la mappa.
 	// Nota: non si puo' cancellare durante l'iterazione, quindi si raccoglie prima.
@@ -146,6 +165,13 @@ func (m *Manager) reconcile(mp *ebpf.Map, want map[key]uint32) {
 		if _, ok := want[k]; !ok {
 			stale = append(stale, k)
 		}
+	}
+	// FIX: l'errore di iterazione non veniva mai controllato. Con una mappa
+	// corrotta o sotto pressione memoria, un'iterazione parziale cancellava solo
+	// parte delle voci obsolete: inode riassegnati restavano protetti per errore.
+	if err := it.Err(); err != nil {
+		log.Printf("⚠️ iterazione mappa incompleta, obsolete non rimosse: %v", err)
+		return
 	}
 	// Fase 2: cancellare.
 	for _, s := range stale {
@@ -175,7 +201,17 @@ func expand(home, pattern string) []string {
 	}
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return nil // pattern malformato: silenzioso, la validazione del glob non e' fatta
+		// FIX: prima il glob malformato (refuso in extra_rules) era silenzioso:
+		// regola non protetta senza segnale. Ora log con pattern.
+		log.Printf("⚠️ glob malformato %q: regola non applicata", pattern)
+		return nil
+	}
+	if len(matches) == 0 {
+		// Non un errore: profilo browser su macchina senza quel browser.
+		// Debug-level: lo vede chi cerca, non sporca il log a ogni rescan.
+		// (Si logga una volta per Sync? No: ogni rescan spammerebbe. Resta silenzio
+		// voluto qui; gli `allow` non risolti invece si loggano in Sync.)
+		return nil
 	}
 	var out []string
 	for _, match := range matches {
@@ -188,19 +224,34 @@ func expand(home, pattern string) []string {
 			continue
 		}
 		if fi.IsDir() {
+			// FIX: prima si usava d.Type().IsRegular() dentro il walk, che NON segue
+			// i symlink (DT_LNK != regolare): un segreto linkato dentro una directory
+			// ricorsiva restava non protetto. Ora si fa Stat sul path (segue symlink,
+			// coerente con os.Stat sul match e con l'inode visto dal kernel).
 			n := 0
+			truncated := false
 			filepath.WalkDir(match, func(p string, d fs.DirEntry, err error) error {
 				if err != nil {
 					return nil // file sparito durante il walk: normale
 				}
-				if d.Type().IsRegular() {
+				st, err := os.Stat(p) // segue symlink: l'inode che conta e' del target
+				if err != nil {
+					return nil
+				}
+				if st.Mode().IsRegular() {
 					out = append(out, p)
 					if n++; n >= maxFilesPerPath {
+						truncated = true
 						return fs.SkipAll
 					}
 				}
 				return nil
 			})
+			// FIX: prima il troncamento a maxFilesPerPath era silenzioso: i file oltre
+			// il tetto restavano NON protetti senza alcun segnale. Ora log esplicito.
+			if truncated {
+				log.Printf("⚠️ path %q: oltre %d file, resto NON protetto (restringi la regola)", match, maxFilesPerPath)
+			}
 		}
 	}
 	return out
@@ -212,22 +263,32 @@ func expand(home, pattern string) []string {
 // stessa directory, quindi senza resolve metteresti in mappa l'inode del symlink
 // e non quello dell'ELF, che non corrisponderebbe mai.
 //
-// BUG: per i nomi non assoluti si usa exec.LookPath, che risolve con il PATH di
-// QUESTO processo. Sotto systemd il PATH e' minimale
-// (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin), quindi un tool
-// come kubectl installato come snap (/snap/bin/kubectl) o aws in ~/.local/bin non
-// viene trovato, l'errore viene scartato in silenzio da `continue`, e il binario
-// LEGITTIMO non finisce in whitelist: l'utente prende EACCES sul proprio kubeconfig.
-// Il rimedio e' risolvere con il PATH dell'utente target (config.HomeDir) o usare
-// path assoluti nelle regole.
-func resolveExe(name string) (string, bool) {
+// FIX: per i nomi non assoluti si cercava solo con exec.LookPath (PATH di QUESTO
+// processo). Sotto systemd il PATH e' minimale, quindi kubectl snap (/snap/bin)
+// o aws in ~/.local/bin non venivano trovati e restavano fuori whitelist in
+// silenzio. Ora si cerca anche in /snap/bin, ~/.local/bin e ~/bin prima di
+// arrendersi. Resta il rimedio migliore: path assoluti nelle regole.
+func resolveExe(home, name string) (string, bool) {
 	path := name
 	if !filepath.IsAbs(name) {
-		p, err := exec.LookPath(name)
-		if err != nil {
-			return "", false
+		if p, err := exec.LookPath(name); err == nil {
+			path = p
+		} else {
+			// Fallback: directory tipiche fuori dal PATH minimale di systemd.
+			fallback := []string{"/snap/bin", filepath.Join(home, ".local/bin"), filepath.Join(home, "bin")}
+			found := ""
+			for _, d := range fallback {
+				cand := filepath.Join(d, name)
+				if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {
+					found = cand
+					break
+				}
+			}
+			if found == "" {
+				return "", false
+			}
+			path = found
 		}
-		path = p
 	}
 	path, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -254,4 +315,26 @@ func fileKey(path string) (key, bool) {
 	}
 	dev := uint64(st.Dev)
 	return key{Ino: st.Ino, Dev: unix.Major(dev)<<20 | unix.Minor(dev)}, true
+}
+
+// CheckFilesystem avvisa se la home vive su un fs dove la chiave dev+inode non
+// matcha tra userspace e kernel (btrfs subvolume, overlayfs Docker).
+// FIX: prima la protezione era silenziosamente inerte su questi fs: nessun log,
+// nessun errore, solo test manuale in TESTING.md a rivelarlo. Ora il demone lo
+// dice a avvio. Chiamato una volta da main, non a ogni Sync.
+func CheckFilesystem(home string) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(home, &st); err != nil {
+		return // non bloccante: se non si puo' leggere, non si puo' dire nulla
+	}
+	const (
+		btrfsSuperMagic   = 0x9123683E
+		overlaySuperMagic = 0x794C7630
+	)
+	switch st.Type {
+	case btrfsSuperMagic:
+		log.Printf("⚠️ home su btrfs: st_dev userspace != s_dev kernel, la chiave dev+inode NON matcha. Protezione LSM inerte: verifica con TESTING.md Test 1")
+	case overlaySuperMagic:
+		log.Printf("⚠️ home su overlayfs: st_dev userspace != s_dev kernel, la chiave dev+inode NON matcha. Protezione LSM inerte")
+	}
 }

@@ -49,6 +49,25 @@ type jsonEntry struct {
 	Inode  uint64 `json:"inode"`
 }
 
+// decodeEvent legge il payload con offset espliciti little-endian.
+// FIX: prima si usava binary.Read sulla struct Go, che funziona solo perche'
+// il padding Go coincide per fortuna con quello C (24%8==0). Aggiungere un campo
+// o cambiare ordine avrebbe sfasato tutto in silenzio. Ora il layout e' fissato
+// qui: pid@0, comm@4(16), rule@20, ino@24(8), action@32, pad@36, sizeof=40.
+func decodeEvent(raw []byte) (Event, bool) {
+	var ev Event
+	if len(raw) < 40 {
+		return ev, false
+	}
+	ev.PID = binary.LittleEndian.Uint32(raw[0:4])
+	copy(ev.Comm[:], raw[4:20])
+	ev.Rule = binary.LittleEndian.Uint32(raw[20:24])
+	ev.Inode = binary.LittleEndian.Uint64(raw[24:32])
+	ev.Action = binary.LittleEndian.Uint32(raw[32:36])
+	ev.Pad = binary.LittleEndian.Uint32(raw[36:40])
+	return ev, true
+}
+
 // Run legge finche' il reader non viene chiuso. ruleName traduce l'id regola in nome.
 //
 // Va eseguito in una goroutine: il loop e' bloccante per costruzione.
@@ -57,6 +76,25 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string) {
 	// il buffer interno. Su stdout perche' il log di testo va su stderr (log) e
 	// il JSON su stdout: cosi' `zt-shield | jq` funziona senza miscelare i due.
 	enc := json.NewEncoder(os.Stdout)
+	// Rate-limit: senza, un attaccante spamma open() in loop e riempie
+	// journal/disco (ogni deny = un log). Oltre 50 ev/s si sopprime e si
+	// riepiloga ogni 5s. Prima: nessun limite, DoS log banale.
+	const (
+		maxPerSec      = 50
+		summaryEvery   = 5 * time.Second
+		errBackoff    = 50 * time.Millisecond
+	)
+	windowStart := time.Now()
+	inWindow := 0
+	suppressed := 0
+	lastSummary := time.Now()
+	flushSummary := func() {
+		if suppressed > 0 {
+			log.Printf("⚠️ audit flood: %d eventi soppressi (rate-limit %d/s)", suppressed, maxPerSec)
+			suppressed = 0
+		}
+		lastSummary = time.Now()
+	}
 	for {
 		rec, err := rd.Read()
 		if err != nil {
@@ -65,15 +103,33 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string) {
 			// altrimenti un singolo errore ucciderebbe l'audit per tutta la vita
 			// del processo e i blocchi successivi diventerebbero invisibili.
 			if errors.Is(err, ringbuf.ErrClosed) {
+				flushSummary()
 				return
 			}
+			// FIX: prima `continue` senza attesa: errore persistente = busy loop
+			// 100% CPU. Ora backoff breve.
+			time.Sleep(errBackoff)
 			continue
 		}
 		// RawSample: payload grezzo, da decodificare con il layout della struct C.
-		var ev Event
-		if err := binary.Read(bytes.NewReader(rec.RawSample), binary.LittleEndian, &ev); err != nil {
+		ev, ok := decodeEvent(rec.RawSample)
+		if !ok {
 			continue // payload corrotto o di dimensione inattesa: scartato
 		}
+		// Rate-limit a finestra mobile di 1s.
+		now := time.Now()
+		if now.Sub(windowStart) >= time.Second {
+			windowStart = now
+			inWindow = 0
+		}
+		if inWindow >= maxPerSec {
+			suppressed++
+			if now.Sub(lastSummary) >= summaryEvery {
+				flushSummary()
+			}
+			continue
+		}
+		inWindow++
 		// comm arriva senza terminatore: va ripulito prima di stampare.
 		comm := string(bytes.TrimRight(ev.Comm[:], "\x00"))
 		// Best effort: il processo potrebbe essere già terminato. Utile per sapere quale binario autorizzare.

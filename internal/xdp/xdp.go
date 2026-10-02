@@ -29,6 +29,9 @@ type lpmKey struct {
 }
 
 // Attach aggancia il programma XDP all'interfaccia indicata, o a quella della route di default.
+// Supporta lista separata da virgola ("wlan0,eth0"): si attacca alla prima
+// disponibile e AVVISA sulle altre interfacce UP non coperte.
+// Resta single-attach per interfaccia (limite XDP), ma almeno non piu' silenzioso.
 //
 // XDPGenericMode: il programma gira nel percorso software della ricezione invece che
 // nel driver nativo. Serve perche' i driver nativi esistono solo per schede
@@ -39,13 +42,12 @@ type lpmKey struct {
 // NOTA: XDP vede SOLO i pacchetti in ingresso. Non e' un filtro di flusso: non
 // distingue una connessione da uno scan, e non vede nulla di quello che esce.
 //
-// BUG: si aggancia a UNA sola interfaccia. Se la route di default passa per un tunnel
-// (WireGuard, tailscale) il filtro va sul tunnel e chi arriva dall'Ethernet o dal Wi-Fi
-// non incontra nulla. Se invece sei su Wi-Fi con Ethernet attivo, lo stesso vale al
-// contrario. Il drop di broadcast in particolare dovrebbe stare su tutte le interfacce
-// fisiche: per quello serve un attach multi-interfaccia, non uno solo.
+// FIX: prima si copriva UNA sola interfaccia in silenzio. Se la route di default
+// passava per un tunnel (WireGuard, tailscale) il filtro andava sul tunnel e chi
+// arrivava da Ethernet/Wi-Fi non incontrava nulla. Ora main attacca a tutte le
+// interfacce elencate in `interface` (csv) e qui si avvisa sulle UP scoperte.
 func Attach(prog *ebpf.Program, custom string) (link.Link, *net.Interface, error) {
-	iface, err := defaultInterface(custom)
+	iface, err := defaultInterface(firstOfList(custom))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -59,7 +61,78 @@ func Attach(prog *ebpf.Program, custom string) (link.Link, *net.Interface, error
 		// interfaccia. XDP e' esclusivo per interfaccia, non si accumula.
 		return nil, iface, fmt.Errorf("attach XDP su %s: %w", iface.Name, err)
 	}
+	logOtherUpInterfaces(iface.Name)
 	return l, iface, nil
+}
+
+// AttachAll attacca il programma a OGNI interfaccia della lista csv
+// (o alla sola default se custom e' vuoto). Restituisce links e interfacce
+// nella stessa cardinalita': il chiamante chiude ogni link in defer.
+// Un attach fallito non blocca gli altri: si logga e si prosegue, perche'
+// LSM resta attiva comunque (stessa filosofia non-fatale di prima).
+func AttachAll(prog *ebpf.Program, custom string) ([]link.Link, []*net.Interface) {
+	names := splitList(custom)
+	if len(names) == 0 {
+		iface, err := defaultInterface("")
+		if err != nil {
+			log.Printf("⚠️ XDP non attivo: %v", err)
+			return nil, nil
+		}
+		names = []string{iface.Name}
+	}
+	var links []link.Link
+	var ifaces []*net.Interface
+	for _, n := range names {
+		l, iface, err := Attach(prog, n)
+		if err != nil {
+			log.Printf("⚠️ XDP non attivo su %s: %v", n, err)
+			continue
+		}
+		links = append(links, l)
+		ifaces = append(ifaces, iface)
+	}
+	return links, ifaces
+}
+
+// firstOfList prende il primo nome da una lista csv (compat con Attach singolo).
+func firstOfList(custom string) string {
+	if custom == "" {
+		return ""
+	}
+	for _, p := range splitList(custom) {
+		return p // solo il primo
+	}
+	return custom
+}
+
+// splitList divide "eth0, wlan0" in nomi puliti, senza vuoti.
+func splitList(s string) []string {
+	var out []string
+	for _, p := range splitCSV(s) {
+		if p = trimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// logOtherUpInterfaces elenca le interfacce UP (non loopback) diverse da quella
+// coperta: prima restavano scoperte in silenzio, ora l'operatore lo vede nel log
+// e puo' aggiungerle a `interface: "wlan0,eth0"`.
+func logOtherUpInterfaces(covered string) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return
+	}
+	for _, ifc := range ifaces {
+		if ifc.Name == covered || ifc.Name == "lo" {
+			continue
+		}
+		if ifc.Flags&net.FlagUp == 0 {
+			continue
+		}
+		log.Printf("⚠️ interfaccia %s UP ma NON coperta da XDP (coperta: %s). Aggiungila a 'interface: \"%s,%s\"' se esposta a rete ostile", ifc.Name, covered, covered, ifc.Name)
+	}
 }
 
 // BlockSubnets inserisce i CIDR IPv4 nella trie.

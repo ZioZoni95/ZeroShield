@@ -7,6 +7,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -15,6 +16,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// unmarshalStrict rifiuta chiavi sconosciute: un refuso come `block_poisioning`
+// prima veniva ignorato in silenzio (nessuna protezione, zero errori).
+func unmarshalStrict(data []byte, v any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
 
 const (
 	// DefaultPath: dove cerca la configurazione se -config non e' specificato.
@@ -61,10 +70,15 @@ type Config struct {
 // patch di questo programmo lo risolve: e' una conseguenza della whitelist.
 var groups = map[string]Rule{
 	// Chiavi SSH e di identita'. Copre i pattern, quindi anche le chiavi sk (FIDO2).
+	// NOTA: `git` e' stato RIMOSSO da qui (era in whitelist ssh-keys). Git over SSH
+	// invoca il binario `ssh`, non apre le chiavi direttamente: git non ha bisogno
+	// di leggere ~/.ssh/id_*. Tenerlo qui rendeva `git hash-object ~/.kube/config`
+	// e simili canali di lettura per file di altre regole. Git resta in dev-tokens
+	// dove serve davvero (.git-credentials per https).
 	"ssh": {
 		Name:  "ssh-keys",
 		Paths: []string{".ssh/id_*"},
-		Allow: []string{"ssh", "ssh-add", "ssh-agent", "ssh-keygen", "scp", "sftp", "git"},
+		Allow: []string{"ssh", "ssh-add", "ssh-agent", "ssh-keygen", "scp", "sftp"},
 	},
 	// Credenziali cloud e Kubernetes. terraform/tofu leggono il loro credentials file.
 	"cloud": {
@@ -148,10 +162,17 @@ func Preset(name string) (*Config, error) {
 		LogFormat:      "text",
 		RescanSeconds:  30,
 	}
-	// Copia i gruppi: senza questo, piu' profili condividerebbero lo stesso
-	// backing array di Rule e una modifica a uno altererebbe gli altri.
+	// Copia PROFONDA dei gruppi: struct + slice. Senza, piu' profili condividerebbero
+	// lo stesso backing array di Rule/Paths/Allow e una modifica a uno altererebbe
+	// gli altri (prima si copiava solo la struct, le slice restavano condivise).
 	for _, g := range p.groups {
-		c.Rules = append(c.Rules, groups[g])
+		src := groups[g]
+		cp := Rule{
+			Name:  src.Name,
+			Paths: append([]string(nil), src.Paths...),
+			Allow: append([]string(nil), src.Allow...),
+		}
+		c.Rules = append(c.Rules, cp)
 	}
 	return c, nil
 }
@@ -177,7 +198,8 @@ func Load(path string) (*Config, error) {
 		data = b
 	}
 
-	// Passaggio 1: quale profilo.
+	// Passaggio 1: quale profilo. NON strict: la struct ha solo `profile`,
+	// strict qui rifiuterebbe tutte le altre chiavi valide del file.
 	head := struct {
 		Profile string `yaml:"profile"`
 	}{}
@@ -196,7 +218,7 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	if data != nil {
-		if err := yaml.Unmarshal(data, cfg); err != nil {
+		if err := unmarshalStrict(data, cfg); err != nil {
 			return nil, fmt.Errorf("parsing config: %w", err)
 		}
 	}
@@ -231,15 +253,32 @@ func (c *Config) Validate() error {
 		if r.Name == "" || len(r.Paths) == 0 {
 			return fmt.Errorf("regola #%d: servono name e almeno un path", i+1)
 		}
+		// FIX: allow vuota = deny-all totale (nemmeno il proprietario legge).
+		// Prima passava in silenzio e l'unica via era fermare il demone da root.
+		// Se davvero vuoi deny-all, resta possibile ma deve essere esplicito:
+		// qui si rifiuta per forzare consapevolezza.
+		if len(r.Allow) == 0 {
+			return fmt.Errorf("regola %q: allow vuota = deny-all anche per te; aggiungi almeno un binario o rimuovi la regola", r.Name)
+		}
+	}
+	// FIX: nomi duplicati = log ambigui (stesso nome, id diversi). Rifiuta.
+	seen := map[string]bool{}
+	for _, r := range c.AllRules() {
+		if seen[r.Name] {
+			return fmt.Errorf("regola %q duplicata: i nomi devono essere unici (i log traducono id->nome)", r.Name)
+		}
+		seen[r.Name] = true
 	}
 	for _, s := range c.BlockSubnets {
-		if _, n, err := net.ParseCIDR(s); err != nil || n.IP.To4() == nil {
+		_, n, err := net.ParseCIDR(s)
+		if err != nil || n.IP.To4() == nil {
 			return fmt.Errorf("block_subnets: %q non è un CIDR IPv4 valido", s)
 		}
-		// BUG: nessun controllo di sanita' sulla lunghezza del prefisso. "0.0.0.0/0"
-		// passa la validazione e blocca tutto il traffico in ingresso, IPv4 compreso
-		// il DNS in uscita (XDP vede solo l'ingresso, ma il drop delle risposte
-		// stacca anche la risoluzione). Dovrebbe rifiutare prefixlen < 8.
+		// FIX: prima "0.0.0.0/0" passava e staccava tutto l'IPv4 in ingresso
+		// (risposte DNS comprese). Ora si rifiutano prefissi troppo larghi.
+		if ones, _ := n.Mask.Size(); ones < 8 {
+			return fmt.Errorf("block_subnets: %q troppo largo (/%d): minimo /8, 0.0.0.0/0 stacca tutta la rete", s, ones)
+		}
 	}
 	return nil
 }

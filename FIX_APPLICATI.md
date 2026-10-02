@@ -1,0 +1,108 @@
+# FIX_APPLICATI — Local Zero-Trust Shield
+
+Stato: fix statici applicati senza esecuzione test (verifier kernel mai visto).
+Ogni voce: problema → fix → file → cosa riverificare in lab.
+
+> Nota onestà: parte dei fix pianificati (main multi-iface/Ticker/cleanup,
+> script UFW/unit, sed TESTING) è documentata qui come DA APPLICARE:
+> il codice corrispondente non è ancora modificato. Vedi sezione 7.
+
+## 1. Kernel `bpf/zerotrust.c` — APPLICATI
+
+- **XDP guardava solo `dport`.** Risposta Responder (`sport=5355`, dport effimera)
+  passava. Ora check `sport==porta || dport==porta` per 5355/5353/137/138.
+  Riverifica: `nping --udp --source-port 5355 <victim> -p 50000` → DROP.
+- **VLAN non parsata.** Tutto il traffico taggato 802.1Q passava. Ora unwrap
+  singolo tag (`0x8100`/`0x88A8`), `nh` ricalcolato. QinQ doppio-tag resta PASS.
+  Riverifica: test su rete taggata o veth con tag.
+- **Frammenti IP.** Secondo frammento senza header UDP veniva letto come
+  `dport` casuale (falso drop / mancato drop). Ora se `(frag & 0x3FFF)!=0`
+  si salta il check L4, resta check subnet su `saddr`.
+- **LSM bloccava anche `O_WRONLY`.** `ssh-keygen`, backup in scrittura negati
+  anche a root. Ora check `FMODE_READ` in testa: write-only passa, solo la
+  lettura è protetta. Costante `FMODE_READ 0x1` aggiunta.
+- **Catena `BPF_CORE_READ(task,mm,exe_file,f_inode)` a rischio verifier.**
+  Ora lettura a stadi con null-check (`task` → `mm` → `exe_file` → `f_inode`).
+  `mm=NULL` (kernel thread / worker io_uring) → fail-open con `return 0`.
+- **Nota io_uring aggiornata:** prima falso blocco, ora falso negativo mirato
+  (worker senza `mm` passa). Trade-off noto, da chiudere con hook dedicati.
+
+## 2. `internal/lsm/lsm.go` — APPLICATI
+
+- **Walk seguiva `d.Type()`, non i symlink.** Segreto linkato in dir ricorsiva
+  restava fuori mappa. Ora `os.Stat(p)` nel walk (segue symlink, coerente col kernel).
+- **Troncamento `maxFilesPerPath` silenzioso.** Ora log esplicito con path quando
+  si supera il tetto: resto NON protetto.
+- **Glob malformato silenzioso.** Ora log `glob malformato %q`.
+- **`reconcile` ignorava `it.Err()`.** Iterazione parziale = obsolete rimosse a
+  metà. Ora log + `return` senza cancellare.
+- **`resolveExe` solo `LookPath` (PATH systemd minimale).** `kubectl` snap,
+  `aws` in `~/.local/bin` restavano fuori whitelist in silenzio. Ora fallback
+  `/snap/bin`, `~/.local/bin`, `~/bin`; firma cambiata in
+  `resolveExe(home, name)`; `Sync` logga ogni allow non risolto con nome regola.
+- **Capienza mappe.** Oltre 16384 file / 1024 exe i `Put` falliscono `E2BIG` in
+  silenzio. Ora warning preventivo con conteggi.
+- **Nuovo `CheckFilesystem(home)`.** Avvisa se home su btrfs/overlayfs
+  (`st_dev != s_dev` → chiave inerte). Prima solo test manuale lo rivelava.
+  Da chiamare una volta a avvio da `main`.
+
+## 3. `internal/config/config.go` — APPLICATI
+
+- **`git` rimosso da regola `ssh`.** Git-over-SSH usa il binario `ssh`, non apre
+  le chiavi direttamente. Tenerlo lì apriva `git hash-object ~/.kube/config`.
+  Git resta in `dev-tokens` (serve `.git-credentials`). Effetto: `git` non legge
+  più `~/.ssh/id_*` né `~/.kube/config`.
+- **Deep copy preset.** Prima solo struct, slice condivise tra profili. Ora
+  `Paths`/`Allow` copiati con `append([]string(nil), ...)`.
+- **Strict YAML (secondo passaggio).** `KnownFields(true)`: refusi come
+  `block_poisioning` ora errore invece di silenzio. Primo passaggio resta
+  non-strict (struct solo `profile`).
+- **`Validate` più severo:**
+  - `allow` vuota rifiutata (deny-all anche per te, unica via stop demone);
+  - nomi regola duplicati rifiutati (log ambigui);
+  - `block_subnets` con `/%d < 8` rifiutato (`0.0.0.0/0` staccava tutto).
+
+## 4. `internal/audit/audit.go` — APPLICATI
+
+- **`decodeEvent` a offset espliciti** (`pid@0, comm@4(16), rule@20, ino@24(8),
+  action@32, pad@36, 40B`). Prima `binary.Read` su struct Go funzionava solo
+  perché il padding coincideva per fortuna.
+- **Backoff errori:** `continue` immediato → busy loop 100% CPU su errore
+  persistente. Ora `sleep 50ms`.
+- **Rate-limit 50 ev/s** con riepilogo `audit flood: N soppressi` ogni 5s.
+  Prima un loop di `open()` riempiva journal/disco.
+
+## 5. `internal/xdp/xdp.go` — APPLICATI (libreria)
+
+- **`Attach` accetta csv**, usa primo elemento, poi `logOtherUpInterfaces`:
+  elenca interfacce UP non loopback scoperte e suggerisce
+  `interface: "a,b"`. Prima copertura singola silenziosa.
+- **Nuovo `AttachAll(prog, custom)`**: attacca a ogni iface della lista
+  (o alla default se vuoto), un fallimento non blocca gli altri.
+  Helper `splitList`/`firstOfList`/`splitCSV`+`trimSpace`.
+- NOTA: `main.go` usa ancora `Attach` singolo: per attivare multi-iface
+  serve la modifica main (sez. 7).
+
+## 6. Comportamenti voluti confermati (non bug)
+
+- `settings` default `ENFORCE=1` se voce assente: ok, main fa sempre `Put`.
+- Chiave LPM in network order grezzo (`[4]byte`): corretto, era bug v1.
+- `file_key`/`allow_key` 16B con `Extra`=rule: layout C/Go allineato.
+- `reconcile` riscrive tutto ogni sync: costo accettato per immunità da disallineamenti.
+- Timestamp eventi `time.Now()` userspace: skew con backlog ringbuf, noto.
+
+## 7. DA APPLICARE (pianificati, codice non ancora toccato)
+
+- [ ] `cmd/zt-shield/main.go`: `time.Tick` → `NewTicker`+`Stop`; `log.Fatal`
+  dopo attach → cleanup + `return` (Fatal salta i defer, hook non staccati);
+  usa `AttachAll` + log conteggio `BlockSubnets`; chiama `lsm.CheckFilesystem`.
+- [ ] `scripts/harden_system.sh`: `ufw allow OpenSSH` prima di `enable`
+  (lockout); fallback se manca sezione `[Resolve]`; `restart resolved` e
+  `sysctl --system` tolleranti (`||` warning invece di abort con `set -e`).
+- [ ] `scripts/install_service.sh`: `StartLimitBurst/Interval` + `ExecStartPre`
+  `grep bpf`; risolvi `bin/` da script-dir; valuta `ProtectSystem=strict` +
+  `CapabilityBoundingSet` (test in VM prima).
+- [ ] `TESTING.md`: fix placeholder sed (`__USER__` vs `$USER`, `__UTENTE__`
+  incoerenti) che rompono il copia-incolla.
+- [ ] Verifier reale: `sudo SHIELD_USER=$USER ./bin/zt-shield` + `bpftool prog show`,
+  test btrfs/overlay, misura `run_cnt` con `bpf_stats_enabled=1`.

@@ -24,8 +24,16 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
-// EtherType IPv4: i pacchetti non-IPv4 (ARP, IPv6, 802.1Q) escono dal confronto.
+// EtherType IPv4 (+ VLAN taggate, scartate prima solo perche' non parsate).
+// Il resto (ARP, IPv6, PPPoE) esce dal confronto: coperto da resolved/UFW, non da XDP.
 #define ETH_P_IP 0x0800
+#define ETH_P_8021Q 0x8100 // VLAN singola
+#define ETH_P_8021AD 0x88A8 // QinQ (solo outer tag scartato, poi si rivaluta)
+
+// FMODE_READ per struct file->f_mode: se un open e' write-only (creazione chiave,
+// truncate log, backup in scrittura) non contiene dati da esfiltrare in lettura.
+// Bloccare anche O_WRONLY rompe ssh-keygen e i backup senza aggiungere sicurezza.
+#define FMODE_READ 0x1
 
 // Errno restituito all'utente quando l'accesso e' negato. Deve essere NEGATIVO:
 // il contratto degli hook LSM e' "0 = consenti, <0 = nega con errno".
@@ -175,34 +183,56 @@ int xdp_shield(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
 
     // Header Ethernet: 14 byte (mac dst, mac src, ethertype).
+    // VLAN: un tag 802.1Q aggiunge 4 byte. Senza unwrap tutto il traffico
+    // su LAN taggate (aziendale tipica) passava senza alcun controllo.
+    // Si gestisce un solo livello: QinQ doppio-tag resta PASS (raro su workstation).
     struct ethhdr *eth = data;
     if ((void *)(eth + 1) > data_end)
         return XDP_PASS; // pacchetto troncato: lascialo allo stack
-    if (eth->h_proto != bpf_htons(ETH_P_IP))
-        return XDP_PASS; // ARP/IPv6/VLAN: niente da fare qui
+    __u16 proto = bpf_ntohs(eth->h_proto);
+    void *nh = (void *)(eth + 1);
+    if (proto == ETH_P_8021Q || proto == ETH_P_8021AD) {
+        struct vlan_hdr *vh = nh;
+        if ((void *)(vh + 1) > data_end)
+            return XDP_PASS;
+        proto = bpf_ntohs(vh->h_vlan_encapsulated_proto);
+        nh = (void *)(vh + 1);
+    }
+    if (proto != ETH_P_IP)
+        return XDP_PASS; // ARP/IPv6/PPPoE: niente da fare qui
 
-    // Header IP: variabile (20 + opzioni). Pacchetti con IIL troncato o malformi
+    // Header IP: variabile (20 + opzioni). Pacchetti troncati o malformi
     // passano oltre e li gestira' il kernel.
-    struct iphdr *ip = (void *)(eth + 1);
+    struct iphdr *ip = nh;
     if ((void *)(ip + 1) > data_end)
         return XDP_PASS;
 
     // -- Drop dei protocolli di poisoning -------------------------------------------------
     // LLMNR (5355), mDNS (5353), NBT-NS (137), NetBIOS-DGM (138).
     if (ip->protocol == IPPROTO_UDP && setting(SETTING_POISON, 1)) {
-        __u32 ihl = ip->ihl * 4; // IHL e' espresso in word da 32 bit
-        if (ihl >= sizeof(*ip)) { // header senza opzioni o piu': non puo' andare in underflow
-            struct udphdr *udp = (void *)ip + ihl;
-            if ((void *)(udp + 1) <= data_end) { // 8 byte: sport + dport + len + checksum
-                __u16 dport = bpf_ntohs(udp->dest);
+        // Frammenti non-primi: non contengono l'header UDP all'offset calcolato.
+        // Leggere sport/dport li' significa leggere payload casuale -> falso drop
+        // o mancato drop. Si salta il check L4 (resta il check subnet su saddr).
+        // frag_off e' in network order: maschera 0x3FFF = offset+MF, 0x2000 = MF.
+        // Si usa bpf_ntohs prima della maschera per confronto corretto.
+        __u16 frag = bpf_ntohs(ip->frag_off);
+        if ((frag & 0x3FFF) == 0) {
+            __u32 ihl = ip->ihl * 4; // IHL e' espresso in word da 32 bit
+            if (ihl >= sizeof(*ip)) { // header senza opzioni o piu': non puo' andare in underflow
+                struct udphdr *udp = (void *)ip + ihl;
+                if ((void *)(udp + 1) <= data_end) { // 8 byte: sport + dport + len + checksum
+                    __u16 sport = bpf_ntohs(udp->source);
+                    __u16 dport = bpf_ntohs(udp->dest);
 
-                // BUG: si controlla SOLO la porta destinazione, ma la risposta avvelenata
-                // di Responder/Inveigh viaggia con sport=5355 e dport=<porta effimera del
-                // client>, cioe' verso di noi. Il drop corrente intercetta quindi solo le
-                // query ALTRUI verso di noi, cioe' la direzione che non e' l'attacco.
-                // Il fix e' verificare `sport == porta || dport == porta`.
-                if (dport == 5355 || dport == 5353 || dport == 137 || dport == 138)
-                    return XDP_DROP;
+                    // FIX: si controllano SIA sport SIA dport. La risposta avvelenata
+                    // di Responder/Inveigh viaggia con sport=5355 e dport effimera:
+                    // guardare solo dport intercettava le query altrui, non l'attacco.
+                    if (sport == 5355 || dport == 5355 ||
+                        sport == 5353 || dport == 5353 ||
+                        sport == 137 || dport == 137 ||
+                        sport == 138 || dport == 138)
+                        return XDP_DROP;
+                }
             }
         }
     }
@@ -248,6 +278,14 @@ int xdp_shield(struct xdp_md *ctx) {
 // e' una conseguenza di mettere in whitelist binari che leggono file.
 SEC("lsm/file_open")
 int BPF_PROG(zt_file_open, struct file *file) {
+    // Write-only open (creazione chiavi, truncate, backup in scrittura): non
+    // esfiltra nulla in lettura, quindi si lascia passare. Senza questo check
+    // ssh-keygen su ~/.ssh/id_* nuova e i backup venivano negati anche a root.
+    // f_mode e' letto con CORE perche' l'offset cambia tra versioni kernel.
+    fmode_t fmode = BPF_CORE_READ(file, f_mode);
+    if (!(fmode & FMODE_READ))
+        return 0;
+
     // Il file che sta per essere aperto.
     struct inode *inode = BPF_CORE_READ(file, f_inode);
     if (!inode)
@@ -268,8 +306,19 @@ int BPF_PROG(zt_file_open, struct file *file) {
 
     // -- Identita' del processo chiamante -------------------------------------------------
     // exe_file e' l'immagine eseguibile del processo (per uno script e' l'interprete).
+    // Lettura a stadi con null-check: il verifier rifiuta la catena singola
+    // task->mm->exe_file->f_inode e i kernel thread hanno mm=NULL.
+    // Senza stadi, rischio di reject al load o fault su thread kernel.
     struct task_struct *task = bpf_get_current_task_btf();
-    struct inode *exe = BPF_CORE_READ(task, mm, exe_file, f_inode);
+    if (!task)
+        return 0;
+    struct mm_struct *mm = BPF_CORE_READ(task, mm);
+    if (!mm)
+        return 0; // kernel thread / io_uring worker senza mm: fail-open, non blocco
+    struct file *exe_file = BPF_CORE_READ(mm, exe_file);
+    if (!exe_file)
+        return 0;
+    struct inode *exe = BPF_CORE_READ(exe_file, f_inode);
     if (exe) {
         struct allow_key ak = {};
         ak.ino = BPF_CORE_READ(exe, i_ino);
@@ -279,10 +328,12 @@ int BPF_PROG(zt_file_open, struct file *file) {
             return 0; // binario autorizzato per questa regola
     }
 
-    // NOTA (io_uring): le open via IORING_OP_OPENAT girano in un worker, quindi
-    // mm->exe_file qui e' quello del worker, non del richiedente. Le open via io_uring
-    // finiscono fuori whitelist: falso POSITIVO di blocco, il caso meno grave, ma se
-    // un tuo tool smette di funzionare con EACCES, e' questo.
+    // NOTA (io_uring): le open via IORING_OP_OPENAT girano in un worker il cui mm
+    // puo' essere NULL o diverso dal richiedente. Con il null-check sopra, un worker
+    // senza mm passa in fail-open (accesso consentito + nessun evento): falso NEGATIVO
+    // mirato, preferito al falso positivo di blocco che c'era prima (tool legittimi
+    // con EACCES inspiegabile). Il trade-off e' noto: io_uring resta un canale
+    // di bypass per chi sa usarlo, da chiudere con hook dedicati in futuro.
     //
     // NOTA (uid): non c'e' un controllo sull'uid del chiamante, di proposito. Il demone
     // gira come root e l'hook e' globale, quindi anche root e' vincolato. Effetto
@@ -306,8 +357,8 @@ int BPF_PROG(zt_file_open, struct file *file) {
     }
 
     // In audit si restituisce 0: l'accesso passa e l'utente non se ne accorge.
-    // In enforce si nega. NOTA: non c'e' un controllo di f_mode, quindi sono bloccati
-    // anche O_WRONLY e O_TRUNC: piu' restrittivo di quanto il doc promette, ma
-    // difensivamente accettabile per file di credenziali.
+    // In enforce si nega. NOTA: gli open write-only passano (check FMODE_READ
+    // in testa): creazione chiavi e backup in scrittura funzionano, resta
+    // bloccata solo la lettura/esfiltrazione.
     return enforce ? -EACCES : 0;
 }
