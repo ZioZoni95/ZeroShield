@@ -8,7 +8,7 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
   <a href="#-provalo-in-60-secondi-senza-root">Provalo in 60 secondi</a> ·
   <a href="#interfacce-tui--gui-senza-root">TUI + GUI</a> ·
   <a href="#-profili">Profili</a> ·
-  <a href="TESTING_LAB.md">Lab di test</a>
+  <a href="docs/TESTING_LAB.md">Lab di test</a>
 </p>
 <p align="center"><i>MIT © 2026 ZioZoni95 · binari: <code>zt-shield</code> <code>zt-tui</code> <code>zt-gui</code></i></p>
 
@@ -101,12 +101,14 @@ flowchart TD
 personal_zeroT/
 ├── README.md                   # Questo file
 ├── LICENSE                     # MIT © 2026 ZioZoni95
-├── PUNTI_APERTI.md             # Stato, decisioni aperte e checklist
-├── FIX_APPLICATI.md            # Fix applicati e ancora da applicare
-├── TESTING.md                  # Scenari di collaudo pratico (LSM, XDP, network namespaces)
-├── TESTING_LAB.md              # Scenario lab reale in VM isolata (post-fix)
-├── UI_RESEARCH.md              # Ricerca TUI/GUI e architettura IPC
-├── gemini-code-1790668303538.md # Specifiche tecniche iniziali e storico evolutivo
+├── docs/
+│   ├── PUNTI_APERTI.md         # Stato, decisioni aperte e checklist
+│   ├── CANARY.md               # Canary + fanotify: guida, design, fonti
+│   ├── FIX_APPLICATI.md        # Fix applicati e ancora da applicare
+│   ├── TESTING.md              # Collaudo pratico (LSM, XDP, network namespaces)
+│   ├── TESTING_LAB.md          # Scenario lab reale in VM isolata (post-fix)
+│   ├── UI_RESEARCH.md          # Ricerca TUI/GUI e architettura IPC
+│   └── gemini-code-1790668303538.md # Specifiche iniziali e storico
 ├── Makefile                    # make build | build-tui | build-mock | gui | test | clean
 ├── go.mod
 ├── bpf/
@@ -116,7 +118,7 @@ personal_zeroT/
 ├── cmd/zt-tui/main.go          # TUI Bubble Tea (stato/eventi live, senza root)
 ├── cmd/zt-mockd/main.go        # Finto demone con dati sintetici (verifica UI senza root/eBPF)
 ├── pkg/ipc/                    # Socket Unix stato+eventi (demone root → UI utente)
-├── zt-gui/                     # GUI desktop Wails stile macOS (vedi UI_RESEARCH.md)
+├── zt-gui/                     # GUI desktop Wails stile macOS (vedi docs/UI_RESEARCH.md)
 ├── internal/
 │   ├── config/                 # Profili, regole, parsing YAML, validazione (+ test)
 │   ├── lsm/                    # Sync mappe file/binari, attach hook LSM
@@ -272,7 +274,7 @@ make build-mock  # mock (idem)
 make gui         # GUI (richiede wails CLI, Node, libgtk-3-dev, libwebkit2gtk-4.1-dev)
 ```
 
-Anteprima TUI senza TTY: `./bin/zt-tui --dump`. Nota: fuori da env snap le GUI GTK vanno lanciate con `GTK_PATH`/`GIO_MODULE_DIR` ripuliti (vedi `PUNTI_APERTI.md`). Dettagli ricerca in [`UI_RESEARCH.md`](UI_RESEARCH.md).
+Anteprima TUI senza TTY: `./bin/zt-tui --dump`. Nota: fuori da env snap le GUI GTK vanno lanciate con `GTK_PATH`/`GIO_MODULE_DIR` ripuliti (vedi `docs/PUNTI_APERTI.md`). Dettagli ricerca in [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md).
 
 <details><summary>Anteprima tab Radar (dati di esempio)</summary>
 
@@ -294,6 +296,6 @@ Anteprima TUI senza TTY: `./bin/zt-tui --dump`. Nota: fuori da env snap le GUI G
 ---
 
 ## 📖 Riferimenti
-* Specifiche tecniche iniziali e storico evolutivo: [gemini-code-1790668303538.md](gemini-code-1790668303538.md).
-* Stato e attività aperte: [PUNTI_APERTI.md](PUNTI_APERTI.md).
-* Guida agli scenari di collaudo pratico: [TESTING.md](TESTING.md).
+* Specifiche tecniche iniziali e storico evolutivo: [gemini-code-1790668303538.md](docs/gemini-code-1790668303538.md).
+* Stato e attività aperte: [docs/PUNTI_APERTI.md](docs/PUNTI_APERTI.md).
+* Guida agli scenari di collaudo pratico: [docs/TESTING.md](docs/TESTING.md).
