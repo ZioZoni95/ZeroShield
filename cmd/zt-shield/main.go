@@ -95,7 +95,7 @@ func main() {
 	// Un'hook non agganciato che si dichiara attivo e' peggio di un'hook assente:
 	// l'utente crede di essere protetto. Per questo Attach() fa restituire l'errore
 	// e main lo trasforma in uscita fatale invece di proseguire.
-	mgr := lsm.New(&objs, home, cfg.AllRules())
+	mgr := lsm.New(objs.ProtectedFiles, objs.AllowedExes, objs.ZtFileOpen, home, cfg.AllRules())
 
 	// Popola le mappe PRIMA di agganciare l'hook: cosi' al primo open() dal sistema
 	// i file sono gia' protetti, senza una finestra in cui sono liberi.

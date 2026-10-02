@@ -23,7 +23,6 @@ import (
 	"github.com/cilium/ebpf/link"
 	"golang.org/x/sys/unix"
 
-	"zt-shield/bpf"
 	"zt-shield/internal/config"
 )
 
@@ -47,15 +46,22 @@ type key struct {
 }
 
 // Manager: stato del lato userspace dell'hook LSM.
+//
+// I tipi eBPF sono quelli generici di cilium/ebpf, NON gli stub generati da
+// bpf2go: cosi' il package compila e si testa senza toolchain eBPF né kernel
+// (gli stub vivono solo nel demone e sono gitignored). Il demone passa
+// objs.ProtectedFiles / objs.AllowedExes / objs.ZtFileOpen.
 type Manager struct {
-	objs  *bpf.ShieldObjects
-	home  string
-	rules []config.Rule
-	link  link.Link
+	protected *ebpf.Map
+	allowed   *ebpf.Map
+	prog      *ebpf.Program
+	home      string
+	rules     []config.Rule
+	link      link.Link
 }
 
-func New(objs *bpf.ShieldObjects, home string, rules []config.Rule) *Manager {
-	return &Manager{objs: objs, home: home, rules: rules}
+func New(protected, allowed *ebpf.Map, prog *ebpf.Program, home string, rules []config.Rule) *Manager {
+	return &Manager{protected: protected, allowed: allowed, prog: prog, home: home, rules: rules}
 }
 
 // Attach aggancia l'hook LSM file_open.
@@ -67,7 +73,7 @@ func New(objs *bpf.ShieldObjects, home string, rules []config.Rule) *Manager {
 // Nota: il programma va agganciato una volta sola. Un secondo aggancio sullo stesso
 // hook crea una seconda istanza attiva, non sostituisce la prima.
 func (m *Manager) Attach() error {
-	l, err := link.AttachLSM(link.LSMOptions{Program: m.objs.ZtFileOpen})
+	l, err := link.AttachLSM(link.LSMOptions{Program: m.prog})
 	if err != nil {
 		return fmt.Errorf("attach LSM: %w (verifica che 'bpf' sia in /sys/kernel/security/lsm)", err)
 	}
@@ -145,8 +151,8 @@ func (m *Manager) Sync() (protected, allowed int) {
 		log.Printf("⚠️ binari autorizzati %d > capienza mappa %d: parte NON in whitelist", len(wantExes), maxAllowedExes)
 	}
 
-	m.reconcile(m.objs.ProtectedFiles, wantFiles)
-	m.reconcile(m.objs.AllowedExes, wantExes)
+	m.reconcile(m.protected, wantFiles)
+	m.reconcile(m.allowed, wantExes)
 	return len(wantFiles), len(wantExes)
 }
 
