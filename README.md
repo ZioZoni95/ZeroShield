@@ -6,7 +6,7 @@
 Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e ladri di token — senza server, senza cloud, senza account.</p>
 <p align="center">
   <a href="#-provalo-in-60-secondi-senza-root">Provalo in 60 secondi</a> ·
-  <a href="#%EF%B8%8F-interfacce-tui--gui-senza-root">TUI + GUI</a> ·
+  <a href="#interfacce-tui--gui-senza-root">TUI + GUI</a> ·
   <a href="#-profili">Profili</a> ·
   <a href="TESTING_LAB.md">Lab di test</a>
 </p>
@@ -57,50 +57,40 @@ Implementa il paradigma **Zero-Trust ("Never Trust, Always Verify")** a livello 
 
 Ogni scenario ha un **profilo** pronto (vedi [Profili](#-profili)).
 
+```mermaid
+flowchart TD
+    PKT(["pacchetto in ingresso"]) --> XDP{"poisoning o subnet ostile?"}
+    XDP -- "sì" --> DROP["⛔ DROP + conta in xdp_stats"]
+    XDP -- "no" --> PASS["✅ PASS allo stack"]
+    DROP --> RADAR[("📡 radar: drops per IP")]
+    RADAR --> UI1["💻 TUI · 🖥️ GUI"]
+
+    classDef deny fill:#fde7ea,stroke:#d70015,color:#4a0a12;
+    classDef ok fill:#e2f3e5,stroke:#1d8127,color:#0c2b12;
+    class DROP deny;
+    class PASS ok;
 ```
-                      +------------------------------------------+
-                      |         Developer Workstation            |
-                      |                                          |
-                      |   [Git Commit / SSH]                     |
-                      |           │                              |
-                      |           ▼                              |
-                      |   [FIDO2 Token (ed25519-sk)]             |
-                      |   (Richiede tocco fisico)                |
-                      +──────────────────────────────────────────+
-                                      │
- ┌────────────────────────────────────┼────────────────────────────────────┐
- │  KERNEL-SPACE (eBPF)               │                                    │
- │                                    │                                    │
- │   [ Ingress Traffic ]              ▼                                    │
- │            │              [ Syscall: file_open ]                        │
- │            ▼                       │                                    │
- │    ┌───────────────┐               ▼                                    │
- │    │   eBPF XDP    │       ┌───────────────┐                            │
- │    │ Poisoning drop│       │   eBPF LSM    │                            │
- │    │ + Drop Subnet │       │ (File protetti│                            │
- │    └───────────────┘       │  per regola)  │                            │
- │            │               └───────────────┘                            │
- │            ▼                       │                                    │
- │       [ PASS/DROP ]      [ Binario in whitelist? ]                      │
- │                                    │                                    │
- │                        (No)◄───────┴───────►(Sì)                        │
- │                         │                     │                         │
- │            [ enforce: -EACCES Deny ]   [ Access Allow ]                 │
- │            [ audit: passa + log ]             │                         │
- │                         │                     │                         │
- │                         ▼                     │                         │
- │                 [ Ring Buffer Logs ]          │                         │
- └─────────────────────────┼─────────────────────┼─────────────────────────┘
-                           │                     │
-                           ▼                     ▼
-                      +──────────────────────────────────────────+
-                      |          USER-SPACE DAEMON (Go)          |
-                      |                                          |
-                      |  • Loader mappe e programmi eBPF         |
-                      |  • Profili e regole da YAML              |
-                      |  • Sync file/binari (rescan periodico)   |
-                      |  • Audit consumer (text / JSON)          |
-                      +------------------------------------------+
+
+```mermaid
+flowchart TD
+    OPEN["open() di un processo utente"] --> PROT{"file protetto?"}
+    PROT -- "no" --> OK["✅ accesso normale"]
+    PROT -- "sì" --> WL{"exe in whitelist<br/>(dev+inode, solo lettura)?"}
+    WL -- "sì" --> ALLOW["✅ allow"]
+    WL -- "no" --> DENY["⛔ deny -EACCES<br/>(audit: passa + log)"]
+    ALLOW & DENY --> RING[("📝 ringbuf")]
+    RING --> DAEMON["demone Go: Sync + rescan<br/>fail-closed"]
+    DAEMON --> SOCK[("🔌 socket IPC")]
+    SOCK --> TUI["💻 zt-tui"]
+    SOCK --> GUI["🖥️ ZeroShield GUI"]
+    FIDO2["🔑 git/ssh firmati via token FIDO2<br/>(fuori dal kernel: tocco fisico)"] -.-> DAEMON
+
+    classDef deny fill:#fde7ea,stroke:#d70015,color:#4a0a12;
+    classDef ok fill:#e2f3e5,stroke:#1d8127,color:#0c2b12;
+    classDef ipc fill:#efe7fb,stroke:#7b2fbe,color:#2a0a4a;
+    class DENY deny;
+    class OK,ALLOW ok;
+    class SOCK,TUI,GUI ipc;
 ```
 
 ---
@@ -110,10 +100,14 @@ Ogni scenario ha un **profilo** pronto (vedi [Profili](#-profili)).
 ```text
 personal_zeroT/
 ├── README.md                   # Questo file
+├── LICENSE                     # MIT © 2026 ZioZoni95
 ├── PUNTI_APERTI.md             # Stato, decisioni aperte e checklist
+├── FIX_APPLICATI.md            # Fix applicati e ancora da applicare
 ├── TESTING.md                  # Scenari di collaudo pratico (LSM, XDP, network namespaces)
+├── TESTING_LAB.md              # Scenario lab reale in VM isolata (post-fix)
+├── UI_RESEARCH.md              # Ricerca TUI/GUI e architettura IPC
 ├── gemini-code-1790668303538.md # Specifiche tecniche iniziali e storico evolutivo
-├── Makefile                    # make build | test | clean
+├── Makefile                    # make build | build-tui | build-mock | gui | test | clean
 ├── go.mod
 ├── bpf/
 │   ├── zerotrust.c             # Kernel C: XDP (rete) e LSM (file_open)
@@ -180,7 +174,7 @@ Gruppi di regole:
 
 | Gruppo | Protegge | Autorizzati |
 |---|---|---|
-| `ssh` | `~/.ssh/id_*` | ssh, ssh-add, ssh-agent, ssh-keygen, scp, sftp, git |
+| `ssh` | `~/.ssh/id_*` | ssh, ssh-add, ssh-agent, ssh-keygen, scp, sftp |
 | `cloud` | `.kube/config`, `.aws/credentials`, credenziali Terraform | kubectl, helm, k9s, aws, terraform, tofu |
 | `tokens` | `.git-credentials`, `.docker/config.json`, `gh/hosts.yml`, `.cargo/credentials.toml` | git, gh, docker, cargo |
 | `gpg` | `~/.gnupg/private-keys-v1.d/` | gpg, gpg-agent, gpgsm |
@@ -255,7 +249,7 @@ kubectl get pods                                         # consentito
 * **Root locale = game over:** chi ha root può scaricare gli hook eBPF. Lo scudo difende da processi utente compromessi e dalla rete, non da un privilege escalation riuscito.
 * **Solo `file_open`:** niente hook su `unlink`/`rename`/`ptrace`. Un processo con lo stesso UID può fare `ptrace` su un `ssh` in esecuzione (mitigato da `kernel.yama.ptrace_scope=1`, default Ubuntu).
 * **Whitelist per binario, non per catena:** un `git` lanciato da uno script malevolo può leggere `.git-credentials`. Il segreto forte è la chiave FIDO2.
-* **XDP solo IPv4, senza VLAN, su una sola interfaccia.** IPv6 è coperto solo da `systemd-resolved`.
+* **XDP solo IPv4, un solo tag VLAN, niente IPv6.** LLMNR/mDNS IPv6 coperti solo da `systemd-resolved`. `interface` accetta lista (`"wlan0,eth0"`); interfacce UP scoperte segnalate nel log.
 * **Non sostituisce una VPN:** su Wi-Fi pubblico lo scudo riduce la superficie ma non cifra il traffico.
 * **Browser:** i percorsi predefiniti coprono deb e snap; Flatpak e installazioni custom vanno aggiunti in `extra_rules`. Verifica in `audit` prima di passare a `enforce`, altrimenti il browser può perdere i cookie.
 * **btrfs (subvolume):** `st_dev` userspace ≠ `s_dev` kernel, la chiave dev+inode non matcha. Su ext4/xfs funziona.
@@ -268,7 +262,7 @@ Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock`
 
 | Strumento | Cosa è | Avvio |
 |---|---|---|
-| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete, live) | `./bin/zt-tui` (demone attivo) |
+| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete/Radar, live) | `./bin/zt-tui` (demone attivo) |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &` + `ZT_SOCKET=/tmp/z.sock ./bin/zt-tui` |
 | `zt-gui` | Finestra desktop stile macOS (sidebar, badge mode, eventi live) | `make gui`, poi `./zt-gui/build/bin/zt-gui` |
 
