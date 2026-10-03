@@ -23,7 +23,7 @@ jobs:
     name: Lint (gofmt, vet, staticcheck, shellcheck)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
@@ -46,7 +46,7 @@ jobs:
     name: Test (race + coverage)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
@@ -76,7 +76,7 @@ jobs:
     name: eBPF (clang + bpf2go + demone)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
@@ -126,7 +126,7 @@ jobs:
     name: GUI (Vite + Wails Go)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.x"
@@ -168,7 +168,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
