@@ -22,7 +22,7 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 </p>
 
 > [!WARNING]
-> **Progetto sperimentale, mai usato in produzione.** Gli hook LSM che proteggono i
+> **Progetto sperimentale, mai testato su macchina fisica.** Gli hook LSM che proteggono i
 > segreti passano il verifier del kernel, ma non sono mai stati **agganciati** su una
 > macchina reale: il blocco effettivo dei file non è ancora stato visto funzionare. Usalo in **VM** e in modalità `audit` finché
 > `zt-probe` e il collaudo di [`docs/TESTING_LAB.md`](docs/TESTING_LAB.md) non passano
