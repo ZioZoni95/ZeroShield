@@ -35,6 +35,7 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 | TUI / GUI / mock | ✅ testato | `zt-tui --dump` contro `zt-mockd`; build GUI in CI |
 | Config, IPC, audit, whitelist | ✅ test unitari | `go test -race`, fuzz, CI |
 | **Hook LSM (segreti)** | 🟡 **verifier ok, mai agganciato** | `zt-probe` in CI: i 4 programmi accettati dal kernel del runner GitHub; attach + blocco reale da provare in VM |
+| Pacchetti `.deb` | ✅ testato | installazione, reinstallazione, rimozione (`make package`) |
 | Script (`harden_system.sh`, …) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
 
 ---
@@ -56,6 +57,7 @@ ZT_SOCKET=/tmp/z.sock ./bin/zt-tui   # tab Stato · Eventi · Regole · Rete · 
 | 🔒 | **Segreti** (eBPF LSM) | `cat ~/.aws/credentials` da script malevolo → `Permesso negato`, `kubectl` continua a funzionare |
 | 📡 | **Radar rete** (eBPF XDP) | Poisoning LLMNR/mDNS e scansioni droppate prima dello stack, sorgenti sul radar |
 | 🧱 | **Sistema** | Firewall deny-incoming, DNS cifrato, anti ARP-spoof |
+| 🐤 | **Esche anti-ransomware** (fanotify) | Chi apre `~/Documents/.canary-wallet.dat` viene ucciso in enforce; cancellazioni di massa → allarme |
 | 🔑 | **Identità** (FIDO2) | Commit firmati col tocco fisico: senza token, niente firma |
 
 > **Kernel-Enforced Local Security Agent for Linux Workstations**
@@ -128,14 +130,17 @@ ZeroShield/
 ├── LICENSE                     # MIT © 2026 ZioZoni95
 ├── docs/
 │   ├── PUNTI_APERTI.md         # Stato, decisioni aperte e checklist
-│   ├── CANARY.md               # Canary + fanotify: guida, design, fonti
+│   ├── CANARY.md               # Canary anti-ransomware: guida d'uso, taratura, design
+│   ├── FEATURE_PLAN.md         # Estensioni pianificate (VPN kill-switch, egress)
 │   ├── FIX_APPLICATI.md        # Fix applicati e ancora da applicare
 │   ├── TESTING.md              # Collaudo pratico (LSM, XDP, network namespaces)
 │   ├── TESTING_LAB.md          # Scenario lab reale in VM isolata (post-fix)
 │   ├── TEST_SANDBOX.md         # Cosa è stato testato davvero, dove e come
 │   ├── UI_RESEARCH.md          # Ricerca TUI/GUI e architettura IPC
 │   └── gemini-code-1790668303538.md # Specifiche iniziali e storico
-├── Makefile                    # make build | build-tui | build-mock | gui | test | clean
+├── Makefile                    # make build | probe | test | test-root | package | package-gui | gui
+├── packaging/                  # nfpm (.deb), unit systemd, script del pacchetto, .desktop
+├── .github/                    # CI (5 job + zt-probe), release sui tag v*, Dependabot
 ├── go.mod
 ├── bpf/
 │   ├── zerotrust.c             # Kernel C: XDP (rete) e LSM (open/unlink/rename/truncate)
@@ -163,7 +168,7 @@ ZeroShield/
 
 ---
 
-## 🎯 I Quattro Livelli di Protezione
+## 🎯 I Livelli di Protezione
 
 ### 1. Network Layer (eBPF XDP + UFW)
 * **Drop dei protocolli di poisoning:** LLMNR (5355), mDNS (5353), NBT-NS (137/138) scartati in ingresso prima dello stack TCP/IP. Attivo di default (`block_poisoning`).
@@ -179,12 +184,18 @@ ZeroShield/
 * **Audit in tempo reale:** ogni evento riporta regola, PID, `comm` ed `exe` del processo (utile per decidere cosa autorizzare); formato `text` o `json`.
 * **Fail-closed:** se l'hook LSM non si aggancia, il demone si ferma invece di fingersi attivo.
 
-### 3. Identity & Non-Repudiation Layer (FIDO2)
+### 3. Anti-Ransomware Layer (canary + fanotify)
+* **Esche:** file finti e nascosti (`.canary-*.xlsx`, `.dat`, `.zip`) nelle cartelle scelte; nessun uso legittimo li apre.
+* **Tocco esca:** `SIGKILL` al processo in `enforce`, allarme in `audit`, notifica desktop sempre.
+* **Massa:** troppe scritture/cancellazioni/rinomine di un PID in pochi secondi → allarme (mai kill).
+* **Spento di default:** si tara una settimana in `audit`. Guida completa in [`docs/CANARY.md`](docs/CANARY.md).
+
+### 4. Identity & Non-Repudiation Layer (FIDO2)
 * **Chiavi non estraibili:** `ed25519-sk` residente, PIN + tocco (`verify-required`). Senza token, `setup_fido2.sh` ripiega su una chiave software (protezione più debole).
 * **Commit firmati** via SSH con `allowed_signers` per la verifica locale.
 * **Anti SSH-agent hijacking:** `ssh-add -c` per le chiavi software.
 
-### 4. Protocol & OS Hardening
+### 5. Protocol & OS Hardening
 * **Anti-poisoning:** LLMNR e mDNS disattivati in `systemd-resolved`.
 * **DNS sicuro (profili `public-wifi`/`paranoid`):** DNS-over-TLS verso resolver globali, ignorando quelli del DHCP; DNSSEC `allow-downgrade`.
 * **Sysctl di rete:** niente ICMP redirect / source routing, `rp_filter` loose, meno informazioni ARP su reti ostili.
@@ -242,7 +253,26 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
 
 ---
 
-## 🚀 Guida Rapida
+## 📦 Installazione da pacchetto (Ubuntu / Debian)
+
+Ogni tag `v*` pubblica una [release](https://github.com/ZioZoni95/ZeroShield/releases) con due pacchetti `.deb` e i checksum:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+sudo apt install ./zeroshield_*_amd64.deb          # demone, zt-tui, zt-probe, servizio
+sudo apt install ./zeroshield-gui_*_amd64.deb      # opzionale: app desktop
+
+sudoedit /etc/zt-shield/shield.yaml                # user: <tuo-utente>   (obbligatorio)
+sudo zt-probe -xdp-lo                              # il kernel accetta i programmi?
+sudo systemctl enable --now zt-shield              # parte in audit (profilo home)
+zt-tui                                             # stato ed eventi live
+```
+
+Il servizio **non** si avvia da solo all'installazione. Script di sistema in `/usr/share/zeroshield/scripts/`, documentazione in `/usr/share/doc/zeroshield/`. Da sorgente: `make package && sudo apt install ./dist/zeroshield_*.deb`.
+
+---
+
+## 🚀 Guida Rapida (da sorgente)
 
 ```bash
 # 1. Verifica prerequisiti
@@ -292,6 +322,7 @@ kubectl get pods                                         # consentito
 * **btrfs/overlay = protezione inerte:** chiave non matcha, ora con warning a avvio (`CheckFilesystem`). Su ext4/xfs funziona.
 * **Servizio fermo = zero protezione:** nessun pinning; `StartLimit`+`ExecStartPre` evitano solo il morto-silenzioso.
 * **FIDO2 software = segreto su disco:** senza token fisico, firma senza tocco.
+* **Canary:** il kill arriva dopo il tocco e non ferma la cifratura in-place che salta le esche; sotto systemd serve `ReadWritePaths=` per le cartelle delle esche ([`docs/CANARY.md`](docs/CANARY.md) §3.2).
 * **Non è antivirus/IDS/egress e non cifra:** su Wi-Fi ostile serve comunque la VPN. Browser Flatpak/custom vanno in `extra_rules`, verifica in `audit` prima di `enforce`.
 
 ---
@@ -337,3 +368,5 @@ Anteprima TUI senza TTY: `./bin/zt-tui --dump`. Nota: fuori da env snap le GUI G
 * Specifiche tecniche iniziali e storico evolutivo: [gemini-code-1790668303538.md](docs/gemini-code-1790668303538.md).
 * Stato e attività aperte: [docs/PUNTI_APERTI.md](docs/PUNTI_APERTI.md).
 * Guida agli scenari di collaudo pratico: [docs/TESTING.md](docs/TESTING.md).
+* Cosa è stato testato su kernel reale e come rifarlo: [docs/TEST_SANDBOX.md](docs/TEST_SANDBOX.md).
+* Canary anti-ransomware, uso e taratura: [docs/CANARY.md](docs/CANARY.md).

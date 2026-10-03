@@ -22,3 +22,6 @@ configs/shield.yaml
 .DS_Store
 zt-gui/zt-gui
 build/bin/
+
+# Pacchetti generati (make package)
+dist/

@@ -1,138 +1,103 @@
-# Punti aperti — Local Zero-Trust Shield
+# Punti aperti — ZeroShield
 
-Stato: repo strutturata e implementata. `go vet` pulito, `go test ./internal/...` ok, `make build` produce `bin/zt-shield`.
-**Kernel reale (2026-10-02, `docs/TEST_SANDBOX.md`)**: XDP e canary collaudati;
-i 4 programmi LSM compilano ma il verifier non li ha ancora visti (serve VM con BPF LSM).
-Fix statici applicati e trascritti in `FIX_APPLICATI.md`; scenario lab aggiornato in `TESTING_LAB.md`.
+Aggiornato: 2026-10-02. Storico delle correzioni in [`FIX_APPLICATI.md`](FIX_APPLICATI.md),
+esiti dei test reali in [`TEST_SANDBOX.md`](TEST_SANDBOX.md).
 
-## Origine e scopo (nota 2026-10-02)
+## Stato in una riga
+
+Compila, CI verde (lint, test `-race`, eBPF, GUI, sicurezza, pacchetti `.deb`).
+**XDP e canary collaudati su kernel reale; i 4 hook LSM passano il verifier ma non
+sono mai stati agganciati**: il blocco effettivo dei segreti resta da vedere in VM.
+
+| Componente | Stato |
+|---|---|
+| XDP anti-poisoning + radar | ✅ kernel reale (drop verificato su loopback) |
+| Canary fanotify | ✅ kernel reale (esca, massa, kill in enforce) |
+| Hook LSM (`file_open`, `unlink`, `rename`, `truncate`) | 🟡 verifier ok sul runner GitHub, mai agganciati |
+| TUI / GUI / mock / IPC | ✅ |
+| Pacchetti `.deb` | ✅ installazione e rimozione provate |
+| Script di sistema (`harden_system.sh`, `setup_fido2.sh`) | ⚠️ mai eseguiti (solo shellcheck) |
+
+## Origine e scopo
 
 Progetto personale nato dopo uno zero-day con ransomware, attacco ad Active
 Directory e GitLab, furto di token, ingresso da VM Windows Server 2013.
-La bonifica enterprise (2013, AD, GitLab server) è compito di altri: qui si
-lavora solo sulla postazione personale, per sfruttare la lezione in locale.
+La bonifica enterprise è compito di altri: qui si protegge solo la postazione
+personale. Lezione tradotta: i token piatti rubati fanno il disastro, quindi
+priorità a segreti locali, token brevi, firma FIDO2.
 
-Lezione tradotta in personale: i token piatti rubati fanno il disastro.
-Quindi priorità a `extra_rules` per token dev (GitLab, `gh`, docker, kube,
-aws), token a breve scadenza dove possibile, firma FIDO2, test lab di
-furto-token (infostealer simulato, reverse shell) in VM isolata.
+**È:** anti-furto-segreti locali (LSM dev+inode), anti-poisoning (XDP +
+resolved/UFW), esche anti-ransomware (fanotify), hardening, FIDO2.
+**Non è:** antivirus, firewall completo (niente egress), EDR, backup.
+Root locale, keylogger e disco non cifrato restano fuori scopo.
 
-## Cosa questo tool è / non è (chiarimento dopo discussione)
+## Da fare — collaudo
 
-- È: anti-furto-segreti locali (LSM dev+inode) + anti-poisoning rete (XDP +
-  resolved/UFW) + hardening + FIDO2. Vedi `README.md` e `TESTING_LAB.md`.
-- Non è: antivirus (zero firme/euristiche), firewall completo (solo ingresso,
-  niente egress), anti-ransomware (niente hook su write/unlink/rename: la
-  cifratura di `~/docs` passa), IDS, EDR, backup. Ransomware, keylogger,
-  root locale, disco non cifrato restano fuori scopo (vedi Limiti accettati).
+- [ ] **VM Ubuntu 24.04 con `lsm=...,bpf`**: `make probe`, poi collaudo completo di
+  [`TESTING_LAB.md`](TESTING_LAB.md) in `enforce` (è l'unico pezzo mai visto funzionare).
+- [ ] **Watchdog systemd** stabile oltre 2 minuti (`systemctl status zt-shield`).
+- [ ] **Percorsi dei browser** in `audit` (deb/snap/flatpak) prima di `public-wifi` in enforce.
+- [ ] **Script** `harden_system.sh` e `setup_fido2.sh` in VM con snapshot.
+- [ ] **Test furto-token** in VM isolata: infostealer simulato, reverse shell host-only.
+- [ ] **Pentest LAN** da macchina esterna ([`TESTING.md`](TESTING.md), Test 5).
 
-## Da fare
+## Da fare — codice
 
-- [ ] **Abilitare `bpf` nei LSM.** Su questa macchina `/sys/kernel/security/lsm` = `lockdown,capability,landlock,yama,apparmor,ima,evm`: manca `bpf`. Procedura GRUB nel README, poi riavvio.
-- [ ] **Test con root.** `sudo SHIELD_USER=$USER ./bin/zt-shield` e verifica che il verifier accetti i programmi.
-  - Punto a rischio: `BPF_CORE_READ(task, mm, exe_file, f_inode)` in `lsm/file_open`.
-  - Punto a rischio: aritmetica sul puntatore UDP con `ihl` variabile in `xdp_shield`.
-- [ ] **Collaudo LSM** in `enforce`: `cat ~/.kube/config` negato, `kubectl` ok, test anti-bypass `cp /usr/bin/cat /tmp/ssh`.
-- [ ] **Collaudo XDP:** UDP verso 5355 da un'altra macchina, `bpftool prog show name xdp_shield` con `kernel.bpf_stats_enabled=1`.
-- [ ] **Penetration Test esterno (LAN/Wi-Fi):** Scansione stealth nmap, drop subnet XDP e test esfiltrazione segreti da reverse shell (documentato in `TESTING.md` - Test 5).
-- [ ] **Verificare i percorsi dei browser** in `audit` sulla tua macchina (deb/snap/flatpak) prima di usare `public-wifi` in `enforce`.
-- [ ] **Test di `harden_system.sh` e `install_service.sh`** (mai eseguiti, solo `bash -n`).
-- [ ] **Preset `extra_rules` token dev** (lezione zero-day): GitLab
-  (`~/.config/gitlab/*`, `.git-credentials`, `glab` hosts), `gh/hosts.yml`,
-  docker, kube, aws già coperti — verificare in `audit` e fissare in
-  `configs/shield.example.yaml`. Token brevi dove possibile, resto in LSM.
-- [ ] **Test lab furto-token** in VM isolata (vedi `TESTING_LAB.md` Fase 2/5):
-  infostealer simulato, reverse shell host-only, flood log con rate-limit.
-- [x] **Radar rete da eBPF.** Mappa kernel `xdp_stats` + `TopSources` su IPC,
-  tab Radar TUI (sweep ASCII + blip) e vista Radar GUI (canvas animato).
-  Demo senza kernel: `mockd` serve sorgenti finte. Resta: verifier del nuovo
-  codice mai visto → primo load solo in VM con snapshot.
-- [ ] **Applicare fix pendenti** elencati in `FIX_APPLICATI.md` sez. 7
-  (`main.go` multi-iface/Ticker/cleanup, UFW `allow OpenSSH`, unit
-  `StartLimit`+`ExecStartPre`, sed `TESTING.md`).
-- [ ] **Commit** delle modifiche (working tree con file modificati e non tracciati).
-
-### Da revisione codice 2026-10-02 (fix applicati in `FIX_APPLICATI.md` sez. 9)
-
-- [x] **Canary fanotify non parte.** Confermato e corretto su kernel reale
-  (2026-10-02, `docs/TEST_SANDBOX.md`): due gruppi fanotify. Testo originale: `FAN_DELETE`/`FAN_MOVED_*` richiedono
-  `FAN_REPORT_FID` in `fanotify_init`, altrimenti `fanotify_mark` → `EINVAL`.
-  Con FID pero' gli eventi non hanno fd e il path delle esche non si risolve:
-  servono due gruppi (classico per le esche, FID per le dir). Riscrittura.
-- [ ] **Canary e indicizzatori:** tracker/baloo/deja-dup/rsync aprono le esche →
-  `SIGKILL` in enforce. `exclude_exe` vale solo per la massa.
-- [ ] **Canary creato da root:** `MkdirAll` crea `~/Documents` di root se manca,
+- [ ] **Canary sotto systemd**: la unit ha `ProtectHome=read-only`, le esche non si
+  possono creare. Oggi va aggiunto `ReadWritePaths=` a mano (`systemctl edit`);
+  meglio generarlo dal config o creare le esche fuori dal servizio.
+- [ ] **Canary creato da root**: `MkdirAll` crea `~/Documents` di root se manca,
   esche di root. Fare `chown` all'utente protetto.
-- [ ] **`ZT_SOCKET` rispettato anche dal demone root** (commento dice il contrario):
-  ignorarlo se euid 0.
-- [ ] **QinQ:** commento in `zerotrust.c` dice "outer tag scartato, poi si
-  rivaluta", il codice gestisce un solo tag. Allineare codice o commento.
+- [ ] **Canary e indicizzatori**: tracker/baloo/deja-dup/rsync aprono le esche →
+  `SIGKILL` in enforce. `exclude_exe` vale solo per la massa.
+- [ ] **`ZT_SOCKET` rispettato anche dal demone root**: ignorarlo se euid 0.
+- [ ] **QinQ**: il commento in `zerotrust.c` promette lo unwrap del doppio tag,
+  il codice ne gestisce uno. Allineare.
 - [ ] **`ftruncate` su kernel ≥ 6.2** non coperto (hook `lsm/file_truncate`,
   da caricare opzionale per non rompere i kernel vecchi).
-- [ ] **Saturazione mappe da utente:** milioni di file in una dir protetta
-  (es. `~/.gnupg/private-keys-v1.d`) esauriscono `maxFilesPerPath`/16384 voci e
-  le chiavi vere possono restare fuori mappa. Serve priorita' ai pattern file
-  e un tetto per regola.
-- [ ] **Finestra di rescan:** un segreto riscritto via rename (nuovo inode) e'
-  scoperto fino al prossimo rescan (30s). Valutare inotify sulle dir protette.
-- [ ] **Verifier:** caricare in VM i nuovi hook (`path_truncate`, rename su
-  destinazione, `f_flags`).
+- [ ] **Saturazione mappe da utente**: molti file in una dir protetta esauriscono
+  `maxFilesPerPath`/16384 voci, le chiavi vere possono restare fuori. Serve un
+  tetto per regola e priorità ai pattern di file.
+- [ ] **Finestra di rescan**: un segreto riscritto via rename (nuovo inode) è
+  scoperto fino al rescan successivo (30 s). Valutare inotify sulle dir protette.
+- [ ] **Preset token dev** (GitLab `~/.config/gitlab/*`, `glab`) in `shield.example.yaml`.
 
 ## Decisioni aperte
 
-- [ ] `block_subnets`: scarta anche le risposte; con UFW `deny incoming` il valore è basso. Tenerlo?
+- [ ] `block_subnets` scarta anche le risposte; con UFW `deny incoming` vale poco. Tenerlo?
 - [ ] Profilo di default `home` in `audit`: ok, o meglio `enforce`?
 - [ ] DoT `yes` nel profilo `paranoid` rompe i captive portal: accettabile?
-- [ ] Token FIDO2: serve hardware; senza resta la chiave software.
+- [ ] Release: restare `prerelease` finché gli hook LSM non sono collaudati in enforce?
 
 ## Estensioni possibili
 
-- [ ] IPv6 e VLAN in XDP (LLMNR/mDNS su `ff02::`).
-- [ ] Più interfacce XDP (VPN + Wi-Fi).
-- [ ] Hook aggiuntivi: `ptrace` (`unlink`/`rename`/`truncate` fatti).
-- [ ] Hardening unit systemd: `ProtectSystem=strict`, `CapabilityBoundingSet` (CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON).
-- [ ] Notifiche desktop sugli eventi bloccati.
+- [ ] IPv6 e QinQ in XDP (LLMNR/mDNS su `ff02::`).
+- [ ] Hook `ptrace`.
+- [ ] **Controllo postura CFI** in `check_prereqs.sh`/`zt-probe`: IBT e shadow stack
+  della CPU (`/proc/cpuinfo`: `ibt`, `user_shstk`), kCFI/IBT del kernel
+  (`CONFIG_CFI_CLANG`, `CONFIG_X86_KERNEL_IBT`), binari whitelistati compilati con
+  `-fcf-protection`. ZeroShield non implementa CFI (Go è memory-safe, il verifier
+  vincola l'eBPF): lo verifica e lo segnala.
+- [ ] Hardening unit: `ProtectSystem=strict`, `CapabilityBoundingSet`.
 - [ ] Supporto btrfs (mappatura `st_dev` ↔ `s_dev`).
-- [ ] Regole per wallet crypto e password manager pronte in un gruppo dedicato.
+- [ ] Gruppo di regole per wallet e password manager.
 - [ ] Ricaricamento config a caldo (SIGHUP).
+- [ ] VPN kill-switch, auto-VPN, egress per processo: [`FEATURE_PLAN.md`](FEATURE_PLAN.md).
 
-## Fatto
+## Fatto (sintesi)
 
-- [x] Nome ufficiale **ZeroShield**, licenza MIT © 2026 ZioZoni95 (`LICENSE`).
-  Binari invariati (`zt-shield`, `zt-tui`, `zt-gui`).
-
-- [x] TUI `zt-tui` (Bubble Tea): tab Stato/Eventi/Regole/Rete, live via socket,
-  diagnosi se demone spento. IPC `pkg/ipc` + `audit emit` collegati.
-- [x] Miglioramenti: script fixati (UFW SSH, resolved fallback, sysctl/restart
-  tolleranti, unit StartLimit+ExecStartPre, sed TESTING), unit test
-  ipc/audit/config + fuzz seed + CI GitHub, notifiche desktop GUI su blocchi
-  (throttle 10s). Programma vero mai avviato.
-- [x] Limiti risolti: `deny_write` per-regola (bit31 valore mappa), hook LSM
-  `inode_unlink`/`inode_rename` con whitelist condivisa, watcher canary
-  fanotify (trip esca=kill in enforce, massa=alert), watchdog systemd
-  (pinning rifiutato: hook orfani peggio di down visibile). Egress/VPN
-  kill-switch pianificati in `docs/FEATURE_PLAN.md` (non implementati).
-- [x] GUI `zt-gui` (Wails, stile macOS): sidebar, badge mode, eventi live,
-  regole, rete. Build `make gui` (tag `webkit2_41` su Ubuntu 24.04), avvio
-  verificato headless. Nota: lanciare fuori da env snap (unset GTK_PATH/
-  GIO_MODULE_DIR) o le lib snap avvelenano il loader.
-  Dettagli in `UI_RESEARCH.md`. Notifiche desktop/portal restano futuri.
-- [x] Fix statici senza esecuzione test (dettagli in `FIX_APPLICATI.md`):
-  XDP `sport`+`dport`/VLAN/frammenti, LSM `mm` a stadi + `FMODE_READ`,
-  `resolveExe` con fallback + log, `Validate` severa (`/<8`, allow vuota,
-  duplicati, strict YAML), `decodeEvent` esplicito + backoff + rate-limit,
-  `AttachAll` + warning iface scoperte, `git` fuori da `ssh-keys`,
-  `CheckFilesystem` btrfs/overlay.
-- [x] Scenario lab reale aggiornato in `TESTING_LAB.md` (VM isolata,
-  simulatori benigni, checklist post-fix).
-- [x] Scaffold popolato: `bpf/`, `cmd/`, `internal/{config,lsm,xdp,audit}`, `scripts/`, `configs/`, `Makefile`.
-- [x] Profili `home` / `corporate` / `public-wifi` / `paranoid`, regole per gruppo, `extra_rules`.
-- [x] Modalità `audit` / `enforce`.
-- [x] Whitelist per identità del binario (dev+inode di `exe_file`).
-- [x] Rimozione voci obsolete dalle mappe (rescan).
-- [x] Drop XDP di LLMNR/mDNS/NBT-NS.
-- [x] Log JSON con `exe` del processo.
-- [x] Test unitari su config e profili.
+- Kernel: XDP (poisoning sport+dport, VLAN singola, frammenti, subnet LPM, radar),
+  LSM (`file_open` con `FMODE_READ`/`O_TRUNC`, `unlink`, `rename` sorgente e
+  destinazione, `path_truncate`, `deny_write` per regola).
+- Demone: fail-closed, rescan con riconciliazione, multi-interfaccia, watchdog
+  systemd a metà intervallo, whitelist solo binari di root, filtro proprietario
+  contro symlink verso file di sistema, audit con rate-limit, `-version`.
+- Canary fanotify a due gruppi, chiusura senza race, kill solo in enforce.
+- UI: TUI Bubble Tea, GUI Wails, mock, IPC con testo sanificato (anti-ANSI).
+- Qualità: CI a 5 job + `zt-probe` e test root su kernel del runner,
+  govulncheck, gosec, Dependabot, toolchain Go 1.26.8.
+- Distribuzione: pacchetti `zeroshield` e `zeroshield-gui` (`make package`),
+  release automatica sui tag `v*`.
 
 ## Limiti accettati
 

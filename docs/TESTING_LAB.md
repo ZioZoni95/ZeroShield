@@ -8,8 +8,10 @@
 - Hypervisor KVM/VirtualBox/VMware. `victim` (4GB, kernel ≥5.15, BTF in
   `/sys/kernel/btf/vmlinux`) + `attacker` (stessa host-only, no NAT).
 - Condivise OFF, clipboard OFF. Snapshot prima di ogni fase.
-- Victim: clona repo, `make build`. Se `/sys/kernel/security/lsm` senza `bpf`:
-  append GRUB + reboot (in VM è gratis, su host no).
+- Victim: clona repo, `make build` (oppure installa il `.deb` della release).
+  Se `/sys/kernel/security/lsm` senza `bpf`: append GRUB + reboot (in VM è gratis).
+- **Prima di tutto `make probe`** (o `sudo zt-probe -xdp-lo` dal pacchetto): i 5
+  programmi devono essere ✅. Esiti già noti in [`TEST_SANDBOX.md`](TEST_SANDBOX.md).
 
 ## 1. Simulatori malware benigni (sandbox, no persistenza/spread/C2)
 
@@ -40,7 +42,13 @@ kubectl config view           # atteso OK (whitelist)
 cp /usr/bin/cat /tmp/ssh && /tmp/ssh ~/.kube/config   # atteso NEGATO (inode)
 git hash-object ~/.kube/config      # atteso NEGATO (fix: git fuori da ssh-keys)
 git hash-object ~/.git-credentials # atteso RIESCE (limite noto, git in dev-tokens)
-echo append >> ~/.kube/config       # write-only senza READ: ora PASSA (fix FMODE_READ)
+echo append >> ~/.kube/config       # write-only senza READ: PASSA (scelta: backup/creazione chiavi)
+: > ~/.kube/config                  # O_TRUNC: NEGATO (wipe)
+truncate -s0 ~/.kube/config         # truncate(2): NEGATO (hook path_truncate)
+mv /tmp/x ~/.kube/config            # rename SOPRA il segreto: NEGATO (destinazione)
+rm ~/.ssh/id_ed25519                # unlink: NEGATO
+ln -s /usr/lib/x86_64-linux-gnu/libc.so.6 ~/.ssh/id_trap   # dopo il rescan: log "non appartiene all'utente", libc NON protetta
+printf '\033]0;PWNED\007' > /tmp/n && cp /usr/bin/cat "/tmp/$(cat /tmp/n)" && "/tmp/$(cat /tmp/n)" ~/.kube/config  # NEGATO; exe con ANSI: nel log/TUI appare come \x1b..., il titolo del terminale non cambia
 for i in $(seq 1 200); do cat ~/.kube/config 2>/dev/null; done  # flood: ~50 log + riepilogo soppressi
 ```
 
@@ -82,9 +90,17 @@ Dalla shell remota: `cat ~/.ssh/id_*`, `cat ~/.kube/config`, `python3 ~/lab/mal.
 → `Permesso negato` + log victim. `kubectl` dalla shell → passa (whitelist =
 canale). `io_uring` artigianale → passa (limite noto, fail-open).
 
-## 7. Checklist pass / rollback
+## 7. Fase 6 — canary (vedi [`CANARY.md`](CANARY.md) §3)
 
-`bpf` in lsm, entrambi i prog in `bpftool`, EACCES cat, kubectl ok, `/tmp/ssh`
+`canary.enabled: true` + override `ReadWritePaths` se sotto systemd. In audit:
+`cat ~/Documents/.canary-wallet.dat` → `CANARY-ALERT`; 60 create+delete in
+`~/Documents/zt-mass` → allarme di massa. In enforce:
+`sh -c 'exec 3<~/Documents/.canary-wallet.dat; sleep 30'` → `Killed`.
+
+## 8. Checklist pass / rollback
+
+`bpf` in lsm, `zt-probe` tutto ✅, 5 prog in `bpftool`, `: >`/`truncate`/`mv`/`rm` negati,
+symlink a libc ignorato, canary alert/kill, EACCES cat, kubectl ok, `/tmp/ssh`
 negato, git-kube negato / git-creds riesce, flood riepilogato, ping loss,
 `run_cnt` cresce, `sport 5355` droppata, tcpdump muto, commit senza tocco ko
 (solo con token). Rollback: `pkill zt-shield` (+ `bpftool` vuoto = non protetto)

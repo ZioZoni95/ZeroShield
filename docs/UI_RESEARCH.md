@@ -1,4 +1,9 @@
-# UI_RESEARCH — interfaccia per zt-shield (solo ricerca, nessuna implementazione)
+# UI_RESEARCH — interfaccia per zt-shield
+
+> **Stato (2026-10-02):** ricerca conclusa e implementata. TUI `cmd/zt-tui`
+> (Bubble Tea), GUI `zt-gui` (Wails + WebKitGTK, pacchetto `zeroshield-gui`),
+> mock `cmd/zt-mockd`, IPC `pkg/ipc` con testo sanificato (`ipc.SafeText`).
+> Il resto del documento è la ricerca originale che ha portato a queste scelte.
 
 Stile target: GNOME (libadwaita) / macOS. Due superfici: TUI da terminale + GUI
 desktop. Ricerca web 2026, sintesi sotto. Niente codice implementato in questo

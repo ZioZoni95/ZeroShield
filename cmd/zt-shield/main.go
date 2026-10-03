@@ -23,6 +23,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -51,6 +52,9 @@ const (
 	settingPoison  = 1 // 1 = drop XDP di LLMNR/mDNS/NBT-NS
 )
 
+// version: impostata al build con -ldflags "-X main.version=..." (Makefile, pacchetto).
+var version = "dev"
+
 // b2u: le mappe BPF trattano ogni valore come u32, quindi un bool di Go va
 // tradotto esplicitamente. Utile solo perche' i mappe non hanno un tipo bool.
 func b2u(b bool) uint32 {
@@ -64,7 +68,12 @@ func main() {
 	// -config: se omesso prova /etc/zt-shield/shield.yaml e, se non esiste,
 	// usa il profilo di default senza leggere nulla dal filesystem.
 	cfgPath := flag.String("config", "", "file YAML (default: "+config.DefaultPath+" se esiste, altrimenti profilo '"+config.DefaultProfile+"')")
+	showVersion := flag.Bool("version", false, "stampa la versione ed esce")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("zt-shield", version)
+		return
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {

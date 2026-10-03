@@ -6,7 +6,14 @@
 # incorporato nel binario Go, quindi `go build` da solo produce un eseguibile
 # che non contiene i programmi kernel.
 
-.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui test test-root lint check clean
+.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui gui-bin test test-root lint check package package-gui clean
+
+# Versione nei binari e nei pacchetti: dal tag git (v0.1.0 -> 0.1.0), altrimenti
+# 0.0.0~dev+<commit> (il ~ ordina le dev prima di qualsiasi release in dpkg).
+VERSION ?= $(shell v=$$(git describe --tags --exact-match 2>/dev/null); if [ -n "$$v" ]; then echo $${v#v}; else echo 0.0.0~dev+$$(git rev-parse --short HEAD 2>/dev/null || echo unknown); fi)
+ARCH ?= $(shell go env GOARCH)
+LDFLAGS := -s -w -X main.version=$(VERSION)
+NFPM ?= go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
 
 all: build
 
@@ -43,16 +50,16 @@ generate: bpf/vmlinux.h
 
 # -o specifica la directory: il binario va in bin/ per non sporcare la root del repo.
 build: generate build-tui
-	go build -o bin/zt-shield ./cmd/zt-shield
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/zt-shield ./cmd/zt-shield
 
 # TUI: pura Go, nessuna toolchain eBPF. Compila anche senza kernel/BTF.
 build-tui:
-	go build -o bin/zt-tui ./cmd/zt-tui
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/zt-tui ./cmd/zt-tui
 
 # Probe: carica ogni programma eBPF da solo e prova XDP su loopback, senza
 # avviare il demone. Primo passo su una macchina nuova (vedi docs/TEST_SANDBOX.md).
 build-probe: generate
-	go build -o bin/zt-probe ./cmd/zt-probe
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/zt-probe ./cmd/zt-probe
 
 probe: build-probe
 	sudo ./bin/zt-probe -xdp-lo
@@ -67,6 +74,22 @@ build-mock:
 # Lancia: ./zt-gui/build/bin/zt-gui (con demone o mock attivi).
 gui:
 	cd zt-gui && wails build -tags webkit2_41
+
+# GUI senza CLI Wails: build "production" con go build, frontend con Vite.
+# Richiede Node + libgtk-3-dev + libwebkit2gtk-4.1-dev. Usata dal pacchetto.
+gui-bin:
+	cd zt-gui/frontend && npm ci && npm run build
+	cd zt-gui && go build -tags desktop,production,webkit2_41 -trimpath -ldflags "-s -w" -o ../bin/zt-gui .
+
+# Pacchetti .deb in dist/ (nfpm). Il demone include gli stub eBPF, quindi serve
+# la toolchain di `make build`. Installazione: sudo apt install ./dist/zeroshield_*.deb
+package: build build-probe
+	mkdir -p dist
+	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm.yaml --packager deb --target dist/
+
+package-gui: gui-bin
+	mkdir -p dist
+	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm-gui.yaml --packager deb --target dist/
 
 # Test: solo i pacchetti con logica testabile, quindi config.
 # Nessun test richiede root o eBPF: per quello c'è TESTING.md.
@@ -88,4 +111,4 @@ check: lint test build
 # clean: rimuove anche i .o generati, non solo i .go, perche' bpf2go li ricrea
 # comunque e occupano un megabyte.
 clean:
-	rm -rf bin bpf/shield_*.go bpf/shield_*.o
+	rm -rf bin dist bpf/shield_*.go bpf/shield_*.o

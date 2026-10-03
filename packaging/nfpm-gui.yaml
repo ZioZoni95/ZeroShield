@@ -1,0 +1,32 @@
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
+# GUI desktop (Wails + WebKitGTK). Gira come utente, legge il socket del demone.
+name: zeroshield-gui
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: none
+section: admin
+priority: optional
+maintainer: ZioZoni95 <noreply@github.com>
+description: |
+  Interfaccia desktop di ZeroShield: stato, eventi live, regole, radar di rete.
+  Solo lettura via socket Unix; richiede il demone del pacchetto zeroshield.
+vendor: ZioZoni95
+homepage: https://github.com/ZioZoni95/ZeroShield
+license: MIT
+depends:
+  - libgtk-3-0t64 | libgtk-3-0
+  - libwebkit2gtk-4.1-0
+recommends:
+  - zeroshield
+contents:
+  - src: bin/zt-gui
+    dst: /usr/bin/zt-gui
+    file_info: { mode: 0755 }
+  - src: packaging/zeroshield.desktop
+    dst: /usr/share/applications/zeroshield.desktop
+  - src: zt-gui/build/appicon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/zeroshield.png
+  - src: LICENSE
+    dst: /usr/share/doc/zeroshield-gui/copyright
