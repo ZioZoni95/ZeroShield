@@ -36,8 +36,11 @@ if ! [[ "$ENDPOINT" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}:[0-9]{1,5}$ || "$ENDPOINT" =
     exit 1
 fi
 
-install -d -o root -g root -m 0755 "$DEST_DIR"
-install -o root -g root -m 0600 "$SRC" "$DEST_DIR/proton.conf"
+# Proprietario root solo in uso normale; con ZT_WG_DIR (test, utente non root) resta quello corrente.
+OWN=(-o root -g root)
+[ "$(id -u)" -eq 0 ] || OWN=()
+install -d "${OWN[@]}" -m 0755 "$DEST_DIR"
+install "${OWN[@]}" -m 0600 "$SRC" "$DEST_DIR/proton.conf"
 echo "✅ Installato in $DEST_DIR/proton.conf (0600, solo root)."
 echo
 echo "Metti in /etc/zt-shield/shield.yaml:"
