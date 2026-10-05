@@ -16,6 +16,10 @@ IFACE="${1:-}"
 EVENT="${2:-}"
 ALLOWFILE="/etc/zt-shield/vpn-nets"
 WG_PROFILE="${WG_PROFILE:-proton}"
+# PROTON=1: alza via app Proton (scripts/proton_up.sh) invece di wg-quick.
+# Serve protonvpn-cli + login fatto una volta; senza, logga e non fa danni.
+PROTON="${PROTON:-0}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 [ "$EVENT" = "up" ] || exit 0
 [ -f "$ALLOWFILE" ] || exit 0  # senza allowlist: non toccare nulla
@@ -26,6 +30,10 @@ if grep -qiF "$BSSID" "$ALLOWFILE" 2>/dev/null; then
     logger -t zt-vpn "rete fidata ($SSID $BSSID): tunnel giù"
     wg-quick down "$WG_PROFILE" 2>/dev/null || true
 else
-    logger -t zt-vpn "rete non fidata ($SSID $BSSID): alzo $WG_PROFILE"
-    wg-quick up "$WG_PROFILE" || logger -t zt-vpn "ERRORE: tunnel non partito, resta scoperto"
+    logger -t zt-vpn "rete non fidata ($SSID $BSSID): alzo VPN"
+    if [ "$PROTON" = "1" ]; then
+        "$SCRIPT_DIR/proton_up.sh" connect || logger -t zt-vpn "ERRORE: proton_up fallito, resta scoperto"
+    else
+        wg-quick up "$WG_PROFILE" || logger -t zt-vpn "ERRORE: tunnel non partito, resta scoperto"
+    fi
 fi
