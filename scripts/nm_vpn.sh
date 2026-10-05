@@ -7,13 +7,15 @@
 #   Casa AA:BB:CC:DD:EE:FF
 #   Ufficio 11:22:33:44:55:66
 # Fiducia su BSSID, MAI solo sul nome (evil-twin "Casa" è banale).
-# Richiede: wg-quick + profilo WireGuard funzionante (WG_PROFILE).
+# Richiede: WireGuard + profilo funzionante. Con ProtonVPN: scarica il .conf
+# dall'account, mettilo in /etc/wireguard/proton.conf e imposta
+# WG_PROFILE=proton (default sotto). Vedi docs/VPN_SETUP.md.
 set -euo pipefail
 
 IFACE="${1:-}"
 EVENT="${2:-}"
 ALLOWFILE="/etc/zt-shield/vpn-nets"
-WG_PROFILE="${WG_PROFILE:-casa}"
+WG_PROFILE="${WG_PROFILE:-proton}"
 
 [ "$EVENT" = "up" ] || exit 0
 [ -f "$ALLOWFILE" ] || exit 0  # senza allowlist: non toccare nulla

@@ -61,8 +61,34 @@ body {
     margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--dim);
     border: 1px solid var(--border); border-radius: 5px; padding: 0 5px;
 }
+.nav-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--dim); padding: 10px 9px 4px;
+}
+#sidebar button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.rule .links { margin-top: 6px; }
+.linklike {
+    border: 0; background: none; color: var(--accent); cursor: pointer;
+    font-size: 12.5px; padding: 0; text-decoration: underline;
+}
 #sidebar button .pill { margin-left: 0; }
 .pill { background: var(--accent); color: #fff; border-radius: 10px; font-size: 11px; padding: 1px 8px; }
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar input[type="search"] {
+    flex: 1; min-width: 200px; font: inherit; color: var(--text);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 7px 12px; outline: none;
+}
+.toolbar input[type="search"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chips { display: flex; gap: 6px; }
+.chip {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 16px; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+}
+.chip:hover { background: var(--hover); }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .side-foot { margin-top: auto; }
 .conn { font-size: 11px; color: var(--dim); padding: 0 4px; }
 
@@ -167,3 +193,31 @@ tr.row-canary td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
 
 code { font-family: var(--mono); background: rgba(127,127,127,.18);
     padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+
+/* --- Onboarding primo avvio --- */
+#onboard {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.45); display: flex;
+    align-items: center; justify-content: center; padding: 20px;
+}
+.ob-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
+    max-width: 520px; width: 100%; padding: 26px 28px;
+    box-shadow: 0 24px 64px rgba(0,0,0,.35);
+}
+.ob-card h2 { margin-bottom: 10px; }
+.ob-card p { line-height: 1.55; }
+.ob-card pre {
+    background: rgba(127,127,127,.14); border-radius: 10px; padding: 12px 14px;
+    font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap;
+}
+.ob-dots { display: flex; gap: 7px; margin: 14px 0; }
+.ob-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.ob-dot.on { background: var(--accent); }
+.ob-btns { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* --- Offline contestuale --- */
+.offline { max-width: 640px; }
+.off-icon { font-size: 38px; margin-bottom: 4px; }
+.offline h2 { margin-bottom: 6px; }
+.offline .cards { margin: 14px 0; }

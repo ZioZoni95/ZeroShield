@@ -10,12 +10,25 @@ const viewTitle = document.getElementById('view-title');
 const conn = document.getElementById('conn');
 const evCount = document.getElementById('ev-count');
 const buttons = [...document.querySelectorAll('#sidebar button')];
-const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar'};
+const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida'};
 
 let view = 'status';
 let status = null;
 let events = [];
 let offlineMsg = '';
+let evSearch = '';
+let evType = 'all'; // all | blocked | audit | canary
+let evSevFirst = false; // pericolosi prima (pattern SOC anti alert-fatigue)
+const APP_VERSION = '0.3.0-dev';
+
+// Drill-down: da Regole o Stato verso Eventi già filtrati.
+function gotoEvents(q) {
+    evSearch = q || '';
+    evType = 'all';
+    view = 'events';
+    buttons.forEach(x => x.classList.toggle('active', x.dataset.view === 'events'));
+    render();
+}
 let prevMode = '';
 
 buttons.forEach(b => b.onclick = () => {
@@ -74,23 +87,55 @@ function render() {
     if (view === 'events') return renderEvents();
     if (view === 'rules') return renderRules();
     if (view === 'radar') return renderRadar();
+    if (view === 'guide') return renderGuide();
     return renderNet();
 }
 
 function renderOffline() {
     conn.textContent = 'demone non raggiungibile';
-    content.innerHTML = `<div class="offline"><h2>Demone non raggiungibile</h2>
-    <p class="sub">${esc(offlineMsg)}</p>
-    <p>Avvialo prima (profilo audit, non blocca nulla):</p>
-    <p><code>sudo SHIELD_USER=$USER ./bin/zt-shield</code></p>
-    <p>oppure in locale senza root (dati finti, solo per vedere la UI):</p>
-    <p><code>ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &<br>ZT_SOCKET=/tmp/z.sock ./bin/zt-gui</code></p></div>`;
+    // Offline contestuale: ogni tab spiega cosa manca, non lo stesso muro ovunque.
+    const what = {
+        status: ['a chi protegge cosa', 'Modalità, hook, file protetti e XDP vivono nel demone.'],
+        events: ['chi ha toccato cosa', 'Lo stream eventi arriva dal ring buffer via socket.'],
+        rules: ['quali segreti e chi li legge', 'Le regole stanno nel config letto dal demone.'],
+        net: ['dove filtra la rete', 'Interfacce XDP e subnet bloccate le sa solo il demone.'],
+        radar: ['chi ti scansiona', 'I drop per IP li conta il kernel via XDP.'],
+        guide: ['come partire', 'La guida resta qui sotto, leggibile anche offline.'],
+    }[view] || ['dati live', 'Servono dal demone.'];
+    const guide = view === 'guide' ? renderGuideBody() : '';
+    content.innerHTML = `<div class="offline">
+    <div class="off-icon">🔌</div>
+    <h2>Senza demone, niente ${what[0]}</h2>
+    <p class="sub">${what[1]}<br>${esc(offlineMsg)}</p>
+    <div class="cards">
+      <div class="card"><div class="k">Vero (serve root, VM)</div><div><code>sudo SHIELD_USER=$USER ./bin/zt-shield</code></div><div class="sub">profilo audit: logga, non blocca</div></div>
+      <div class="card"><div class="k">Demo (dati finti)</div><div><code>ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &</code></div><div class="sub">poi riapri la GUI con stesso socket</div></div>
+    </div>${guide}</div>`;
 }
 
 function renderStatus() {
     const xdp = (status.xdp && status.xdp.length) ? status.xdp.join(', ') : '(spento)';
     const lsm = status.hook_lsm
         ? '<span class="dot-ok">●</span> attivo' : '<span class="dot-off">●</span> spento';
+    // Sessione: conteggi live + regola più colpita. Numeri che contano, non decorazione.
+    let nB = 0, nA = 0, nC = 0;
+    const byRule = {};
+    events.forEach(e => {
+        if (e.canary) { nC++; return; }
+        if (e.action === 'blocked') { nB++; byRule[e.rule] = (byRule[e.rule] || 0) + 1; }
+        else nA++;
+    });
+    let topRule = '—';
+    let topN = 0;
+    Object.entries(byRule).forEach(([r, n]) => { if (n > topN) { topN = n; topRule = r; } });
+    let lastB = 'mai';
+    for (let i = events.length - 1; i >= 0; i--) {
+        const e = events[i];
+        if (e.action === 'blocked' || e.action === 'killed') {
+            lastB = `${e.canary ? '🐤' : '⛔'} ${(e.time || '').slice(11, 19)} ${esc(e.rule || 'canary')} pid=${e.pid}`;
+            break;
+        }
+    }
     content.innerHTML = `<h2>Stato</h2><p class="sub">Profilo ${esc(status.profile)} · home ${esc(status.home)}</p>
     <div class="cards">
       <div class="card"><div class="k">Modalità</div><div class="v" style="font-size:17px">${esc(status.mode)}</div></div>
@@ -98,18 +143,41 @@ function renderStatus() {
       <div class="card"><div class="k">File protetti</div><div class="v" data-count="${status.protected}">0</div></div>
       <div class="card"><div class="k">Binari autorizzati</div><div class="v" data-count="${status.allowed}">0</div></div>
       <div class="card"><div class="k">XDP su</div><div class="v small">${esc(xdp)}</div></div>
+    </div>
+    <h2 style="margin-top:20px">Sessione</h2><p class="sub">dall'apertura della GUI</p>
+    <div class="cards">
+      <div class="card warn-top"><div class="k">Blocchi</div><div class="v" data-count="${nB}">0</div></div>
+      <div class="card"><div class="k">Audit</div><div class="v" data-count="${nA}">0</div></div>
+      <div class="card warn-top"><div class="k">Canary</div><div class="v" data-count="${nC}">0</div></div>
+      <div class="card"><div class="k">Regola più colpita</div><div class="v small">${esc(topRule)}${topN ? ` ×${topN}` : ''}</div></div>
+      <div class="card warn-top"><div class="k">Ultimo blocco</div><div class="v small mono">${lastB}</div></div>
     </div>`;
     content.querySelectorAll('[data-count]').forEach(el =>
         countUp(el, parseInt(el.dataset.count, 10)));
 }
 
 function renderEvents() {
+    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['canary', 'canary']]
+        .map(([v, l]) => `<button class="chip${evType === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('');
+    const bar = `<div class="toolbar"><input id="ev-q" type="search" placeholder="Filtra regola, comm, exe, pid…" value="${esc(evSearch)}"><span class="chips">${chips}</span>
+    <button id="ev-sev" class="chip${evSevFirst ? ' on' : ''}" title="Pericolosi prima (anti alert-fatigue)">⚠️ prima</button></div>`;
+    const q = evSearch.toLowerCase();
+    const pool = events.filter(e => {
+        if (evType === 'blocked' && !(e.action === 'blocked' || e.action === 'killed')) return false;
+        if (evType === 'audit' && (e.action === 'blocked' || e.canary)) return false;
+        if (evType === 'canary' && !e.canary) return false;
+        if (!q) return true;
+        const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''}`.toLowerCase();
+        return hay.includes(q);
+    });
     if (!events.length) {
         content.innerHTML = `${h2(ICO_AUDIT, 'Eventi')}
         <div class="empty"><span class="big">🌊</span><b>Rete calma, niente eventi.</b><br>In audit gli accessi legittimi compaiono qui: passa a enforce solo a log puliti.</div>`;
         return;
     }
-    const rows = [...events].reverse().slice(0, 200).map(e => {
+    const sev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : (e.canary ? 1 : 2);
+    const listed = [...pool].sort((a, b) => evSevFirst ? (sev(a) - sev(b)) : 0);
+    const rows = listed.reverse().slice(0, 200).map(e => {
         if (e.canary) {
             const tag = e.action === 'killed'
                 ? `<span class="tag tag-block">${ICO_BIRD} KILL</span>`
@@ -124,11 +192,29 @@ function renderEvents() {
             : `<span class="tag tag-audit">${ICO_AUDIT} audit</span>`;
         const t = (e.time || '').slice(11, 19);
         const cls = e.action === 'blocked' ? 'row-block' : 'row-audit';
-        return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td>${esc(e.rule)}</td>
+        return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td><button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button></td>
         <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${esc(e.exe || '(uscito)')}</td></tr>`;
     }).join('');
-    content.innerHTML = `${h2(ICO_AUDIT, 'Eventi')}<p class="sub">${events.length} eventi (ultimi 200, live)</p>
+    content.innerHTML = `${h2(ICO_AUDIT, 'Eventi')}<p class="sub">${pool.length}/${events.length} eventi (ultimi 200, live)</p>
+    ${bar}
     <table><tr><th></th><th>ora</th><th>regola</th><th>pid</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
+    wireEventsBar();
+}
+
+// Collega toolbar ricreata a ogni render (gli elementi sono freschi).
+function wireEventsBar() {
+    const q = document.getElementById('ev-q');
+    if (q) {
+        q.oninput = () => { evSearch = q.value; render(); const nq = document.getElementById('ev-q'); if (nq) { nq.focus(); nq.setSelectionRange(nq.value.length, nq.value.length); } };
+    }
+    document.querySelectorAll('#content .chip[data-t]').forEach(c => {
+        c.onclick = () => { evType = c.dataset.t; render(); };
+    });
+    const sev = document.getElementById('ev-sev');
+    if (sev) sev.onclick = () => { evSevFirst = !evSevFirst; render(); };
+    document.querySelectorAll('#content .linklike[data-rule]').forEach(l => {
+        l.onclick = () => { evSearch = l.dataset.rule; evType = 'all'; render(); };
+    });
 }
 
 function renderRules() {
@@ -140,7 +226,11 @@ function renderRules() {
     content.innerHTML = `${h2(ICO_KEY, 'Regole')}<p class="sub">${rules.length} gruppi di segreti · solo questi binari leggono questi file</p>` +
         rules.map(r => `<div class="rule"><h3>${ICO_KEY} ${esc(r.name)}</h3>
         <div><span class="mono">file:</span> <span class="mono">${esc((r.paths || []).join(', '))}</span></div>
-        <div><span class="mono">exe:</span> <span class="mono">${esc((r.allow || []).join(', '))}</span></div></div>`).join('');
+        <div><span class="mono">exe:</span> <span class="mono">${esc((r.allow || []).join(', '))}</span></div>
+        <div class="links"><button class="linklike" data-goto="${esc(r.name)}">vedi eventi →</button></div></div>`).join('');
+    document.querySelectorAll('#content .linklike[data-goto]').forEach(l => {
+        l.onclick = () => gotoEvents(l.dataset.goto);
+    });
 }
 
 // --- Radar: spazzata canvas con scia + alone + tooltip (dati eBPF) ---
@@ -253,6 +343,28 @@ function renderRadar() {
     frame();
 }
 
+// Guida primo avvio: il demone vuole root, le UI no. Passo-passo con comandi
+// copiabili. Niente viene eseguito da qui: tutto resta nel tuo terminale.
+function renderGuide() {
+    content.innerHTML = `${h2(ICO_AUDIT, 'Guida avvio')}<p class="sub">Il demone vuole root, le UI no. Segui i passi, uno alla volta.</p>` +
+        renderGuideBody() +
+        `<p class="sub">Solo demo senza root: <code>ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &</code> + UI con stesso socket (dati finti).</p>`;
+}
+
+// Corpo guida riusabile anche offline (tab Guida senza demone).
+function renderGuideBody() {
+    const steps = [
+        ['1 · Prerequisiti', 'Kernel ≥5.15 con BTF e voce <b>bpf</b> in <span class="mono">/sys/kernel/security/lsm</span> (senza: GRUB + reboot, vedi README).', 'bash scripts/check_prereqs.sh'],
+        ['2 · Compila', 'Toolchain eBPF + binari demone e TUI.', 'make build'],
+        ['3 · Configura', 'Copia esempio, imposta il tuo utente, resta in <b>audit</b> (non blocca nulla).', 'sudo mkdir -p /etc/zt-shield && sudo cp configs/shield.example.yaml /etc/zt-shield/shield.yaml'],
+        ['4 · Prova in primo piano', 'Demone in audit: logga senza negare. Serve root (eBPF).', 'sudo SHIELD_USER=$USER ./bin/zt-shield'],
+        ['5 · Passa a enforce', 'Solo a log puliti: nessun accesso legittimo negato per errore.', 'mode: enforce in /etc/zt-shield/shield.yaml + restart'],
+        ['6 · Servizio + UI', 'Installa come servizio, poi guarda da TUI o da questa GUI (le UI girano da utente).', 'sudo bash scripts/install_service.sh $USER home'],
+    ];
+    return steps.map(([t, d, c]) => `<div class="rule"><h3>${esc(t)}</h3><div>${d}</div>
+        <div style="margin-top:6px"><code>${esc(c)}</code></div></div>`).join('');
+}
+
 function renderNet() {
     const subs = status.block_subnets || [];
     const v = status.vpn || {};
@@ -276,6 +388,62 @@ async function boot() {
         try { offlineMsg += ' — socket: ' + await SocketPath(); } catch (_) {}
     }
     render();
+    // Onboarding: solo se demone mai visto E wizard mai completato.
+    // Flag in localStorage (per-utente, niente root): chi reinstalla lo rivede.
+    try {
+        if (!status && !localStorage.getItem('zs-onboarded')) {
+            showOnboarding();
+        }
+    } catch (_) {}
+}
+
+// Wizard primo avvio stile installazione: 4 passi, niente eseguito,
+// solo spiegato con comandi copiabili. Salta o finisci: non ricompare.
+let obStep = 0;
+const OB_STEPS = [
+    ['👋 Benvenuto in ZeroShield',
+     'Questa GUI è solo la vetrina: la protezione vive nel demone (root) che parla su socket. Ora sei <b>offline</b>: nessun demone in ascolto, niente è attivo.',
+     ''],
+    ['1 · Prerequisiti',
+     'Kernel ≥5.15 con BTF e voce <b>bpf</b> in <span class="mono">/sys/kernel/security/lsm</span>. Senza: GRUB + reboot (vedi README). Poi compila tutto.',
+     'bash scripts/check_prereqs.sh\nmake build'],
+    ['2 · Configura (resta in audit)',
+     'Copia esempio, imposta il tuo utente. <b>Audit non blocca nulla</b>: logga e basta, il modo sicuro di iniziare.',
+     'sudo mkdir -p /etc/zt-shield\nsudo cp configs/shield.example.yaml /etc/zt-shield/shield.yaml'],
+    ['3 · Prova e osserva',
+     'Demone in primo piano (serve root per eBPF), poi guarda questa GUI popolarsi. A log puliti: <b>mode: enforce</b> + servizio.',
+     'sudo SHIELD_USER=$USER ./bin/zt-shield\nsudo bash scripts/install_service.sh $USER home'],
+];
+function showOnboarding() {
+    let ov = document.getElementById('onboard');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'onboard';
+        document.body.appendChild(ov);
+    }
+    const [t, d, c] = OB_STEPS[obStep];
+    const dots = OB_STEPS.map((_, i) =>
+        `<span class="ob-dot${i === obStep ? ' on' : ''}"></span>`).join('');
+    ov.innerHTML = `<div class="ob-card"><h2>${t}</h2><p>${d}</p>` +
+        (c ? `<pre>${esc(c)}</pre>` : '') +
+        `<div class="ob-dots">${dots}</div>
+        <div class="ob-btns">
+          <button id="ob-skip" class="chip">Salta</button>
+          ${obStep > 0 ? '<button id="ob-back" class="chip">← Indietro</button>' : ''}
+          ${obStep < OB_STEPS.length - 1
+            ? '<button id="ob-next" class="chip on">Avanti →</button>'
+            : '<button id="ob-done" class="chip on">Ho capito ✓</button>'}
+        </div></div>`;
+    const done = () => {
+        try { localStorage.setItem('zs-onboarded', '1'); } catch (_) {}
+        ov.remove();
+    };
+    document.getElementById('ob-skip').onclick = done;
+    document.getElementById('ob-done') && (document.getElementById('ob-done').onclick = done);
+    const nx = document.getElementById('ob-next');
+    if (nx) nx.onclick = () => { obStep++; showOnboarding(); };
+    const bk = document.getElementById('ob-back');
+    if (bk) bk.onclick = () => { obStep--; showOnboarding(); };
 }
 
 EventsOn('shield:status', st => { status = st; offlineMsg = ''; render(); });

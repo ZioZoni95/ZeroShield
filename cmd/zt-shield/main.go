@@ -68,6 +68,22 @@ func b2u(b bool) uint32 {
 func main() {
 	// -config: se omesso prova /etc/zt-shield/shield.yaml e, se non esiste,
 	// usa il profilo di default senza leggere nulla dal filesystem.
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `ZeroShield demone (serve root: eBPF + fanotify).
+
+Uso:
+  sudo SHIELD_USER=$USER %s [-config FILE]     prova in primo piano (audit: non blocca)
+  sudo %s -config /etc/zt-shield/shield.yaml  config di sistema
+  sudo bash scripts/install_service.sh $USER home   installa come servizio
+
+Config: copia configs/shield.example.yaml in /etc/zt-shield/shield.yaml,
+  imposta 'user', parti in audit, passa a enforce a log puliti.
+  UI: ./bin/zt-tui (terminale) o ZeroShield nel menu app (desktop).
+
+Opzioni:
+`, os.Args[0], os.Args[0])
+		flag.PrintDefaults()
+	}
 	cfgPath := flag.String("config", "", "file YAML (default: "+config.DefaultPath+" se esiste, altrimenti profilo '"+config.DefaultProfile+"')")
 	showVersion := flag.Bool("version", false, "stampa la versione ed esce")
 	flag.Parse()
