@@ -57,6 +57,18 @@ type CanaryConfig struct {
 	ExcludeExe []string `yaml:"exclude_exe"` // sottostringhe exe escluse dal conteggio massa
 }
 
+// VpnConfig: kill-switch su Wi-Fi ostile (vedi docs/FEATURE_PLAN.md F1).
+// Non cifra nulla da solo: presuppone un tunnel WireGuard gestito altrove
+// (wg-quick/NM). Abilitato = solo traffico VPN esce, il resto DROP.
+// Spento di default: senza tunnel configurato bloccherebbe tutta la rete.
+type VpnConfig struct {
+	Enabled   bool     `yaml:"enabled"`
+	Endpoint  string   `yaml:"endpoint"`   // IP:porta del server VPN (unico allowed in chiaro)
+	Tunnel    string   `yaml:"tunnel"`     // interfaccia tunnel (es. wg0)
+	BlockDHCP bool     `yaml:"block_dhcp"` // default false: bloccarlo impedisce al tunnel di riallacciarsi
+	AllowLAN  []string `yaml:"allow_lan"`  // CIDR extra (es. stampante); vuoto = niente
+}
+
 // Config: file YAML completo. I campi non presenti nel file restano quelli del profilo.
 type Config struct {
 	Profile        string       `yaml:"profile"`
@@ -68,6 +80,7 @@ type Config struct {
 	Rules          []Rule       `yaml:"rules"`       // sostituisce le regole del profilo
 	ExtraRules     []Rule       `yaml:"extra_rules"` // si aggiunge a quelle del profilo
 	Canary         CanaryConfig `yaml:"canary"`
+	Vpn            VpnConfig    `yaml:"vpn"`
 	LogFormat      string       `yaml:"log_format"` // text | json
 	RescanSeconds  int          `yaml:"rescan_seconds"`
 }
@@ -278,6 +291,21 @@ func (c *Config) Validate() error {
 		}
 		if c.Canary.BurstSecs <= 0 {
 			c.Canary.BurstSecs = 10
+		}
+	}
+	if c.Vpn.Enabled {
+		// Senza endpoint il kill-switch bloccherebbe tutto compreso il tunnel:
+		// meglio un errore chiaro subito che rete morta dopo.
+		if c.Vpn.Endpoint == "" {
+			return fmt.Errorf("vpn.endpoint mancante (IP:porta del server, unico allowed in chiaro)")
+		}
+		if c.Vpn.Tunnel == "" {
+			return fmt.Errorf("vpn.tunnel mancante (interfaccia tunnel, es. wg0)")
+		}
+		for _, s := range c.Vpn.AllowLAN {
+			if _, n, err := net.ParseCIDR(s); err != nil || n.IP.To4() == nil {
+				return fmt.Errorf("vpn.allow_lan: %q non è un CIDR IPv4 valido", s)
+			}
 		}
 	}
 	for i, r := range c.AllRules() {

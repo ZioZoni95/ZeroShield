@@ -1,7 +1,8 @@
 # Punti aperti — ZeroShield
 
 Aggiornato: 2026-10-02. Storico delle correzioni in [`FIX_APPLICATI.md`](FIX_APPLICATI.md),
-esiti dei test reali in [`TEST_SANDBOX.md`](TEST_SANDBOX.md).
+esiti dei test reali in [`TEST_SANDBOX.md`](TEST_SANDBOX.md),
+piano feature unificato in [`ROADMAP.md`](ROADMAP.md).
 
 ## Stato in una riga
 
