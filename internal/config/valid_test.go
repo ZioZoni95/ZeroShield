@@ -103,6 +103,23 @@ func TestVpnValidation(t *testing.T) {
 	}
 }
 
+func TestVpnProtonStyle(t *testing.T) {
+	// Stile ProtonVPN: endpoint + tunnel dal .conf, senza connettere nulla.
+	// Solo parsing+validazione: nessuna rete toccata, nessun privilegio.
+	p := filepath.Join(t.TempDir(), "p.yaml")
+	yaml := "profile: public-wifi\nuser: test\nvpn:\n  enabled: true\n  endpoint: \"185.107.80.5:51820\"\n  tunnel: \"proton\"\n"
+	if err := os.WriteFile(p, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("config Proton valida rifiutata: %v", err)
+	}
+	if !c.Vpn.Enabled || c.Vpn.Tunnel != "proton" {
+		t.Errorf("stanza vpn persa: %+v", c.Vpn)
+	}
+}
+
 func TestUnknownKeyRejected(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
 	if err := os.WriteFile(p, []byte("profile: home\nblock_poisioning: true\n"), 0o600); err != nil {
