@@ -1,5 +1,25 @@
 export namespace ipc {
 	
+	export class ListenEntry {
+	    proto: string;
+	    addr: string;
+	    port: number;
+	    pid?: number;
+	    exe?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ListenEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.proto = source["proto"];
+	        this.addr = source["addr"];
+	        this.port = source["port"];
+	        this.pid = source["pid"];
+	        this.exe = source["exe"];
+	    }
+	}
 	export class RuleSummary {
 	    name: string;
 	    paths: string[];
@@ -41,6 +61,8 @@ export namespace ipc {
 	    endpoint?: string;
 	    tunnel?: string;
 	    up: boolean;
+	    killswitch: boolean;
+	    handshake_age: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new VpnStatus(source);
@@ -52,6 +74,8 @@ export namespace ipc {
 	        this.endpoint = source["endpoint"];
 	        this.tunnel = source["tunnel"];
 	        this.up = source["up"];
+	        this.killswitch = source["killswitch"];
+	        this.handshake_age = source["handshake_age"];
 	    }
 	}
 	export class Status {
@@ -66,6 +90,8 @@ export namespace ipc {
 	    block_subnets: string[];
 	    vpn: VpnStatus;
 	    top_sources: SourceStat[];
+	    listening: ListenEntry[];
+	    listening_total: number;
 	    rules: RuleSummary[];
 	    time: string;
 	
@@ -86,6 +112,8 @@ export namespace ipc {
 	        this.block_subnets = source["block_subnets"];
 	        this.vpn = this.convertValues(source["vpn"], VpnStatus);
 	        this.top_sources = this.convertValues(source["top_sources"], SourceStat);
+	        this.listening = this.convertValues(source["listening"], ListenEntry);
+	        this.listening_total = source["listening_total"];
 	        this.rules = this.convertValues(source["rules"], RuleSummary);
 	        this.time = source["time"];
 	    }

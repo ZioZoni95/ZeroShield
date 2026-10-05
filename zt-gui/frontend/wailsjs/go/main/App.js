@@ -9,3 +9,7 @@ export function GetStatus() {
 export function SocketPath() {
   return window['go']['main']['App']['SocketPath']();
 }
+
+export function Version() {
+  return window['go']['main']['App']['Version']();
+}

@@ -14,6 +14,10 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// version: impostata al build con -ldflags "-X main.version=..." (Makefile: gui-bin).
+// La GUI la mostra nel sottotitolo di Stato; senza ldflags resta "dev".
+var version = "dev"
+
 func main() {
 	// Create an instance of the app structure
 	app := NewApp()

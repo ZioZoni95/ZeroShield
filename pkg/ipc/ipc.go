@@ -50,9 +50,9 @@ type ListenEntry struct {
 	Exe   string `json:"exe,omitempty"`
 }
 
+// SourceStat: una sorgente droppata da XDP, per il radar delle UI.
 // Total = Poison+Subnet. LastSeen wall-clock del demone (ktime kernel non
 // convertibile direttamente: il demone timestampa quando vede crescere i contatori).
-// SourceStat: una sorgente droppata da XDP, per il radar delle UI.
 type SourceStat struct {
 	IP       string `json:"ip"`
 	Poison   uint32 `json:"poison"`
@@ -75,13 +75,22 @@ type CanaryAlert struct {
 	Reason string `json:"reason"`
 }
 
-// VpnStatus: kill-switch configurato + tunnel su o giù (verifica interfaccia).
-// Up=false con Enabled=true = scoperto: la UI lo mostra rosso.
+// VpnStatus: stato osservato di tunnel e kill-switch (non quello "voluto").
+//
+//   - Enabled: la stanza vpn: e' attiva nel config (il demone MONITORA, non applica).
+//   - Up: l'interfaccia del tunnel esiste ed e' UP. Non prova che il traffico passi.
+//   - KillSwitch: la tabella nft zt-killswitch e' realmente caricata ora.
+//   - HandshakeAge: secondi dall'ultimo handshake WireGuard, -1 se sconosciuto o mai.
+//
+// Le UI combinano i campi: tunnel su + kill-switch = protetto; tunnel giu' senza
+// kill-switch = in chiaro; tunnel su senza kill-switch = protetto solo finche' regge.
 type VpnStatus struct {
-	Enabled  bool   `json:"enabled"`
-	Endpoint string `json:"endpoint,omitempty"`
-	Tunnel   string `json:"tunnel,omitempty"`
-	Up       bool   `json:"up"`
+	Enabled      bool   `json:"enabled"`
+	Endpoint     string `json:"endpoint,omitempty"`
+	Tunnel       string `json:"tunnel,omitempty"`
+	Up           bool   `json:"up"`
+	KillSwitch   bool   `json:"killswitch"`
+	HandshakeAge int    `json:"handshake_age"`
 }
 
 // Status: fotografia del demone. Inviata a ogni nuova connessione e su UpdateStatus.
@@ -99,6 +108,7 @@ type Status struct {
 	Vpn            VpnStatus     `json:"vpn"`
 	TopSources     []SourceStat  `json:"top_sources"`
 	Listening      []ListenEntry `json:"listening"`
+	ListeningTotal int           `json:"listening_total"` // > len(Listening) se troncato
 	Rules          []RuleSummary `json:"rules"`
 	Time           string        `json:"time"`
 }
@@ -130,10 +140,21 @@ type Server struct {
 	closed bool
 }
 
-// NewServer crea /run/zt-shield e apre il socket (permessi larghi di proposito:
-// gli eventi rivelano pattern di accesso locali; su workstation personale va bene,
-// su multiutente va ristretto — vedi nota in README/UI_RESEARCH).
-func NewServer() (*Server, error) {
+// NewServer apre il socket con permessi 0666: qualunque utente locale lo legge.
+// Solo per mock e test, dove il socket sta in una directory temporanea dell'utente.
+// Il demone usa NewServerOwnedBy.
+func NewServer() (*Server, error) { return newServer(-1, -1) }
+
+// NewServerOwnedBy apre il socket di proprieta' di uid:gid con modo 0600: possono
+// collegarsi solo root e l'utente protetto.
+//
+// Perche': stato ed eventi contengono PID, exe e percorsi dei processi di tutti
+// (porte in ascolto comprese). Con 0666 qualunque utente locale otteneva da qui
+// quello che /proc gli nasconde. Le UI girano come l'utente protetto, quindi a loro
+// non cambia nulla; un secondo utente sulla stessa macchina non vede piu' niente.
+func NewServerOwnedBy(uid, gid int) (*Server, error) { return newServer(uid, gid) }
+
+func newServer(uid, gid int) (*Server, error) {
 	dir := filepath.Dir(SocketPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("ipc mkdir: %w", err)
@@ -144,11 +165,22 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ipc listen: %w", err)
 	}
-	// 0666: qualunque utente locale puo' leggere stato/eventi. Scrittura di
-	// controllo non esiste in questo protocollo, quindi niente auth da fare.
-	if err := os.Chmod(SocketPath, 0o666); err != nil {
+	// Il protocollo e' di sola lettura (nessun comando): l'unico controllo d'accesso
+	// e' chi puo' aprire il socket. Prima chmod, poi chown: il modo restrittivo
+	// vale gia' quando la proprieta' cambia.
+	mode := os.FileMode(0o666)
+	if uid >= 0 {
+		mode = 0o600
+	}
+	if err := os.Chmod(SocketPath, mode); err != nil {
 		lis.Close()
 		return nil, fmt.Errorf("ipc chmod: %w", err)
+	}
+	if uid >= 0 {
+		if err := os.Chown(SocketPath, uid, gid); err != nil {
+			lis.Close()
+			return nil, fmt.Errorf("ipc chown: %w", err)
+		}
 	}
 	s := &Server{subs: map[chan []byte]struct{}{}, lis: lis}
 	go s.accept()
@@ -158,6 +190,7 @@ func NewServer() (*Server, error) {
 // UpdateStatus memorizza e ritrasmette lo stato ai nuovi client.
 // I client già connessi ricevono la riga status come aggiornamento live.
 func (s *Server) UpdateStatus(st Status) {
+	st.sanitize()
 	st.Time = time.Now().UTC().Format(time.RFC3339)
 	raw, err := json.Marshal(st)
 	if err != nil {
@@ -180,6 +213,7 @@ func (s *Server) UpdateStatus(st Status) {
 
 // Publish invia un evento a tutti i connessi (drop se pieni, mai blocco).
 func (s *Server) Publish(ev WireEvent) {
+	ev.Comm, ev.Exe, ev.Rule = SafeText(ev.Comm), SafeText(ev.Exe), SafeText(ev.Rule)
 	ev.Time = time.Now().UTC().Format(time.RFC3339)
 	raw, err := json.Marshal(ev)
 	if err != nil {
@@ -199,6 +233,8 @@ func (s *Server) Publish(ev WireEvent) {
 
 // PublishCanary invia un alert canary a tutti i connessi (drop se pieni).
 func (s *Server) PublishCanary(a CanaryAlert) {
+	a.Comm, a.Exe, a.Path = SafeText(a.Comm), SafeText(a.Exe), SafeText(a.Path)
+	a.Kind, a.Reason = SafeText(a.Kind), SafeText(a.Reason)
 	a.Time = time.Now().UTC().Format(time.RFC3339)
 	raw, err := json.Marshal(a)
 	if err != nil {
@@ -352,4 +388,36 @@ func subscribeType(ctx context.Context, typ string, fn func(raw []byte)) error {
 		fn(sc.Bytes())
 	}
 	return sc.Err()
+}
+
+// sanitize neutralizza i caratteri di controllo in ogni stringa che arriva da fuori
+// dal demone: exe e percorsi li sceglie chi lancia il processo, non noi. Va fatto
+// qui, nel punto unico da cui tutto passa verso le UI, e non campo per campo nei
+// chiamanti: un campo nuovo non puo' dimenticarsene (e' gia' successo con Listening).
+func (s *Status) sanitize() {
+	s.Profile, s.Mode, s.Home = SafeText(s.Profile), SafeText(s.Mode), SafeText(s.Home)
+	for i := range s.XDP {
+		s.XDP[i] = SafeText(s.XDP[i])
+	}
+	for i := range s.BlockSubnets {
+		s.BlockSubnets[i] = SafeText(s.BlockSubnets[i])
+	}
+	s.Vpn.Endpoint, s.Vpn.Tunnel = SafeText(s.Vpn.Endpoint), SafeText(s.Vpn.Tunnel)
+	for i := range s.TopSources {
+		s.TopSources[i].IP = SafeText(s.TopSources[i].IP)
+	}
+	for i := range s.Listening {
+		l := &s.Listening[i]
+		l.Proto, l.Addr, l.Exe = SafeText(l.Proto), SafeText(l.Addr), SafeText(l.Exe)
+	}
+	for i := range s.Rules {
+		r := &s.Rules[i]
+		r.Name = SafeText(r.Name)
+		for j := range r.Paths {
+			r.Paths[j] = SafeText(r.Paths[j])
+		}
+		for j := range r.Allow {
+			r.Allow[j] = SafeText(r.Allow[j])
+		}
+	}
 }

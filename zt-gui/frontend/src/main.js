@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version} from '../wailsjs/go/main/App.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -19,7 +19,7 @@ let offlineMsg = '';
 let evSearch = '';
 let evType = 'all'; // all | blocked | audit | canary
 let evSevFirst = false; // pericolosi prima (pattern SOC anti alert-fatigue)
-const APP_VERSION = '0.3.0-dev';
+let appVersion = ''; // dal binario (ldflags), non scritta a mano
 
 // Drill-down: da Regole o Stato verso Eventi già filtrati.
 function gotoEvents(q) {
@@ -74,7 +74,22 @@ function countUp(el, target) {
     })(t0);
 }
 
+// Ogni evento e ogni stato (anche 50 eventi/s in un flood) chiedevano un render
+// completo: tabella da 200 righe ricostruita decine di volte al secondo. Qui le
+// richieste si raggruppano in una sola per frame; a finestra nascosta il browser
+// sospende i frame e il render arriva una volta sola al ritorno. I click dell'utente
+// chiamano render() direttamente: risposta immediata.
+let renderQueued = false;
+function requestRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
 function render() {
+    // La vista Eventi si aggiorna in modo incrementale (vedi renderEvents): per ogni
+    // altra vista il DOM va ricostruito da zero.
+    if (!(view === 'events' && status)) delete content.dataset.view;
     paintBadge();
     cancelAnimationFrame(radarRAF);
     const oldTip = document.getElementById('radar-tip');
@@ -103,13 +118,18 @@ function renderOffline() {
         guide: ['come partire', 'La guida resta qui sotto, leggibile anche offline.'],
     }[view] || ['dati live', 'Servono dal demone.'];
     const guide = view === 'guide' ? renderGuideBody() : '';
+    // Il socket e' leggibile solo da root e dall'utente protetto (campo user: del config):
+    // da un altro utente l'errore e' "permission denied", non "demone spento".
+    const perm = /permission denied/i.test(offlineMsg)
+        ? '<p class="warn">Il demone risponde ma il socket è riservato a root e all\'utente protetto (<code>user:</code> nel config). Apri la GUI con quell\'utente.</p>' : '';
     content.innerHTML = `<div class="offline">
     <div class="off-icon">🔌</div>
     <h2>Senza demone, niente ${what[0]}</h2>
-    <p class="sub">${what[1]}<br>${esc(offlineMsg)}</p>
+    <p class="sub">${what[1]}<br>${esc(offlineMsg)}</p>${perm}
     <div class="cards">
-      <div class="card"><div class="k">Vero (serve root, VM)</div><div><code>sudo SHIELD_USER=$USER ./bin/zt-shield</code></div><div class="sub">profilo audit: logga, non blocca</div></div>
-      <div class="card"><div class="k">Demo (dati finti)</div><div><code>ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &</code></div><div class="sub">poi riapri la GUI con stesso socket</div></div>
+      <div class="card"><div class="k">Da pacchetto .deb (serve root, VM)</div><div><code>sudo systemctl enable --now zt-shield</code></div><div class="sub">prima imposta <code>user:</code> in /etc/zt-shield/shield.yaml · profilo audit: logga, non blocca</div></div>
+      <div class="card"><div class="k">Da sorgente</div><div><code>sudo SHIELD_USER=$USER ./bin/zt-shield</code></div><div class="sub">in primo piano, profilo audit</div></div>
+      <div class="card"><div class="k">Demo (dati finti)</div><div><code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code></div><div class="sub">poi apri la GUI con lo stesso socket (da sorgente: ./bin/zt-mockd)</div></div>
     </div>${guide}</div>`;
 }
 
@@ -136,7 +156,7 @@ function renderStatus() {
             break;
         }
     }
-    content.innerHTML = `<h2>Stato</h2><p class="sub">Profilo ${esc(status.profile)} · home ${esc(status.home)}</p>
+    content.innerHTML = `<h2>Stato</h2><p class="sub">Profilo ${esc(status.profile)} · home ${esc(status.home)}${appVersion ? ` · ZeroShield ${esc(appVersion)}` : ''}</p>
     <div class="cards">
       <div class="card"><div class="k">Modalità</div><div class="v" style="font-size:17px">${esc(status.mode)}</div></div>
       <div class="card"><div class="k">Hook LSM</div><div class="v" style="font-size:17px">${lsm}</div></div>
@@ -156,13 +176,9 @@ function renderStatus() {
         countUp(el, parseInt(el.dataset.count, 10)));
 }
 
-function renderEvents() {
-    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['canary', 'canary']]
-        .map(([v, l]) => `<button class="chip${evType === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('');
-    const bar = `<div class="toolbar"><input id="ev-q" type="search" placeholder="Filtra regola, comm, exe, pid…" value="${esc(evSearch)}"><span class="chips">${chips}</span>
-    <button id="ev-sev" class="chip${evSevFirst ? ' on' : ''}" title="Pericolosi prima (anti alert-fatigue)">⚠️ prima</button></div>`;
+function filterEvents() {
     const q = evSearch.toLowerCase();
-    const pool = events.filter(e => {
+    return events.filter(e => {
         if (evType === 'blocked' && !(e.action === 'blocked' || e.action === 'killed')) return false;
         if (evType === 'audit' && (e.action === 'blocked' || e.canary)) return false;
         if (evType === 'canary' && !e.canary) return false;
@@ -170,11 +186,9 @@ function renderEvents() {
         const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''}`.toLowerCase();
         return hay.includes(q);
     });
-    if (!events.length) {
-        content.innerHTML = `${h2(ICO_AUDIT, 'Eventi')}
-        <div class="empty"><span class="big">🌊</span><b>Rete calma, niente eventi.</b><br>In audit gli accessi legittimi compaiono qui: passa a enforce solo a log puliti.</div>`;
-        return;
-    }
+}
+
+function eventsTableHTML(pool) {
     const sev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : (e.canary ? 1 : 2);
     const listed = [...pool].sort((a, b) => evSevFirst ? (sev(a) - sev(b)) : 0);
     const rows = listed.reverse().slice(0, 200).map(e => {
@@ -195,24 +209,69 @@ function renderEvents() {
         return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td><button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button></td>
         <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${esc(e.exe || '(uscito)')}</td></tr>`;
     }).join('');
-    content.innerHTML = `${h2(ICO_AUDIT, 'Eventi')}<p class="sub">${pool.length}/${events.length} eventi (ultimi 200, live)</p>
-    ${bar}
-    <table><tr><th></th><th>ora</th><th>regola</th><th>pid</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
-    wireEventsBar();
+    return `<table><tr><th></th><th>ora</th><th>regola</th><th>pid</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
 }
 
-// Collega toolbar ricreata a ogni render (gli elementi sono freschi).
+function eventsBarHTML() {
+    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['canary', 'canary']]
+        .map(([v, l]) => `<button class="chip${evType === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('');
+    return `<div class="toolbar"><input id="ev-q" type="search" placeholder="Filtra regola, comm, exe, pid…" value="${esc(evSearch)}"><span class="chips">${chips}</span>
+    <button id="ev-sev" class="chip${evSevFirst ? ' on' : ''}" title="Pericolosi prima (anti alert-fatigue)">⚠️ prima</button></div>`;
+}
+
+// La vista Eventi e' l'unica con un campo di testo: se a ogni evento in arrivo si
+// ricostruisse tutta la pagina, la barra di ricerca perderebbe focus e cursore
+// mentre scrivi (con un flood, di continuo; e le composizioni da tastiera con
+// accenti si interromperebbero). Quindi la barra si costruisce UNA volta e dopo si
+// aggiorna solo la tabella.
+function renderEvents() {
+    if (!events.length) {
+        delete content.dataset.view;
+        content.innerHTML = `${h2(ICO_AUDIT, 'Eventi')}
+        <div class="empty"><span class="big">🌊</span><b>Rete calma, niente eventi.</b><br>In audit gli accessi legittimi compaiono qui: passa a enforce solo a log puliti.</div>`;
+        return;
+    }
+    const pool = filterEvents();
+    const sub = `${pool.length}/${events.length} eventi (ultimi 200, live)`;
+    const body = document.getElementById('ev-body');
+    if (content.dataset.view === 'events' && body) {
+        document.getElementById('ev-sub').textContent = sub;
+        body.innerHTML = eventsTableHTML(pool);
+        syncEventsBar();
+        wireEventLinks();
+        return;
+    }
+    content.dataset.view = 'events';
+    content.innerHTML = `${h2(ICO_AUDIT, 'Eventi')}<p class="sub" id="ev-sub">${sub}</p>
+    <div id="ev-bar">${eventsBarHTML()}</div><div id="ev-body">${eventsTableHTML(pool)}</div>`;
+    wireEventsBar();
+    wireEventLinks();
+}
+
+// Riallinea chip e campo di ricerca allo stato (dopo un drill-down da Regole, per esempio)
+// senza toccare il campo mentre l'utente ci sta scrivendo.
+function syncEventsBar() {
+    document.querySelectorAll('#ev-bar .chip[data-t]').forEach(c => c.classList.toggle('on', c.dataset.t === evType));
+    const sev = document.getElementById('ev-sev');
+    if (sev) sev.classList.toggle('on', evSevFirst);
+    const q = document.getElementById('ev-q');
+    if (q && q !== document.activeElement && q.value !== evSearch) q.value = evSearch;
+}
+
+// Barra: costruita una volta sola, quindi si collega una volta sola.
 function wireEventsBar() {
     const q = document.getElementById('ev-q');
-    if (q) {
-        q.oninput = () => { evSearch = q.value; render(); const nq = document.getElementById('ev-q'); if (nq) { nq.focus(); nq.setSelectionRange(nq.value.length, nq.value.length); } };
-    }
-    document.querySelectorAll('#content .chip[data-t]').forEach(c => {
+    if (q) q.oninput = () => { evSearch = q.value; render(); };
+    document.querySelectorAll('#ev-bar .chip[data-t]').forEach(c => {
         c.onclick = () => { evType = c.dataset.t; render(); };
     });
     const sev = document.getElementById('ev-sev');
     if (sev) sev.onclick = () => { evSevFirst = !evSevFirst; render(); };
-    document.querySelectorAll('#content .linklike[data-rule]').forEach(l => {
+}
+
+// I link "regola" stanno nella tabella, che si ricostruisce a ogni aggiornamento.
+function wireEventLinks() {
+    document.querySelectorAll('#ev-body .linklike[data-rule]').forEach(l => {
         l.onclick = () => { evSearch = l.dataset.rule; evType = 'all'; render(); };
     });
 }
@@ -348,50 +407,85 @@ function renderRadar() {
 function renderGuide() {
     content.innerHTML = `${h2(ICO_AUDIT, 'Guida avvio')}<p class="sub">Il demone vuole root, le UI no. Segui i passi, uno alla volta.</p>` +
         renderGuideBody() +
-        `<p class="sub">Solo demo senza root: <code>ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &</code> + UI con stesso socket (dati finti).</p>`;
+        `<p class="sub">Solo demo senza root: <code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code> + UI con stesso socket (dati finti).</p>`;
 }
+
+// Chi usa questa GUI l'ha quasi sempre installata dal pacchetto .deb (che tira dentro
+// il demone): niente "make build", e la config esiste gia', quindi si MODIFICA, non si
+// copia sopra. Il percorso da sorgente resta, in coda.
+const GUIDE_PKG = [
+    ['1 · Installa', 'La GUI dipende dal demone: un solo comando installa tutto. Il servizio non parte da solo.', 'sudo apt install ./zeroshield_*_amd64.deb ./zeroshield-gui_*_amd64.deb'],
+    ['2 · Imposta l\'utente', 'Apri la config e scrivi il tuo utente in <b>user:</b>. Resta in <b>audit</b> (non blocca nulla). Il socket sarà leggibile solo da root e da quell\'utente.', 'sudoedit /etc/zt-shield/shield.yaml'],
+    ['3 · Verifica il kernel', 'Ogni programma eBPF deve risultare ✅ e <b>bpf</b> deve comparire tra gli LSM attivi.', 'sudo zt-probe -xdp-lo && cat /sys/kernel/security/lsm'],
+    ['4 · Avvia in audit', 'Poi guarda questa GUI popolarsi (o <span class="mono">zt-tui</span>).', 'sudo systemctl enable --now zt-shield && journalctl -u zt-shield -f'],
+    ['5 · Passa a enforce', 'Solo a log puliti: nessun accesso legittimo negato per errore.', 'mode: enforce in /etc/zt-shield/shield.yaml, poi: sudo systemctl restart zt-shield'],
+];
+const GUIDE_SRC = [
+    ['1 · Prerequisiti', 'Kernel ≥5.15 con BTF e voce <b>bpf</b> in <span class="mono">/sys/kernel/security/lsm</span> (senza: GRUB + reboot, vedi README).', 'bash scripts/check_prereqs.sh'],
+    ['2 · Compila', 'Toolchain eBPF + binari demone e TUI.', 'make build'],
+    ['3 · Configura', 'Copia l\'esempio SENZA sovrascrivere una config esistente (-n), poi imposta <b>user:</b> e resta in audit.', 'sudo mkdir -p /etc/zt-shield && sudo cp -n configs/shield.example.yaml /etc/zt-shield/shield.yaml'],
+    ['4 · Prova in primo piano', 'Demone in audit: logga senza negare. Serve root (eBPF).', 'sudo SHIELD_USER=$USER ./bin/zt-shield'],
+    ['5 · Servizio', 'Installa come servizio (a log puliti: mode enforce + restart).', 'sudo bash scripts/install_service.sh $USER home'],
+];
 
 // Corpo guida riusabile anche offline (tab Guida senza demone).
 function renderGuideBody() {
-    const steps = [
-        ['1 · Prerequisiti', 'Kernel ≥5.15 con BTF e voce <b>bpf</b> in <span class="mono">/sys/kernel/security/lsm</span> (senza: GRUB + reboot, vedi README).', 'bash scripts/check_prereqs.sh'],
-        ['2 · Compila', 'Toolchain eBPF + binari demone e TUI.', 'make build'],
-        ['3 · Configura', 'Copia esempio, imposta il tuo utente, resta in <b>audit</b> (non blocca nulla).', 'sudo mkdir -p /etc/zt-shield && sudo cp configs/shield.example.yaml /etc/zt-shield/shield.yaml'],
-        ['4 · Prova in primo piano', 'Demone in audit: logga senza negare. Serve root (eBPF).', 'sudo SHIELD_USER=$USER ./bin/zt-shield'],
-        ['5 · Passa a enforce', 'Solo a log puliti: nessun accesso legittimo negato per errore.', 'mode: enforce in /etc/zt-shield/shield.yaml + restart'],
-        ['6 · Servizio + UI', 'Installa come servizio, poi guarda da TUI o da questa GUI (le UI girano da utente).', 'sudo bash scripts/install_service.sh $USER home'],
-    ];
-    return steps.map(([t, d, c]) => `<div class="rule"><h3>${esc(t)}</h3><div>${d}</div>
+    const block = steps => steps.map(([t, d, c]) => `<div class="rule"><h3>${esc(t)}</h3><div>${d}</div>
         <div style="margin-top:6px"><code>${esc(c)}</code></div></div>`).join('');
+    return `<h2 style="margin-top:14px">Da pacchetto .deb (consigliato)</h2>${block(GUIDE_PKG)}
+    <h2 style="margin-top:22px">Da sorgente</h2>${block(GUIDE_SRC)}`;
+}
+
+// Stato VPN: il verde richiede tunnel su E kill-switch attivo (misurati dal demone, non
+// dedotti dal config). Un tunnel su senza kill-switch protegge solo finche' regge.
+function vpnPanel(v) {
+    if (!v.enabled) {
+        return `<div class="empty"><span class="big">🔓</span><b>VPN non monitorata.</b><br>Nessuna stanza <code>vpn:</code> nel config: su rete ostile esci in chiaro.</div>`;
+    }
+    const hs = (typeof v.handshake_age === 'number' && v.handshake_age >= 0)
+        ? `handshake ${v.handshake_age}s fa` : 'handshake mai/sconosciuto';
+    const line = `<span class="mono">${esc(v.tunnel)} → ${esc(v.endpoint)}</span> · ${hs}`;
+    if (v.up && v.killswitch) {
+        return `<div class="rule ok"><h3>🔒 VPN protetta</h3><div>${line} · kill-switch attivo</div></div>`;
+    }
+    if (v.up) {
+        return `<div class="warn">${ICO_WARN} VPN su ma kill-switch NON attivo: se il tunnel cade esci in chiaro.<br>${line}<br>
+        <span class="sub">Attivalo: <code>vpn_killswitch.sh on ${esc(v.endpoint)} ${esc(v.tunnel)}</code> (vedi docs/VPN_SETUP.md)</span></div>`;
+    }
+    if (v.killswitch) {
+        return `<div class="warn">${ICO_WARN} VPN giù (${esc(v.tunnel || '?')} assente), kill-switch attivo: sei offline ma non in chiaro. Alza il tunnel.</div>`;
+    }
+    return `<div class="warn">${ICO_WARN} VPN GIÙ (${esc(v.tunnel || '?')} assente) e nessun kill-switch: sei in chiaro! Alza il tunnel o esci dalla rete.</div>`;
+}
+
+// IPv6 va tra parentesi, altrimenti "::1:22" non si legge.
+function hostPort(addr, port) {
+    return addr.includes(':') ? `[${addr}]:${port}` : `${addr}:${port}`;
 }
 
 function renderNet() {
     const subs = status.block_subnets || [];
-    const v = status.vpn || {};
-    let vpn = `<div class="empty"><span class="big">🔓</span><b>VPN kill-switch spento.</b><br>Su rete ostile esci in chiaro: alza il tunnel.</div>`;
-    if (v.enabled) {
-        vpn = v.up
-            ? `<div class="rule ok"><h3>🔒 VPN su</h3><div><span class="mono">${esc(v.tunnel)} → ${esc(v.endpoint)}</span></div></div>`
-            : `<div class="warn">${ICO_WARN} VPN GIÙ: ${esc(v.tunnel || '?')} assente, sei in chiaro! Alza il tunnel o esci dalla rete.</div>`;
-    }
-    content.innerHTML = `${h2(ICO_AUDIT, 'Rete')}<p class="sub">XDP: ${esc((status.xdp || []).join(', ') || '(spento)')} · poisoning drop: ${status.block_poisoning}</p>` + vpn +
+    content.innerHTML = `${h2(ICO_AUDIT, 'Rete')}<p class="sub">XDP: ${esc((status.xdp || []).join(', ') || '(spento)')} · poisoning drop: ${status.block_poisoning}</p>` + vpnPanel(status.vpn || {}) +
         (subs.length ? `<div class="warn">${ICO_WARN} Il drop scarta anche le risposte da queste reti: mai gateway/DNS.</div>` : '') +
         (subs.length ? subs.map(c => `<div class="rule">🚫 <span class="mono">${esc(c)}</span></div>`).join('')
             : `<p class="sub">Nessuna subnet bloccata: solo drop poisoning + UFW.</p>`) +
         renderListening();
 }
 
-// Porte in ascolto: se non riconosci una riga, è quella da investigare.
+// Porte in ascolto (TCP e UDP: mDNS/LLMNR sono la superficie che XDP difende).
+// Se non riconosci una riga, è quella da investigare.
 function renderListening() {
     const ls = status.listening || [];
-    if (!ls.length) return `<p class="sub">Nessuna porta TCP in LISTEN.</p>`;
+    if (!ls.length) return `<p class="sub">Nessuna porta in ascolto.</p>`;
     const rows = ls.map(l => {
-        const who = l.exe ? `<span class="mono">${esc(l.exe)}</span> <span class="mono">pid=${l.pid}</span>` : '<i>sconosciuto — investiga</i>';
+        const who = l.exe ? `<span class="mono">${esc(l.exe)}</span> <span class="mono">pid=${l.pid}</span>` : '<i>sconosciuto: processo di altri o già uscito</i>';
         const open = l.addr === '0.0.0.0' || l.addr === '::' ? ' 🌐' : '';
-        return `<tr><td class="mono">${esc(l.proto)}</td><td class="mono">${esc(l.addr)}:${l.port}${open}</td><td>${who}</td></tr>`;
+        return `<tr><td class="mono">${esc(l.proto)}</td><td class="mono">${esc(hostPort(l.addr, l.port))}${open}</td><td>${who}</td></tr>`;
     }).join('');
+    const total = status.listening_total || ls.length;
+    const cut = total > ls.length ? `<p class="sub">… mostrate ${ls.length} di ${total}</p>` : '';
     return `<h2 style="margin-top:18px">In ascolto</h2><p class="sub">Superficie esposta · 🌐 = su tutte le interfacce</p>
-    <table><tr><th>proto</th><th>porta</th><th>processo</th></tr>${rows}</table>`;
+    <table><tr><th>proto</th><th>porta</th><th>processo</th></tr>${rows}</table>${cut}`;
 }
 
 async function boot() {
@@ -402,6 +496,8 @@ async function boot() {
         try { offlineMsg += ' — socket: ' + await SocketPath(); } catch (_) {}
     }
     render();
+    // Versione dal binario (ldflags al build): se manca il binding, nessun errore.
+    try { appVersion = await Version(); requestRender(); } catch (_) {}
     // Onboarding: solo se demone mai visto E wizard mai completato.
     // Flag in localStorage (per-utente, niente root): chi reinstalla lo rivede.
     try {
@@ -418,15 +514,15 @@ const OB_STEPS = [
     ['👋 Benvenuto in ZeroShield',
      'Questa GUI è solo la vetrina: la protezione vive nel demone (root) che parla su socket. Ora sei <b>offline</b>: nessun demone in ascolto, niente è attivo.',
      ''],
-    ['1 · Prerequisiti',
-     'Kernel ≥5.15 con BTF e voce <b>bpf</b> in <span class="mono">/sys/kernel/security/lsm</span>. Senza: GRUB + reboot (vedi README). Poi compila tutto.',
-     'bash scripts/check_prereqs.sh\nmake build'],
-    ['2 · Configura (resta in audit)',
-     'Copia esempio, imposta il tuo utente. <b>Audit non blocca nulla</b>: logga e basta, il modo sicuro di iniziare.',
-     'sudo mkdir -p /etc/zt-shield\nsudo cp configs/shield.example.yaml /etc/zt-shield/shield.yaml'],
-    ['3 · Prova e osserva',
-     'Demone in primo piano (serve root per eBPF), poi guarda questa GUI popolarsi. A log puliti: <b>mode: enforce</b> + servizio.',
-     'sudo SHIELD_USER=$USER ./bin/zt-shield\nsudo bash scripts/install_service.sh $USER home'],
+    ['1 · Installa e imposta l\'utente',
+     'Dal pacchetto .deb il demone è già installato (non parte da solo). Scrivi il tuo utente in <b>user:</b>: il socket sarà leggibile solo da lui e da root.',
+     'sudoedit /etc/zt-shield/shield.yaml'],
+    ['2 · Verifica il kernel',
+     'Serve la voce <b>bpf</b> tra gli LSM attivi (senza: GRUB + reboot, vedi README). Ogni programma eBPF deve risultare ✅.',
+     'sudo zt-probe -xdp-lo\ncat /sys/kernel/security/lsm'],
+    ['3 · Avvia in audit e osserva',
+     '<b>Audit non blocca nulla</b>: logga e basta, il modo sicuro di iniziare. A log puliti: <b>mode: enforce</b> + restart. Da sorgente la Guida ha gli altri comandi.',
+     'sudo systemctl enable --now zt-shield\njournalctl -u zt-shield -f'],
 ];
 function showOnboarding() {
     let ov = document.getElementById('onboard');
@@ -460,12 +556,12 @@ function showOnboarding() {
     if (bk) bk.onclick = () => { obStep--; showOnboarding(); };
 }
 
-EventsOn('shield:status', st => { status = st; offlineMsg = ''; render(); });
-EventsOn('shield:status-error', msg => { if (!status) { offlineMsg = msg; render(); } });
+EventsOn('shield:status', st => { status = st; offlineMsg = ''; requestRender(); });
+EventsOn('shield:status-error', msg => { if (!status) { offlineMsg = msg; requestRender(); } });
 EventsOn('shield:event', ev => {
     events.push(ev);
     if (events.length > 200) events = events.slice(-200);
-    render();
+    requestRender();
 });
 
 // Throttle notifiche canary lato UI (il backend notifica già i blocked;
@@ -482,7 +578,7 @@ EventsOn('shield:canary', a => {
         lastCanaryToast = now;
         toast(`🐤 Canary: ${a.action} pid=${a.pid} (${a.kind})`, a.action === 'killed');
     }
-    render();
+    requestRender();
 });
 
 // Toast non bloccante in alto a destra, sparisce da solo. danger=rosso.

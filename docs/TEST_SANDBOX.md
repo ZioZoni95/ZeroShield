@@ -66,6 +66,24 @@ Ubuntu 24.04 in VM con `lsm=...,bpf` sulla riga di comando del kernel, poi:
   enforce, whitelist per identità, `mv`/`: >`/`truncate` su una chiave negati, symlink verso
   file di sistema ignorato, watchdog systemd stabile oltre 2 minuti.
 
+## Revisione e correzioni del 2026-10-05
+
+Test aggiunti con le correzioni della revisione (dettagli in `FIX_APPLICATI.md` sez. 13). Tutti
+girano anche in CI. Per ognuno è stato verificato che **fallisce** sulla versione precedente.
+
+| Test | Dove | Esito |
+|---|---|---|
+| Kill-switch: on/off/status/portal, atomicità, IPv6, input ostili, backup in `/tmp` ignorato | `scripts/test_killswitch.sh`, network namespace (`unshare -n`) | ✅ 54/54 · sulla versione vecchia fallisce (riapplicazione non atomica, firewall perso, porta 0 accettata, nessun IPv6) e `portal` non termina |
+| Auto-VPN: BSSID vuoto, evil-twin, interfacce virtuali, tunnel già su, Proton | `scripts/test_nm_vpn.sh`, comandi finti | ✅ 28/28 |
+| Helper Proton: tunnel di lavoro mai scelto, endpoint non-IP, chiave privata | `scripts/test_proton.sh`, comandi finti | ✅ 19/19 |
+| Socket IPC con utenti reali | client minimale come `zttest`, `nobody` e root | ✅ protetto legge · altro utente `permission denied` · root legge |
+| GUI nel browser: ricerca sotto flood, stati VPN, UDP/IPv6, HTML ostile, guida | `zt-gui/frontend/tests/gui.test.mjs`, Chromium headless, demone simulato | ✅ 19/19 · sul frontend vecchio 13 falliscono (digitabile **una** lettera durante il flood) |
+| `netstat` su un finto `/proc` (v4, v6, UDP, tetto, PID più basso) | `go test ./internal/netstat` | ✅ |
+| Stato VPN (4 combinazioni, tool mancanti mai verdi) | `go test ./internal/vpn` | ✅ |
+
+Non provato: kill-switch con traffico e tunnel veri, `nm_vpn.sh` con NetworkManager, helper
+Proton con un account, GUI e TUI vere da due utenti diversi.
+
 ## Come rifare questi test
 
 ```bash
@@ -86,6 +104,12 @@ sudo ./bin/zt-shield -config configs/shield.example.yaml   # con user: zttest, m
 
 # 8-12: canary fanotify reale (root)
 make test-root
+
+# VPN: script (nm_vpn e proton con comandi finti; kill-switch in un network namespace)
+make test-scripts
+
+# GUI nel browser (Chrome di sistema o CHROME_PATH=...)
+(cd zt-gui/frontend && npm ci && npm run build && npm i --no-save playwright-core && node tests/gui.test.mjs dist)
 
 # 13: TUI senza root
 make build-tui build-mock
