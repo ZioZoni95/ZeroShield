@@ -48,4 +48,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         # Pre-release finche' gli hook LSM non sono collaudati in enforce (TEST_SANDBOX.md).
-        run: gh release create "$GITHUB_REF_NAME" dist/*.deb dist/SHA256SUMS --generate-notes --prerelease --title "ZeroShield $GITHUB_REF_NAME"
+        run: |
+          cat > /tmp/notes.md <<'EOF'
+          # ⚠️ ALPHA — SOLO LAB, NON USO REALE ⚠️
+
+          > **Gli hook LSM non sono mai stati agganciati su un kernel con BPF attivo:
+          > il blocco effettivo dei segreti NON è verificato. XDP e canary sì
+          > (vedi `docs/TEST_SANDBOX.md`). Installare questo .deb su una macchina
+          > vera non protegge nulla e può negarti i tuoi stessi file in enforce.**
+
+          Uso consentito: VM usa-e-getta con snapshot, dati finti, profilo audit.
+          Prima accensione reale solo dopo riga enforce verde in TEST_SANDBOX.md.
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/*.deb dist/SHA256SUMS \
+            --title "ZeroShield $GITHUB_REF_NAME" --prerelease \
+            --notes-file /tmp/notes.md
