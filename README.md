@@ -312,21 +312,25 @@ kubectl get pods                                         # consentito
 
 ---
 
-## 🚧 Limiti noti (riletti 2026-10-02, fedeli al codice)
+## 🚧 Limiti noti (Q4 2026, verificati sul codice)
 
-* **Root locale = game over:** chi ha root scarica gli hook e legge tutto. Difende da processi utente e rete, non da privilege escalation. Aiutano solo LUKS + backup offline.
-* **Hook su `file_open`, `unlink`, `rename` (sorgente e destinazione), `truncate`; niente `ptrace`.** `ptrace` sullo stesso UID legge la memoria di `ssh` (mitigato da `yama.ptrace_scope=1`). `LD_PRELOAD` su un binario in whitelist dinamico (`ssh`, `git`, `gpg`) esegue codice con la sua identità: stesso limite strutturale della whitelist.
-* **Write-only passa di proposito:** creazione chiavi e backup funzionano, ma anche la sovrascrittura malevola senza troncare. `O_TRUNC` e `truncate(2)` passano invece dalla whitelist; su kernel ≥ 6.2 `ftruncate` di un fd write-only resta scoperto. Per segreti immutabili usa `deny_write`.
-* **Whitelist solo per binari di root:** binari (o directory padri) scrivibili da un utente non root, es. `~/.local/bin`, vengono scartati con log `⛔`: altrimenti basterebbe riscriverli per ereditarne l'accesso.
-* **Whitelist per binario, non per catena:** ogni binario in lista legge i suoi file per chiunque lo invochi (`git` fuori da `ssh-keys`, ma dentro `dev-tokens`). Il segreto forte è la chiave FIDO2.
-* **`io_uring` = fail-open:** worker senza `mm` passa senza evento. Scelta contro falsi blocchi, resta bypass tecnico.
-* **XDP: solo IPv4, un tag VLAN, niente IPv6.** IPv6 coperto solo da `systemd-resolved`. `interface` accetta lista; UP scoperte segnalate nel log.
-* **`block_subnets` scarta anche le risposte:** mai gateway/DNS dentro; prefissi `/<8` rifiutati.
-* **btrfs/overlay = protezione inerte:** chiave non matcha, ora con warning a avvio (`CheckFilesystem`). Su ext4/xfs funziona.
-* **Servizio fermo = zero protezione:** nessun pinning; `StartLimit`+`ExecStartPre` evitano solo il morto-silenzioso.
-* **FIDO2 software = segreto su disco:** senza token fisico, firma senza tocco.
-* **Canary:** il kill arriva dopo il tocco e non ferma la cifratura in-place che salta le esche; sotto systemd serve `ReadWritePaths=` per le cartelle delle esche ([`docs/CANARY.md`](docs/CANARY.md) §3.2).
-* **Non è antivirus/IDS/egress e non cifra:** su Wi-Fi ostile serve comunque la VPN. Novità: stanza `vpn:` + `scripts/vpn_killswitch.sh` (solo traffico tunnel, con rollback) e auto-VPN su BSSID fidati (`scripts/nm_vpn.sh`, Proton incluso). Dettagli in [`docs/VPN_SETUP.md`](docs/VPN_SETUP.md). Browser Flatpak/custom vanno in `extra_rules`, verifica in `audit` prima di `enforce`.
+Strutturali — non si risolvono con patch, solo si mitigano:
+
+* **Root = game over.** Chi ha root scarica gli hook e legge tutto. Contano solo LUKS + backup offline.
+* **Whitelist per binario, non per catena.** Ogni binario in lista legge i suoi file per chiunque lo invochi. Solo binari di root sono ammessi in lista; il segreto forte resta la chiave FIDO2.
+* **`io_uring` = fail-open.** Scelta contro falsi blocchi, resta bypass tecnico.
+* **Niente `ptrace`.** Stesso UID legge la memoria di `ssh` (mitigato da `yama.ptrace_scope=1`). `LD_PRELOAD` su binari whitelist dinamici eredita la loro identità.
+* **btrfs/overlay = protezione inerte** (warning a avvio). Solo ext4/xfs.
+* **Non è antivirus/IDS, non cifra.** Su Wi-Fi ostile serve la VPN (ora con kill-switch e auto-VPN: vedi sotto).
+
+Operativi — da sapere prima di `enforce`:
+
+* **Hook attivi:** `file_open`, `unlink`, `rename`, `truncate`. Write-only passa (chiavi e backup funzionano); `O_TRUNC`/`truncate(2)` passano dalla whitelist, `ftruncate` su kernel ≥ 6.2 resta scoperto. Per segreti immutabili: `deny_write`.
+* **XDP:** solo IPv4, un tag VLAN, niente IPv6 (coperto da `systemd-resolved`). `interface` accetta liste; UP scoperte nel log.
+* **`block_subnets` scarta anche le risposte:** mai gateway/DNS dentro; `/<8` rifiutati.
+* **Servizio fermo = zero protezione** (no pinning). FIDO2 software = segreto su disco.
+* **Canary:** kill dopo il tocco, non ferma in-place che salta esche; sotto systemd servono `ReadWritePaths` ([`docs/CANARY.md`](docs/CANARY.md)).
+* **VPN nuova:** stanza `vpn:` + `scripts/vpn_killswitch.sh` (solo tunnel, rollback) e auto-VPN su BSSID (`scripts/nm_vpn.sh`, Proton incluso) — [`docs/VPN_SETUP.md`](docs/VPN_SETUP.md). Browser Flatpak/custom in `extra_rules`, verifica in `audit` prima di `enforce`.
 
 ---
 
