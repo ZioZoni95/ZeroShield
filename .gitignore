@@ -1,18 +1,33 @@
-# Binari e build
+# Binari e build Go
 bin/
 /zt-shield
 
-# Artefatti eBPF / Clang
+# Artefatti eBPF / Clang (rigenerati con make generate)
 bpf/vmlinux.h
 *.o
 bpf/shield_*.go
 bpf/shield_*.o
 
+# Frontend Wails (npm install + wails build li ricreano)
+zt-gui/frontend/node_modules/
+zt-gui/frontend/dist/
+zt-gui/zt-gui
+build/bin/
+
 # Go
 vendor/
 
-# Configurazione locale con segreti
+# Pacchetti generati (make package)
+dist/
+*.deb
+
+# Configurazione locale con segreti (mai committare)
 configs/shield.yaml
+/etc/zt-shield/
+
+# Test e coverage locali
+*.out
+*.test
 
 # IDE e file temporanei
 .idea/
@@ -20,9 +35,3 @@ configs/shield.yaml
 *.swp
 *~
 .DS_Store
-zt-gui/zt-gui
-build/bin/
-
-# Pacchetti generati (make package)
-dist/
-*.deb

@@ -42,6 +42,7 @@ import (
 	"zt-shield/internal/canary"
 	"zt-shield/internal/config"
 	"zt-shield/internal/lsm"
+	"zt-shield/internal/netstat"
 	"zt-shield/internal/watchdog"
 	"zt-shield/internal/xdp"
 	"zt-shield/pkg/ipc"
@@ -246,7 +247,8 @@ Opzioni:
 			HookLSM: true, XDP: xdpNames,
 			Protected: p, Allowed: a,
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
-			Vpn: vpnStatus(cfg), TopSources: topSrc, Rules: rules,
+			Vpn: vpnStatus(cfg), TopSources: topSrc,
+			Listening: listeningSnapshot(), Rules: rules,
 		})
 	}
 	publishStatus()
@@ -356,6 +358,18 @@ Opzioni:
 	log.Println("🚀 Local Zero-Trust Shield in esecuzione.")
 	<-stop
 	log.Println("🛑 Chiusura agent e rilascio hook eBPF.")
+}
+
+// listeningSnapshot converte internal/netstat in ipc (taglie diverse, stesso dato).
+// A ogni publish: porte in ascolto fresche per tab Rete ("chi può parlarmi?").
+func listeningSnapshot() []ipc.ListenEntry {
+	var out []ipc.ListenEntry
+	for _, e := range netstat.Listening() {
+		out = append(out, ipc.ListenEntry{
+			Proto: e.Proto, Addr: e.Addr, Port: e.Port, PID: e.PID, Exe: e.Exe,
+		})
+	}
+	return out
 }
 
 // vpnStatus fotografa kill-switch config + tunnel reale (esiste interfaccia?).

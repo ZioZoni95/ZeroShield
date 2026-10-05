@@ -538,6 +538,20 @@ func (m model) netView() string {
 		// Tunnel configurato ma giù = scoperto: rosso e chiaro.
 		rows = append(rows, badgeBlock.Render("⚠️ VPN GIÙ: "+s.Vpn.Tunnel+" assente, sei in chiaro!"))
 	}
+	// Porte in ascolto: superficie esposta ("chi può parlarmi?").
+	// Se non riconosci una riga, è quella da investigare.
+	rows = append(rows, "", "In ascolto:")
+	if len(s.Listening) == 0 {
+		rows = append(rows, dimStyle.Render("  nessuna porta TCP in LISTEN"))
+	} else {
+		for _, l := range s.Listening {
+			who := dimStyle.Render("(sconosciuto)")
+			if l.Exe != "" {
+				who = fmt.Sprintf("%s pid=%d", l.Exe, l.PID)
+			}
+			rows = append(rows, fmt.Sprintf("  👂 %-4s %-21s %s", l.Proto, fmt.Sprintf("%s:%d", l.Addr, l.Port), who))
+		}
+	}
 	return strings.Join(rows, "\n")
 }
 
@@ -670,6 +684,10 @@ func dump() string {
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
 		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: true},
+		Listening: []ipc.ListenEntry{
+			{Proto: "tcp", Addr: "127.0.0.1", Port: 631, PID: 1234, Exe: "/usr/sbin/cupsd"},
+			{Proto: "tcp", Addr: "0.0.0.0", Port: 8080, PID: 5678, Exe: "/tmp/srv"},
+		},
 		TopSources: []ipc.SourceStat{
 			{IP: "192.168.100.7", Poison: 34, Subnet: 0, Total: 34, LastSeen: "2026-10-02T10:35:01Z"},
 			{IP: "192.168.100.23", Poison: 0, Subnet: 128, Total: 128, LastSeen: "2026-10-02T10:35:00Z"},

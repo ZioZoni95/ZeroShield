@@ -377,7 +377,21 @@ function renderNet() {
     content.innerHTML = `${h2(ICO_AUDIT, 'Rete')}<p class="sub">XDP: ${esc((status.xdp || []).join(', ') || '(spento)')} · poisoning drop: ${status.block_poisoning}</p>` + vpn +
         (subs.length ? `<div class="warn">${ICO_WARN} Il drop scarta anche le risposte da queste reti: mai gateway/DNS.</div>` : '') +
         (subs.length ? subs.map(c => `<div class="rule">🚫 <span class="mono">${esc(c)}</span></div>`).join('')
-            : `<p class="sub">Nessuna subnet bloccata: solo drop poisoning + UFW.</p>`);
+            : `<p class="sub">Nessuna subnet bloccata: solo drop poisoning + UFW.</p>`) +
+        renderListening();
+}
+
+// Porte in ascolto: se non riconosci una riga, è quella da investigare.
+function renderListening() {
+    const ls = status.listening || [];
+    if (!ls.length) return `<p class="sub">Nessuna porta TCP in LISTEN.</p>`;
+    const rows = ls.map(l => {
+        const who = l.exe ? `<span class="mono">${esc(l.exe)}</span> <span class="mono">pid=${l.pid}</span>` : '<i>sconosciuto — investiga</i>';
+        const open = l.addr === '0.0.0.0' || l.addr === '::' ? ' 🌐' : '';
+        return `<tr><td class="mono">${esc(l.proto)}</td><td class="mono">${esc(l.addr)}:${l.port}${open}</td><td>${who}</td></tr>`;
+    }).join('');
+    return `<h2 style="margin-top:18px">In ascolto</h2><p class="sub">Superficie esposta · 🌐 = su tutte le interfacce</p>
+    <table><tr><th>proto</th><th>porta</th><th>processo</th></tr>${rows}</table>`;
 }
 
 async function boot() {

@@ -41,9 +41,18 @@ type RuleSummary struct {
 	Allow []string `json:"allow"`
 }
 
-// SourceStat: una sorgente droppata da XDP, per il radar delle UI.
+// ListenEntry: una porta TCP in ascolto (da internal/netstat del demone).
+type ListenEntry struct {
+	Proto string `json:"proto"`
+	Addr  string `json:"addr"`
+	Port  uint16 `json:"port"`
+	PID   int    `json:"pid,omitempty"`
+	Exe   string `json:"exe,omitempty"`
+}
+
 // Total = Poison+Subnet. LastSeen wall-clock del demone (ktime kernel non
 // convertibile direttamente: il demone timestampa quando vede crescere i contatori).
+// SourceStat: una sorgente droppata da XDP, per il radar delle UI.
 type SourceStat struct {
 	IP       string `json:"ip"`
 	Poison   uint32 `json:"poison"`
@@ -89,6 +98,7 @@ type Status struct {
 	BlockSubnets   []string      `json:"block_subnets"`
 	Vpn            VpnStatus     `json:"vpn"`
 	TopSources     []SourceStat  `json:"top_sources"`
+	Listening      []ListenEntry `json:"listening"`
 	Rules          []RuleSummary `json:"rules"`
 	Time           string        `json:"time"`
 }

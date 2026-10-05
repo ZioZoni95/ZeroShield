@@ -30,14 +30,12 @@ type Entry struct {
 
 // Listening fotografa /proc/net/tcp e tcp6 in stato LISTEN (0A).
 func Listening() []Entry {
-	var out []Entry
-	inodes := map[string][]int{} // "socket:[ino]" -> pid (raccolto dopo)
-	out = append(out, scanProto("/proc/net/tcp", "tcp")...)
-	out = append(out, scanProto("/proc/net/tcp6", "tcp6")...)
-	if len(out) == 0 {
-		return out
+	scanned := append(scanProto("/proc/net/tcp", "tcp"), scanProto("/proc/net/tcp6", "tcp6")...)
+	if len(scanned) == 0 {
+		return nil
 	}
 	// Mappa inode->pid dai fd di tutti i processi visibili.
+	inodes := map[string][]int{} // "12345" -> pid
 	pids, _ := filepath.Glob("/proc/[0-9]*")
 	for _, p := range pids {
 		pid, err := strconv.Atoi(filepath.Base(p))
@@ -57,13 +55,16 @@ func Listening() []Entry {
 			inodes[ino] = append(inodes[ino], pid)
 		}
 	}
-	for i, e := range out {
-		if pids := inodes[e.ino]; len(pids) > 0 {
-			out[i].PID = pids[0]
+	out := make([]Entry, 0, len(scanned))
+	for _, s := range scanned {
+		e := s.Entry
+		if pids := inodes[s.ino]; len(pids) > 0 {
+			e.PID = pids[0]
 			if exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pids[0])); err == nil {
-				out[i].Exe = exe
+				e.Exe = exe
 			}
 		}
+		out = append(out, e)
 	}
 	return out
 }
