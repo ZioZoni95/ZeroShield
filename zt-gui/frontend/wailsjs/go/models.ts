@@ -36,6 +36,24 @@ export namespace ipc {
 	        this.last_seen = source["last_seen"];
 	    }
 	}
+	export class VpnStatus {
+	    enabled: boolean;
+	    endpoint?: string;
+	    tunnel?: string;
+	    up: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new VpnStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.endpoint = source["endpoint"];
+	        this.tunnel = source["tunnel"];
+	        this.up = source["up"];
+	    }
+	}
 	export class Status {
 	    profile: string;
 	    mode: string;
@@ -46,6 +64,7 @@ export namespace ipc {
 	    allowed: number;
 	    block_poisoning: boolean;
 	    block_subnets: string[];
+	    vpn: VpnStatus;
 	    top_sources: SourceStat[];
 	    rules: RuleSummary[];
 	    time: string;
@@ -65,6 +84,7 @@ export namespace ipc {
 	        this.allowed = source["allowed"];
 	        this.block_poisoning = source["block_poisoning"];
 	        this.block_subnets = source["block_subnets"];
+	        this.vpn = this.convertValues(source["vpn"], VpnStatus);
 	        this.top_sources = this.convertValues(source["top_sources"], SourceStat);
 	        this.rules = this.convertValues(source["rules"], RuleSummary);
 	        this.time = source["time"];

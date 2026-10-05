@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"sort"
@@ -41,6 +42,7 @@ import (
 	"zt-shield/internal/canary"
 	"zt-shield/internal/config"
 	"zt-shield/internal/lsm"
+	"zt-shield/internal/netstat"
 	"zt-shield/internal/watchdog"
 	"zt-shield/internal/xdp"
 	"zt-shield/pkg/ipc"
@@ -67,6 +69,22 @@ func b2u(b bool) uint32 {
 func main() {
 	// -config: se omesso prova /etc/zt-shield/shield.yaml e, se non esiste,
 	// usa il profilo di default senza leggere nulla dal filesystem.
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `ZeroShield demone (serve root: eBPF + fanotify).
+
+Uso:
+  sudo SHIELD_USER=$USER %s [-config FILE]     prova in primo piano (audit: non blocca)
+  sudo %s -config /etc/zt-shield/shield.yaml  config di sistema
+  sudo bash scripts/install_service.sh $USER home   installa come servizio
+
+Config: copia configs/shield.example.yaml in /etc/zt-shield/shield.yaml,
+  imposta 'user', parti in audit, passa a enforce a log puliti.
+  UI: ./bin/zt-tui (terminale) o ZeroShield nel menu app (desktop).
+
+Opzioni:
+`, os.Args[0], os.Args[0])
+		flag.PrintDefaults()
+	}
 	cfgPath := flag.String("config", "", "file YAML (default: "+config.DefaultPath+" se esiste, altrimenti profilo '"+config.DefaultProfile+"')")
 	showVersion := flag.Bool("version", false, "stampa la versione ed esce")
 	flag.Parse()
@@ -229,7 +247,8 @@ func main() {
 			HookLSM: true, XDP: xdpNames,
 			Protected: p, Allowed: a,
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
-			TopSources: topSrc, Rules: rules,
+			Vpn: vpnStatus(cfg), TopSources: topSrc,
+			Listening: listeningSnapshot(), Rules: rules,
 		})
 	}
 	publishStatus()
@@ -339,6 +358,31 @@ func main() {
 	log.Println("🚀 Local Zero-Trust Shield in esecuzione.")
 	<-stop
 	log.Println("🛑 Chiusura agent e rilascio hook eBPF.")
+}
+
+// listeningSnapshot converte internal/netstat in ipc (taglie diverse, stesso dato).
+// A ogni publish: porte in ascolto fresche per tab Rete ("chi può parlarmi?").
+func listeningSnapshot() []ipc.ListenEntry {
+	var out []ipc.ListenEntry
+	for _, e := range netstat.Listening() {
+		out = append(out, ipc.ListenEntry{
+			Proto: e.Proto, Addr: e.Addr, Port: e.Port, PID: e.PID, Exe: e.Exe,
+		})
+	}
+	return out
+}
+
+// vpnStatus fotografa kill-switch config + tunnel reale (esiste interfaccia?).
+// Chiamato a ogni publish: se il tunnel cade tra un rescan e l'altro, le UI
+// lo mostrano rosso al massimo dopo rescan_seconds.
+func vpnStatus(cfg *config.Config) ipc.VpnStatus {
+	st := ipc.VpnStatus{Enabled: cfg.Vpn.Enabled, Endpoint: cfg.Vpn.Endpoint, Tunnel: cfg.Vpn.Tunnel}
+	if !cfg.Vpn.Enabled || cfg.Vpn.Tunnel == "" {
+		return st
+	}
+	iface, err := net.InterfaceByName(cfg.Vpn.Tunnel)
+	st.Up = err == nil && iface.Flags&net.FlagUp != 0
+	return st
 }
 
 // must: usato solo per i Put sulle mappe delle impostazioni, dove un errore

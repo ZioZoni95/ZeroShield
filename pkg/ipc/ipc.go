@@ -41,9 +41,18 @@ type RuleSummary struct {
 	Allow []string `json:"allow"`
 }
 
-// SourceStat: una sorgente droppata da XDP, per il radar delle UI.
+// ListenEntry: una porta TCP in ascolto (da internal/netstat del demone).
+type ListenEntry struct {
+	Proto string `json:"proto"`
+	Addr  string `json:"addr"`
+	Port  uint16 `json:"port"`
+	PID   int    `json:"pid,omitempty"`
+	Exe   string `json:"exe,omitempty"`
+}
+
 // Total = Poison+Subnet. LastSeen wall-clock del demone (ktime kernel non
 // convertibile direttamente: il demone timestampa quando vede crescere i contatori).
+// SourceStat: una sorgente droppata da XDP, per il radar delle UI.
 type SourceStat struct {
 	IP       string `json:"ip"`
 	Poison   uint32 `json:"poison"`
@@ -66,6 +75,15 @@ type CanaryAlert struct {
 	Reason string `json:"reason"`
 }
 
+// VpnStatus: kill-switch configurato + tunnel su o giù (verifica interfaccia).
+// Up=false con Enabled=true = scoperto: la UI lo mostra rosso.
+type VpnStatus struct {
+	Enabled  bool   `json:"enabled"`
+	Endpoint string `json:"endpoint,omitempty"`
+	Tunnel   string `json:"tunnel,omitempty"`
+	Up       bool   `json:"up"`
+}
+
 // Status: fotografia del demone. Inviata a ogni nuova connessione e su UpdateStatus.
 type Status struct {
 	Type           string        `json:"-"`
@@ -78,7 +96,9 @@ type Status struct {
 	Allowed        int           `json:"allowed"`
 	BlockPoisoning bool          `json:"block_poisoning"`
 	BlockSubnets   []string      `json:"block_subnets"`
+	Vpn            VpnStatus     `json:"vpn"`
 	TopSources     []SourceStat  `json:"top_sources"`
+	Listening      []ListenEntry `json:"listening"`
 	Rules          []RuleSummary `json:"rules"`
 	Time           string        `json:"time"`
 }

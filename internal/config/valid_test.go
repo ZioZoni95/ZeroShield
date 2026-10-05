@@ -83,6 +83,43 @@ func TestDenyWriteParsing(t *testing.T) {
 	}
 }
 
+func TestVpnValidation(t *testing.T) {
+	c, _ := Preset("home")
+	if err := c.Validate(); err != nil {
+		t.Fatalf("preset senza vpn deve passare: %v", err)
+	}
+	c.Vpn = VpnConfig{Enabled: true}
+	if err := c.Validate(); err == nil {
+		t.Error("vpn senza endpoint/tunnel accettato: rete morta garantita")
+	}
+	c.Vpn = VpnConfig{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0",
+		AllowLAN: []string{"192.168.1.0/24"}}
+	if err := c.Validate(); err != nil {
+		t.Errorf("vpn completa rifiutata: %v", err)
+	}
+	c.Vpn.AllowLAN = []string{"nope"}
+	if err := c.Validate(); err == nil {
+		t.Error("allow_lan invalido accettato")
+	}
+}
+
+func TestVpnProtonStyle(t *testing.T) {
+	// Stile ProtonVPN: endpoint + tunnel dal .conf, senza connettere nulla.
+	// Solo parsing+validazione: nessuna rete toccata, nessun privilegio.
+	p := filepath.Join(t.TempDir(), "p.yaml")
+	yaml := "profile: public-wifi\nuser: test\nvpn:\n  enabled: true\n  endpoint: \"185.107.80.5:51820\"\n  tunnel: \"proton\"\n"
+	if err := os.WriteFile(p, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("config Proton valida rifiutata: %v", err)
+	}
+	if !c.Vpn.Enabled || c.Vpn.Tunnel != "proton" {
+		t.Errorf("stanza vpn persa: %+v", c.Vpn)
+	}
+}
+
 func TestUnknownKeyRejected(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
 	if err := os.WriteFile(p, []byte("profile: home\nblock_poisioning: true\n"), 0o600); err != nil {
