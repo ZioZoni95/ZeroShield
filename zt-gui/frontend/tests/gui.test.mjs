@@ -106,6 +106,21 @@ await page.waitForTimeout(100);
 const injected = await page.evaluate(() => ({ img: document.querySelectorAll('#ev-body img').length, script: document.querySelectorAll('#ev-body script').length, pwned: !!window.__pwned }));
 check('comm/exe con HTML non vengono interpretati', injected.img === 0 && injected.script === 0 && !injected.pwned, JSON.stringify(injected));
 
+// --- contatori di Stato: un nuovo render non deve farli ripartire da 0
+// (trovato lanciando l'app vera: con eventi in arrivo ogni pochi secondi mostravano 0).
+await page.click('#sidebar button[data-view="status"]');
+await page.waitForTimeout(700); // lascia finire l'animazione di arrivo
+const counter = (label) => page.evaluate((l) => {
+  const card = [...document.querySelectorAll('#content .card')].find(c => c.querySelector('.k') && c.querySelector('.k').textContent === l);
+  return card ? parseInt(card.querySelector('.v').textContent, 10) : NaN;
+}, label);
+const settled = await counter('Blocchi');
+check('i contatori di sessione mostrano il valore reale a regime', settled > 0, `Blocchi=${settled}`);
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status)));
+await page.waitForTimeout(60); // molto meno dei 400 ms di animazione
+const afterRerender = await counter('Blocchi');
+check('...e un nuovo render non li azzera (nessun ritorno a 0)', afterRerender === settled, `prima=${settled} dopo=${afterRerender}`);
+
 // --- Rete: i quattro stati VPN
 const vpnCases = [
   ['VPN protetta', { enabled: true, endpoint: '1.2.3.4:51820', tunnel: 'wg0', up: true, killswitch: true, handshake_age: 12 }, ['VPN protetta', 'kill-switch attivo', '12s']],

@@ -27,7 +27,7 @@ reale; i 4 programmi LSM passano il verifier (kernel dei runner GitHub).
 
 - [~] **VPN kill-switch** — `scripts/vpn_killswitch.sh` (on/off/status/portal), stanza `vpn:`
   validata, stato reale nelle UI (tunnel, tabella nft, handshake). Provato in un network
-  namespace (54 controlli, anche in CI), **mai su rete reale né con un tunnel vero**.
+  namespace (54 controlli, previsti in CI), **mai su rete reale né con un tunnel vero**.
   Accettazione: tunnel killato → `tcpdump` su gateway muto 60 s, in VM.
 - [~] **Auto-VPN su rete non fidata** — `scripts/nm_vpn.sh`, fail-closed, non spegne mai la VPN
   da solo. Provato con comandi finti (28 controlli); **mai con NetworkManager vero**.

@@ -16,8 +16,9 @@ VPN è provato solo in un network namespace e con comandi finti.
 | XDP anti-poisoning + radar | ✅ kernel reale (drop verificato su loopback) |
 | Canary fanotify | ✅ kernel reale (esca, massa, kill in enforce) |
 | Hook LSM (`file_open`, `unlink`, `rename`, `truncate`) | 🟡 verifier ok sul runner GitHub, mai agganciati |
-| TUI / GUI / mock / IPC | ✅ (GUI provata in un browser vero con demone simulato; socket provato con utenti reali) |
-| Pacchetti `.deb` | ✅ installazione e rimozione provate |
+| TUI / GUI / mock / IPC | ✅ GUI vera avviata sotto Xvfb contro il mock + frontend in un browser (21 controlli); socket provato con utenti reali |
+| Demone `zt-shield` end-to-end | ⚠️ mai avviato (non parte senza BPF LSM): il collegamento IPC/VPN/netstat è compilato e analizzato, non eseguito |
+| Pacchetti `.deb` | ✅ costruiti, installati e rimossi qui · ❌ nessuna release pubblicata (workflow mai eseguito) · il pacchetto GUI da solo non si installa |
 | Kill-switch VPN | 🟡 provato in un network namespace (54 controlli); mai su rete reale |
 | Auto-VPN + helper Proton | 🟡 provati con comandi finti; mai con NetworkManager o Proton veri |
 | Script di sistema (`harden_system.sh`, `setup_fido2.sh`) | ⚠️ mai eseguiti (solo shellcheck) |
@@ -39,6 +40,10 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
 
 - [ ] **VM Ubuntu 24.04 con `lsm=...,bpf`**: `make probe`, poi collaudo completo di
   [`TESTING_LAB.md`](TESTING_LAB.md) in `enforce` (è l'unico pezzo mai visto funzionare).
+- [ ] **Avviare il demone end-to-end** in una VM con `bpf` attivo: è l'unico modo di eseguire
+  insieme IPC (socket 0600 dell'utente protetto), stato VPN ogni 5 s e porte in ascolto.
+- [ ] **Primo tag `v0.x.0`** per provare il workflow di release (pre-release con i due `.deb` e i
+  checksum). Mai eseguito.
 - [ ] **VPN in VM con snapshot**, con un tunnel vero: kill-switch (tunnel killato → `tcpdump`
   muto 60 s), `portal`, auto-VPN con NetworkManager, helper Proton. Procedura in
   [`VPN_SETUP.md`](VPN_SETUP.md).
@@ -107,8 +112,9 @@ hook `ptrace`, egress, AV). Il controllo di postura CFI (CPU, kernel, binari) è
 - Qualità: CI con test `-race`, test degli script (namespace e comandi finti), test GUI nel
   browser, `zt-probe` e test root su kernel del runner, govulncheck, gosec, Dependabot, Go 1.26.8.
 - Distribuzione: pacchetti `zeroshield` e `zeroshield-gui` (`make package`), con script VPN e
-  `zt-mockd`; release automatica sui tag `v*`. La GUI dipende dal demone: chi installa la GUI
-  ha sempre tutto.
+  `zt-mockd`; workflow di pre-release sui tag `v*` (mai eseguito). La GUI dipende dal demone: i
+  due file vanno installati insieme (da una release scaricata a mano, il solo pacchetto GUI non si
+  installa).
 
 ## Limiti accettati
 

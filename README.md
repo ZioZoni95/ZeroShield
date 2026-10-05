@@ -32,11 +32,12 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 |---|---|---|
 | XDP anti-poisoning + radar | ✅ **testato su kernel reale** | `zt-probe -xdp-lo`: verifier ok, 5355/5353 droppati, 9999 passa |
 | Canary anti-ransomware (fanotify) | ✅ **testato su kernel reale** | tocco esca, allarme di massa, kill in enforce (`make test-root`) |
-| TUI / GUI / mock | ✅ testato | TUI: test unitari + `--dump`; GUI: build in CI e test in un browser vero con demone simulato (`zt-gui/frontend/tests/gui.test.mjs`) |
+| TUI / GUI / mock | ✅ testato | TUI: test unitari + `--dump`. GUI: **l'app vera del pacchetto avviata sotto Xvfb contro `zt-mockd`** (si collega, mostra stato, eventi, versione) e il frontend in un browser con demone simulato (21 controlli, `zt-gui/frontend/tests/gui.test.mjs`) |
+| **Demone `zt-shield` end-to-end** | ⚠️ **mai avviato** | non parte senza BPF LSM (fail-closed, voluto). Il collegamento di IPC, stato VPN e porte in ascolto dentro il demone è compilato, analizzato (`vet`, staticcheck) e coperto dai test dei singoli pacchetti, ma **mai eseguito insieme** |
 | Config, IPC, audit, whitelist, `netstat` | ✅ test unitari | `go test -race`, fuzz, CI; socket IPC provato con utenti reali (protetto sì, altro utente no) |
 | **Hook LSM (segreti)** | 🟡 **verifier ok, mai agganciato** | `zt-probe` in CI: i 4 programmi accettati dal kernel del runner GitHub; attach + blocco reale da provare in VM |
-| Pacchetti `.deb` | ✅ testato | installazione, reinstallazione, rimozione (`make package`) |
-| Kill-switch VPN (`vpn_killswitch.sh`) | 🟡 **provato in un network namespace** | 54 controlli (`scripts/test_killswitch.sh`, anche in CI): mai su una rete reale, mai con un tunnel vero |
+| Pacchetti `.deb` | ✅ costruiti e installati qui | installazione, reinstallazione, rimozione (`make package`). **Mai pubblicati**: nessuna release esiste ancora e il workflow di release non è mai stato eseguito |
+| Kill-switch VPN (`vpn_killswitch.sh`) | 🟡 **provato in un network namespace** | 54 controlli (`scripts/test_killswitch.sh`, previsto nel workflow CI): mai su una rete reale, mai con un tunnel vero |
 | Auto-VPN (`nm_vpn.sh`), helper Proton | 🟡 **provati con comandi finti** | `scripts/test_nm_vpn.sh`, `scripts/test_proton.sh`: mai con NetworkManager vero né con ProtonVPN |
 | Script (`harden_system.sh`, `setup_fido2.sh`) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
 
@@ -266,12 +267,23 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
 
 ## 📦 Installazione da pacchetto (Ubuntu / Debian)
 
-Ogni tag `v*` pubblica una [release](https://github.com/ZioZoni95/ZeroShield/releases) con due pacchetti `.deb` e i checksum:
+> [!NOTE]
+> **Stato delle release:** il workflow `.github/workflows/release.yml` crea una **pre-release** a ogni
+> tag `v*` con i due `.deb` e i checksum, ma **non è mai stato eseguito: oggi non esiste nessuna
+> release da scaricare.** Finché non c'è, i pacchetti si costruiscono da sorgente (`make package`).
+
+I due file sono **complementari e vanno scaricati entrambi**:
+
+| Pacchetto | Contiene | Da solo |
+|---|---|---|
+| `zeroshield` | demone, `zt-tui`, `zt-probe`, `zt-mockd`, servizio systemd, script (VPN, hardening, FIDO2), documentazione | funziona, **senza** app grafica |
+| `zeroshield-gui` | app desktop `zt-gui` | **non si installa**: dipende da `zeroshield`, e da un file scaricato a mano `apt` non lo trova (`Depends: zeroshield but it is not installable`) |
+
+Installa quindi i due insieme, in un solo comando:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./zeroshield_*_amd64.deb          # demone, zt-tui, zt-probe, servizio
-sudo apt install ./zeroshield-gui_*_amd64.deb      # app desktop (dipende dal demone: installandolo hai tutto)
+sudo apt install ./zeroshield_*_amd64.deb ./zeroshield-gui_*_amd64.deb     # solo demone+TUI: ometti il secondo file
 
 sudoedit /etc/zt-shield/shield.yaml                # user: <tuo-utente>   (obbligatorio)
 sudo zt-probe -xdp-lo                              # il kernel accetta i programmi?
@@ -279,7 +291,7 @@ sudo systemctl enable --now zt-shield              # parte in audit (profilo hom
 zt-tui                                             # stato ed eventi live
 ```
 
-Il servizio **non** si avvia da solo all'installazione. Script di sistema in `/usr/share/zeroshield/scripts/`, documentazione in `/usr/share/doc/zeroshield/`. Da sorgente: `make package && sudo apt install ./dist/zeroshield_*.deb`.
+Installare i pacchetti **non basta ad avere la protezione**: il servizio non si avvia da solo, serve `user:` nel config, serve `bpf` tra gli LSM del kernel (senza, il demone si ferma di proposito) e gli hook LSM non sono mai stati agganciati in enforce (vedi la tabella in alto). Il servizio **non** si avvia da solo all'installazione. Script di sistema in `/usr/share/zeroshield/scripts/`, documentazione in `/usr/share/doc/zeroshield/`. Da sorgente: `make package && sudo apt install ./dist/zeroshield_*.deb`.
 
 ---
 
@@ -330,7 +342,7 @@ make probe           # il kernel accetta i programmi eBPF? XDP su loopback (sudo
 cd zt-gui/frontend && npm ci && npm run build && npm i --no-save playwright-core && node tests/gui.test.mjs dist
 ```
 
-Tutto questo gira anche in CI (`.github/workflows/ci.yml`).
+Questi test sono nel workflow CI (`.github/workflows/ci.yml`). I test di script e GUI sono stati aggiunti con la PR #14: il loro primo run sui runner GitHub va guardato lì.
 
 ---
 

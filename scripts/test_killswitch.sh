@@ -17,8 +17,23 @@ if [ "${ZT_IN_NETNS:-}" != "1" ]; then
     command -v nft >/dev/null || { echo "SKIP: nft mancante"; exit 0; }
     command -v unshare >/dev/null || { echo "SKIP: unshare mancante"; exit 0; }
     unshare -n true 2>/dev/null || { echo "SKIP: network namespace non disponibili"; exit 0; }
-    ZT_IN_NETNS=1 exec unshare -n bash "$0" "$@"
+    ZT_ORIG_NETNS="$(readlink /proc/self/ns/net)" ZT_IN_NETNS=1 exec unshare -n bash "$0" "$@"
 fi
+
+# --- GUARD BEGIN
+# Rete di sicurezza: tutto cio' che segue fa `nft flush ruleset` e applica un kill-switch che
+# scarta il traffico. Il re-exec qui sopra registra il namespace di rete di PARTENZA
+# (ZT_ORIG_NETNS) e qui si verifica che quello attuale sia diverso. Se non lo e' (ZT_IN_NETNS=1
+# impostata a mano senza passare dal re-exec, un unshare andato storto) ci si ferma PRIMA di
+# toccare il firewall della macchina. Una variabile d'ambiente da sola non e' una garanzia:
+# si confronta il namespace reale.
+ns_self="$(readlink /proc/self/ns/net 2>/dev/null || true)"
+if [ -z "${ZT_ORIG_NETNS:-}" ] || [ -z "$ns_self" ] || [ "$ns_self" = "$ZT_ORIG_NETNS" ]; then
+    echo "ERRORE: non sono in un network namespace separato da quello di partenza (${ns_self:-?} / ${ZT_ORIG_NETNS:-?})."
+    echo "        Rifiuto di continuare: toccherei il firewall di QUESTA macchina."
+    exit 2
+fi
+# --- GUARD END
 
 # nftables nel namespace puo' mancare sul kernel (moduli): e' l'ambiente, non il codice.
 if ! nft add table inet zt_probe 2>/dev/null; then

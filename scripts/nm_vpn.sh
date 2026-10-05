@@ -78,7 +78,7 @@ tunnel_up() { ip link show "$WG_PROFILE" >/dev/null 2>&1; }
 
 find_proton_up() {
     local d
-    for d in "${ZT_SCRIPTS:-}" /usr/share/zeroshield/scripts "$(dirname "$0")" "$(dirname "$0")/../scripts"; do
+    for d in "${ZT_SCRIPTS:-}" "${ZT_SYS_SCRIPTS-/usr/share/zeroshield/scripts}" "$(dirname "$0")" "$(dirname "$0")/../scripts"; do
         [ -n "$d" ] && [ -x "$d/proton_up.sh" ] && { echo "$d/proton_up.sh"; return 0; }
     done
     return 1

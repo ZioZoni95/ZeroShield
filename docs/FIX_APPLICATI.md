@@ -269,8 +269,11 @@ un test che fallisce sulla versione vecchia), corretto, coperto da un test.
   render: ora per nome base, ordine deterministico.
 - Tab Rete: UDP, IPv6 tra parentesi, troncamento dichiarato, quattro stati VPN.
 
-**GUI** — test nel browser: `zt-gui/frontend/tests/gui.test.mjs` (19 controlli; sul frontend
-precedente ne falliscono 13).
+**GUI** — test nel browser: `zt-gui/frontend/tests/gui.test.mjs` (21 controlli; sul frontend
+precedente ne falliscono 14). Avviando anche l'app vera del pacchetto sotto Xvfb contro `zt-mockd`
+è emerso un difetto che nessuno stub trovava: i contatori di "Sessione" ripartivano da 0 a ogni
+render (il valore di partenza stava sull'elemento, che si ricostruisce), quindi con eventi in arrivo
+ogni pochi secondi restavano a zero. Ora il valore mostrato si ricorda fuori dal DOM.
 - La ricerca eventi perdeva focus e testo a ogni evento in arrivo: in un flood si riusciva a
   digitare **una sola lettera**. Ora la barra si costruisce una volta e si aggiorna solo la
   tabella; i render sono raggruppati con `requestAnimationFrame`.
@@ -278,6 +281,12 @@ precedente ne falliscono 13).
   percorsi (pacchetto `.deb` e sorgente, con `cp -n`); `zt-mockd` ora è nel pacchetto.
 - Versione letta dal binario (`Version()` + `-ldflags`); la costante `APP_VERSION` non era
   nemmeno usata. Errore "permission denied" sul socket spiegato (utente non protetto).
+
+**Test e sicurezza dell'ambiente** — `test_killswitch.sh` verifica di essere in un network
+namespace diverso da quello di partenza prima di toccare `nft` (la sola variabile `ZT_IN_NETNS=1`
+avrebbe permesso di applicare un kill-switch sulla rete vera); `test_nm_vpn.sh` e `test_proton.sh`
+non procedono senza una directory temporanea valida. Il pacchetto GUI da solo non si installa
+(dipende dal demone): documentato, il README chiede di scaricare entrambi i file.
 
 **Documentazione e pacchetto** — `FEATURE_PLAN`, `FEATURE_STUDY`, `ROADMAP`,
 `PUNTI_APERTI`, `VPN_SETUP`, `shield.example.yaml` e README allineati al codice (lo stack VPN

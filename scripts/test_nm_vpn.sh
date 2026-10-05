@@ -15,7 +15,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 NM="${NM:-$HERE/nm_vpn.sh}"
 T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
+# Senza una directory temporanea valida non si procede; rm usa ${T:?} per fermarsi se T e' vuota.
+if [ -z "$T" ] || [ ! -d "$T" ]; then echo "ERRORE: mktemp fallito"; exit 2; fi
+trap 'rm -rf "${T:?}"' EXIT
 mkdir -p "$T/bin" "$T/sys/class/net" "$T/scripts"
 
 # --- sysfs finto: wlan0 (wifi), eth0 (cavo), docker0 e wg0 (virtuali: niente "device")
@@ -149,7 +151,7 @@ rm -f "$T/scripts/proton_up.sh"
 
 reset; wifi CaffeBar 66:77:88:99:AA:BB
 : > "$T/calls"
-env PATH="$T/bin:$PATH" ZT_VPN_NETS="$T/nets" ZT_SYS_NET="$T/sys/class/net" ZT_LOCK="$T/lock" ZT_SCRIPTS="$T/niente" PROTON=1 "$T/dispatcher.d/90-zt-vpn" wlan0 up >/dev/null 2>&1
+env PATH="$T/bin:$PATH" ZT_VPN_NETS="$T/nets" ZT_SYS_NET="$T/sys/class/net" ZT_LOCK="$T/lock" ZT_SCRIPTS="$T/niente" ZT_SYS_SCRIPTS="$T/niente" PROTON=1 "$T/dispatcher.d/90-zt-vpn" wlan0 up >/dev/null 2>&1
 check "proton_up.sh davvero assente: errore esplicito nel log, nessun wg-quick" 'grep -q "ERRORE: proton_up.sh non trovato" "$T/calls" && no_vpn_action'
 
 echo

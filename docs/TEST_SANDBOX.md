@@ -68,8 +68,16 @@ Ubuntu 24.04 in VM con `lsm=...,bpf` sulla riga di comando del kernel, poi:
 
 ## Revisione e correzioni del 2026-10-05
 
-Test aggiunti con le correzioni della revisione (dettagli in `FIX_APPLICATI.md` sez. 13). Tutti
-girano anche in CI. Per ognuno è stato verificato che **fallisce** sulla versione precedente.
+Test aggiunti con le correzioni della revisione (dettagli in `FIX_APPLICATI.md` sez. 13). Sono
+previsti nel workflow CI (primo run sui runner GitHub: PR #14).
+
+**Cosa è stato dimostrato, e cosa no.** Per il **kill-switch** e per la **GUI** il test nuovo è
+stato eseguito anche sulla versione precedente e **fallisce** (kill-switch: riapplicazione non
+atomica, firewall perso, porta 0 accettata, nessun IPv6, `portal` che non termina; GUI: 14 controlli
+su 21). Per `nm_vpn.sh`, la TUI e il socket il difetto era stato **riprodotto a mano prima di
+correggerlo** (con comandi finti e test usa e getta), ma il test nuovo **non** è stato rieseguito
+contro il codice vecchio (per `nm_vpn.sh` non si può: il vecchio script ha i percorsi scritti
+dentro).
 
 | Test | Dove | Esito |
 |---|---|---|
@@ -77,12 +85,29 @@ girano anche in CI. Per ognuno è stato verificato che **fallisce** sulla versio
 | Auto-VPN: BSSID vuoto, evil-twin, interfacce virtuali, tunnel già su, Proton | `scripts/test_nm_vpn.sh`, comandi finti | ✅ 28/28 |
 | Helper Proton: tunnel di lavoro mai scelto, endpoint non-IP, chiave privata | `scripts/test_proton.sh`, comandi finti | ✅ 19/19 |
 | Socket IPC con utenti reali | client minimale come `zttest`, `nobody` e root | ✅ protetto legge · altro utente `permission denied` · root legge |
-| GUI nel browser: ricerca sotto flood, stati VPN, UDP/IPv6, HTML ostile, guida | `zt-gui/frontend/tests/gui.test.mjs`, Chromium headless, demone simulato | ✅ 19/19 · sul frontend vecchio 13 falliscono (digitabile **una** lettera durante il flood) |
+| GUI nel browser: ricerca sotto flood, contatori, stati VPN, UDP/IPv6, HTML ostile, guida | `zt-gui/frontend/tests/gui.test.mjs`, Chromium headless, demone simulato | ✅ 21/21 · sul frontend vecchio 14 falliscono (durante il flood si riusciva a digitare **una** lettera; i contatori ripartivano da 0 a ogni render) |
+| **App GUI vera** (Wails + WebKitGTK) dal pacchetto `.deb` | `xvfb-run zt-gui` contro `zt-mockd` | ✅ parte, si collega al socket, mostra stato, eventi, notifica canary e la versione del binario (`0.0.0~dev+<commit>`). **Ha rivelato il bug dei contatori** che nessuno stub aveva trovato |
+| Installazione dei pacchetti | `apt install ./…deb` in questa VM | ✅ i due insieme · ✅ il solo demone (senza GUI) · ❌ **il solo pacchetto GUI non si installa** (dipende da `zeroshield`) |
 | `netstat` su un finto `/proc` (v4, v6, UDP, tetto, PID più basso) | `go test ./internal/netstat` | ✅ |
 | Stato VPN (4 combinazioni, tool mancanti mai verdi) | `go test ./internal/vpn` | ✅ |
 
 Non provato: kill-switch con traffico e tunnel veri, `nm_vpn.sh` con NetworkManager, helper
-Proton con un account, GUI e TUI vere da due utenti diversi.
+Proton con un account, GUI e TUI vere da due utenti diversi, **il demone avviato end-to-end** (non
+parte senza BPF LSM: il suo collegamento con IPC, stato VPN e porte in ascolto non è mai stato
+eseguito), il workflow di release (nessun tag è mai stato creato).
+
+## Cosa è sicuro lanciare su una VM cloud come questa, e cosa no
+
+Una VM cloud usa e getta come questa **non ha** BPF LSM attivo (`program_type lsm NOT available`)
+e non ha un tunnel VPN. Da qui, cosa si può fare:
+
+| Test | Sicuro? | Perché |
+|---|---|---|
+| `make test`, `make test-scripts`, `make test-root`, `make probe`, `make package`, installare e rimuovere i `.deb`, test GUI | ✅ sì | Nessuno tocca la rete della VM: il kill-switch gira in un network namespace (`unshare -n`), `probe` aggancia XDP solo a `lo`, il canary guarda una directory temporanea |
+| `scripts/test_killswitch.sh` | ✅ sì, con una protezione | Prima di toccare `nft` verifica di essere in un namespace **diverso** da quello di partenza e si ferma (exit 2) se non lo è. Una variabile d'ambiente da sola non basterebbe |
+| `vpn_killswitch.sh on …` sulla rete vera della VM | ❌ **no** | Per costruzione scarta tutto ciò che non passa dal tunnel: la VM perderebbe la connessione verso cui lavora (e probabilmente il canale con la sessione). E senza tunnel non c'è niente da proteggere |
+| `zt-shield` in `enforce` | ❌ **no, e comunque non parte** | Senza BPF LSM il demone si ferma all'avvio (fail-closed). Se partisse, in enforce negherebbe aperture di file anche a root |
+| Collaudo LSM, pentest, VPN con tunnel vero | ➡️ **in una VM tua con snapshot** | È il collaudo che manca ([`TESTING_LAB.md`](TESTING_LAB.md)); non è fattibile né sicuro qui
 
 ## Come rifare questi test
 

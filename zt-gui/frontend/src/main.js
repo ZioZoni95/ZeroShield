@@ -62,10 +62,19 @@ function paintBadge() {
 }
 
 // Contatore animato verso target in ~400ms (solo numeri interi).
+//
+// Il valore mostrato si ricorda FUORI dal DOM, per etichetta della scheda: ogni render
+// ricostruisce la pagina, e il vecchio valore tenuto sull'elemento andava perso. Risultato:
+// con eventi in arrivo piu' spesso di 400 ms i contatori ripartivano sempre da 0 e
+// restavano praticamente a zero (trovato lanciando l'app vera). Ora l'elemento nasce gia'
+// col numero precedente e l'animazione parte da li', senza mai passare da "0".
+const shownCounts = {};
 function countUp(el, target) {
-    const from = parseInt(el.dataset.v || '0', 10);
+    const label = el.closest('.card')?.querySelector('.k')?.textContent || '';
+    const from = Number.isFinite(shownCounts[label]) ? shownCounts[label] : 0;
+    shownCounts[label] = target;
+    el.textContent = from;
     if (from === target) return;
-    el.dataset.v = String(target);
     const t0 = performance.now();
     (function step(t) {
         const k = Math.min(1, (t - t0) / 400);
