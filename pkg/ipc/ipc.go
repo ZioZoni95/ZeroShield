@@ -66,6 +66,15 @@ type CanaryAlert struct {
 	Reason string `json:"reason"`
 }
 
+// VpnStatus: kill-switch configurato + tunnel su o giù (verifica interfaccia).
+// Up=false con Enabled=true = scoperto: la UI lo mostra rosso.
+type VpnStatus struct {
+	Enabled  bool   `json:"enabled"`
+	Endpoint string `json:"endpoint,omitempty"`
+	Tunnel   string `json:"tunnel,omitempty"`
+	Up       bool   `json:"up"`
+}
+
 // Status: fotografia del demone. Inviata a ogni nuova connessione e su UpdateStatus.
 type Status struct {
 	Type           string        `json:"-"`
@@ -78,6 +87,7 @@ type Status struct {
 	Allowed        int           `json:"allowed"`
 	BlockPoisoning bool          `json:"block_poisoning"`
 	BlockSubnets   []string      `json:"block_subnets"`
+	Vpn            VpnStatus     `json:"vpn"`
 	TopSources     []SourceStat  `json:"top_sources"`
 	Rules          []RuleSummary `json:"rules"`
 	Time           string        `json:"time"`

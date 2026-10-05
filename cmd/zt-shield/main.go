@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"sort"
@@ -229,7 +230,7 @@ func main() {
 			HookLSM: true, XDP: xdpNames,
 			Protected: p, Allowed: a,
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
-			TopSources: topSrc, Rules: rules,
+			Vpn: vpnStatus(cfg), TopSources: topSrc, Rules: rules,
 		})
 	}
 	publishStatus()
@@ -339,6 +340,19 @@ func main() {
 	log.Println("🚀 Local Zero-Trust Shield in esecuzione.")
 	<-stop
 	log.Println("🛑 Chiusura agent e rilascio hook eBPF.")
+}
+
+// vpnStatus fotografa kill-switch config + tunnel reale (esiste interfaccia?).
+// Chiamato a ogni publish: se il tunnel cade tra un rescan e l'altro, le UI
+// lo mostrano rosso al massimo dopo rescan_seconds.
+func vpnStatus(cfg *config.Config) ipc.VpnStatus {
+	st := ipc.VpnStatus{Enabled: cfg.Vpn.Enabled, Endpoint: cfg.Vpn.Endpoint, Tunnel: cfg.Vpn.Tunnel}
+	if !cfg.Vpn.Enabled || cfg.Vpn.Tunnel == "" {
+		return st
+	}
+	iface, err := net.InterfaceByName(cfg.Vpn.Tunnel)
+	st.Up = err == nil && iface.Flags&net.FlagUp != 0
+	return st
 }
 
 // must: usato solo per i Put sulle mappe delle impostazioni, dove un errore

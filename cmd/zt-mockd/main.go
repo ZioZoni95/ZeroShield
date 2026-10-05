@@ -54,6 +54,7 @@ func main() {
 		HookLSM: true, XDP: []string{"enp0s3 (mock)"},
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
+		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: false},
 		TopSources: []ipc.SourceStat{
 			{IP: "192.168.100.7", Poison: 34, Subnet: 0, Total: 34, LastSeen: "2026-10-02T10:35:01Z"},
 			{IP: "192.168.100.23", Poison: 0, Subnet: 128, Total: 128, LastSeen: "2026-10-02T10:35:00Z"},

@@ -37,8 +37,25 @@ var (
 	dimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	evBlock    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	evAudit    = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
+	evCanary   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
 	helpStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	// Colori per famiglia di regola: ritrovi a colpo d'occhio chi ha toccato cosa.
+	ruleColors = map[string]lipgloss.Style{
+		"ssh-keys":        lipgloss.NewStyle().Foreground(lipgloss.Color("10")),
+		"cloud-creds":     lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+		"dev-tokens":      lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
+		"gpg-keys":        lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
+		"browser-secrets": lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
+		"canary":          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")),
+	}
 )
+
+func ruleColor(name string) lipgloss.Style {
+	if s, ok := ruleColors[name]; ok {
+		return s
+	}
+	return lipgloss.NewStyle()
+}
 
 const (
 	tabStatus = iota
@@ -74,13 +91,19 @@ type model struct {
 	connErr  error
 	events   []ipc.WireEvent
 	canaries []ipc.CanaryAlert
+	filter   int // 0 tutti, 1 bloccati, 2 canary, 3 audit
 	paused   bool
 	offset   int // scroll lista eventi (0 = fondo/live)
 	sweep    int // angolo spazzata radar, gradi
 	width    int
 	height   int
 	quitting bool
+	prevMode string
+	flash    string
+	flashExp time.Time
 }
+
+var filterNames = []string{"tutti", "bloccati", "canary", "audit"}
 
 func initialModel() model { return model{tab: tabStatus} }
 
@@ -127,6 +150,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.tab == tabEvents {
 				m.paused = !m.paused
 			}
+		case "f":
+			// Filtro eventi: tutti → bloccati → canary → audit → tutti.
+			if m.tab == tabEvents {
+				m.filter = (m.filter + 1) % 4
+				m.offset = 0
+			}
 		case "up", "k":
 			if m.tab == tabEvents {
 				m.paused = true
@@ -148,6 +177,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case statusMsg:
 		if msg.err == nil {
+			// Transizione mode merita avviso: passare a enforce per sbaglio
+			// si nota qui prima che nei danni. Flash di 10s.
+			if m.prevMode != "" && m.prevMode != msg.st.Mode {
+				m.flash = fmt.Sprintf("⚠️ modalità %s → %s", m.prevMode, msg.st.Mode)
+				m.flashExp = time.Now().Add(10 * time.Second)
+			}
+			m.prevMode = msg.st.Mode
 			m.st = msg.st
 			m.connErr = nil
 		} else if m.st.Profile == "" {
@@ -183,8 +219,24 @@ func (m model) View() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("🛡️ zt-shield") + "  " + m.modeBadge() + "\n")
-	b.WriteString(m.tabBar() + "\n\n")
+	// Header compatto una riga: titolo + badge + profilo + orologio.
+	// Prima erano due righe sprecate per le stesse info.
+	clock := ""
+	if m.st.Time != "" && len(m.st.Time) >= 19 {
+		clock = m.st.Time[11:19]
+	}
+	b.WriteString(fmt.Sprintf("%s  %s  %s %s\n",
+		titleStyle.Render("🛡️ ZeroShield"),
+		m.modeBadge(),
+		dimStyle.Render(m.st.Profile),
+		dimStyle.Render(clock)))
+	b.WriteString(m.tabBar() + "\n")
+	if m.flash != "" && time.Now().Before(m.flashExp) {
+		b.WriteString(evBlock.Render(m.flash) + "\n")
+	} else {
+		m.flash = ""
+		b.WriteString("\n")
+	}
 	if m.connErr != nil && m.st.Profile == "" {
 		b.WriteString(m.offlineView())
 	} else {
@@ -202,7 +254,7 @@ func (m model) View() string {
 		}
 	}
 	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-5 vai · r aggiorna · q esci") +
-		helpStyle.Render("   |   eventi: spazio pausa · ↑/↓ scorri · fine torna live"))
+		helpStyle.Render("   |   eventi: spazio pausa · f filtro · ↑/↓ scorri · fine torna live"))
 	return b.String()
 }
 
@@ -277,18 +329,64 @@ func clock(ts string) string {
 // SafeText su comm/exe/path: li sceglie il processo osservato, quindi
 // potenzialmente un attaccante che inietta sequenze ANSI nel terminale.
 func (m model) eventsView() string {
+	// Filtro f: 0 tutti, 1 solo bloccati/kill, 2 solo canary, 3 solo audit.
+	matchWire := func(ev ipc.WireEvent) bool {
+		switch m.filter {
+		case 1:
+			return ev.Action == "blocked"
+		case 2:
+			return false
+		case 3:
+			return ev.Action != "blocked"
+		}
+		return true
+	}
+	matchCanary := func(a ipc.CanaryAlert) bool {
+		switch m.filter {
+		case 1:
+			return a.Action == "killed"
+		case 2:
+			return true
+		case 3:
+			return a.Action != "killed"
+		}
+		return true
+	}
+	// Contatori sessione sempre visibili: sai cosa hai filtrato via.
+	var nBlock, nAudit, nCan int
+	for _, ev := range m.events {
+		if ev.Action == "blocked" {
+			nBlock++
+		} else {
+			nAudit++
+		}
+	}
+	nCan = len(m.canaries)
+	head := fmt.Sprintf("%s %s  %s",
+		evBlock.Render(fmt.Sprintf("⛔%-4d", nBlock)),
+		evAudit.Render(fmt.Sprintf("👁%-4d", nAudit)),
+		evCanary.Render(fmt.Sprintf("🐤%-4d", nCan)))
+	if m.filter != 0 {
+		head += dimStyle.Render(fmt.Sprintf("  [filtro: %s]", filterNames[m.filter]))
+	}
 	var rows []string
+	rows = append(rows, head)
 	// Canary in testa: kill/allarmi anti-ransomware meritano visibilita' massima.
 	for _, a := range m.canaries {
-		icon := evAudit.Render("🐤 CANARY ")
+		if !matchCanary(a) {
+			continue
+		}
+		icon := evCanary.Render("🐤 CANARY ")
 		if a.Action == "killed" {
 			icon = evBlock.Render("🐤 KILL    ")
 		}
-		rows = append(rows, fmt.Sprintf("%s %s  pid=%-6d %s %s (%s)",
-			icon, clock(a.Time), a.PID, ipc.SafeText(a.Exe), ipc.SafeText(a.Path), ipc.SafeText(a.Reason)))
+		rows = append(rows, fmt.Sprintf("%s %s  %-15s pid=%-6d %-40.40s (%s)",
+			icon, clock(a.Time), ruleColor("canary").Render("canary"), a.PID,
+			ipc.SafeText(a.Exe), ipc.SafeText(a.Reason)))
 	}
-	if len(m.events) == 0 && len(rows) == 0 {
-		return dimStyle.Render("Nessun evento ancora. In audit gli accessi legittimi compaiono qui;\npassa a enforce solo quando i log sono puliti.")
+	if len(m.events) == 0 && len(rows) == 1 {
+		rows = append(rows, dimStyle.Render("Nessun evento ancora. In audit gli accessi legittimi compaiono qui;\npassa a enforce solo quando i log sono puliti."))
+		return strings.Join(rows, "\n")
 	}
 	// Altezza visibile: terminale meno header/footer, con margine.
 	height := m.height - 10
@@ -307,6 +405,9 @@ func (m model) eventsView() string {
 		end = len(m.events)
 	}
 	for _, ev := range m.events[start:end] {
+		if !matchWire(ev) {
+			continue
+		}
 		icon := evAudit.Render("👁 AUDIT  ")
 		if ev.Action == "blocked" {
 			icon = evBlock.Render("🚨 BLOCCO ")
@@ -315,8 +416,10 @@ func (m model) eventsView() string {
 		if exe == "" {
 			exe = dimStyle.Render("(processo uscito)")
 		}
-		rows = append(rows, fmt.Sprintf("%s %s  %-14s pid=%-6d %s %s",
-			icon, clock(ev.Time), ipc.SafeText(ev.Rule), ev.PID, ipc.SafeText(ev.Comm), exe))
+		// Colonne fisse: ora(8) regola(15) pid comm(14) exe. Allineate = scansionabili.
+		rows = append(rows, fmt.Sprintf("%s %s  %-15s pid=%-6d %-14.14s %s",
+			icon, clock(ev.Time), ruleColor(ipc.SafeText(ev.Rule)).Render(ipc.SafeText(ev.Rule)),
+			ev.PID, ipc.SafeText(ev.Comm), exe))
 	}
 	if m.offset > 0 {
 		rows = append(rows, dimStyle.Render(fmt.Sprintf("… +%d sopra (fine = torna live)", m.offset)))
@@ -356,10 +459,18 @@ func (m model) netView() string {
 		}
 		rows = append(rows, dimStyle.Render("  (il drop scarta anche le risposte da queste reti)"))
 	}
+	rows = append(rows, "")
+	if !s.Vpn.Enabled {
+		rows = append(rows, dimStyle.Render("VPN kill-switch: spento (tutto esce in chiaro su rete ostile)"))
+	} else if s.Vpn.Up {
+		rows = append(rows, badgeOK.Render("🔒 VPN su: "+s.Vpn.Tunnel+" → "+s.Vpn.Endpoint))
+	} else {
+		// Tunnel configurato ma giù = scoperto: rosso e chiaro.
+		rows = append(rows, badgeBlock.Render("⚠️ VPN GIÙ: "+s.Vpn.Tunnel+" assente, sei in chiaro!"))
+	}
 	return strings.Join(rows, "\n")
 }
 
-// radarAngle distribuisce un IP sul giro a partire dall'hash: stabile tra frame,
 // cosi' ogni sorgente tiene la sua posizione mentre la spazzata gira.
 func radarAngle(ip string) float64 {
 	h := fnv.New32a()
@@ -452,8 +563,11 @@ func (m model) radarView() string {
 		}
 		sb.WriteString("\n")
 	}
-	// Legenda + top con barre.
-	sb.WriteString(dimStyle.Render("● subnet  ") + evBlock.Render("●") + dimStyle.Render("  ● poisoning  ") + evAudit.Render("●") + "\n")
+	// Guida lettura: posizione fissa per IP (stesso host = stesso punto),
+	// distanza logaritmica dai drop, colore per motivo dominante.
+	sb.WriteString(dimStyle.Render("pos=fissa(IP)  dist=log(drop)  ") + evBlock.Render("●") +
+		dimStyle.Render(" subnet  ") + evAudit.Render("●") + dimStyle.Render(" poisoning\n"))
+	// Cornice: separa il radar dalla lista anche su terminali stretti.
 	barMax := 18
 	for _, s := range src {
 		n := 1
@@ -485,6 +599,7 @@ func dump() string {
 		HookLSM: true, XDP: []string{"enp0s3"},
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
+		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: true},
 		TopSources: []ipc.SourceStat{
 			{IP: "192.168.100.7", Poison: 34, Subnet: 0, Total: 34, LastSeen: "2026-10-02T10:35:01Z"},
 			{IP: "192.168.100.23", Poison: 0, Subnet: 128, Total: 128, LastSeen: "2026-10-02T10:35:00Z"},

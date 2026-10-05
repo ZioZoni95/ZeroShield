@@ -64,6 +64,9 @@ rescan_seconds: 30
 
 # Aggiunge regole a quelle del profilo:
 # extra_rules:
+#   - name: gitlab
+#     paths: [".config/gitlab/*", ".config/glab-cli/*", ".git-credentials"]
+#     allow: ["glab"]
 #   - name: wallet
 #     paths: [".bitcoin/wallet.dat", ".config/Electrum/wallets"]
 #     allow: ["bitcoin-qt", "/opt/electrum/electrum"]
