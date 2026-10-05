@@ -100,9 +100,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    OPEN["open() di un processo utente"] --> PROT{"file protetto?"}
+    OPEN["open()/unlink()/rename()/truncate() di un processo"] --> PROT{"file protetto?"}
     PROT -- "no" --> OK["✅ accesso normale"]
-    PROT -- "sì" --> WL{"exe in whitelist<br/>(dev+inode, solo lettura)?"}
+    PROT -- "sì" --> WL{"exe in whitelist<br/>(dev+inode, lettura; scrittura solo se deny_write=0)?"}
     WL -- "sì" --> ALLOW["✅ allow"]
     WL -- "no" --> DENY["⛔ deny -EACCES<br/>(audit: passa + log)"]
     ALLOW & DENY --> RING[("📝 ringbuf")]
@@ -132,6 +132,9 @@ ZeroShield/
 │   ├── PUNTI_APERTI.md         # Stato, decisioni aperte e checklist
 │   ├── CANARY.md               # Canary anti-ransomware: guida d'uso, taratura, design
 │   ├── FEATURE_PLAN.md         # Estensioni pianificate (VPN kill-switch, egress)
+│   ├── FEATURE_STUDY.md        # Pseudosoluzioni annotate per le feature
+│   ├── ROADMAP.md              # Piano unificato a fasi + feature originali
+│   ├── VPN_SETUP.md            # ProtonVPN + kill-switch: setup e test
 │   ├── FIX_APPLICATI.md        # Fix applicati e ancora da applicare
 │   ├── TESTING.md              # Collaudo pratico (LSM, XDP, network namespaces)
 │   ├── TESTING_LAB.md          # Scenario lab reale in VM isolata (post-fix)
@@ -260,7 +263,7 @@ Ogni tag `v*` pubblica una [release](https://github.com/ZioZoni95/ZeroShield/rel
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
 sudo apt install ./zeroshield_*_amd64.deb          # demone, zt-tui, zt-probe, servizio
-sudo apt install ./zeroshield-gui_*_amd64.deb      # opzionale: app desktop
+sudo apt install ./zeroshield-gui_*_amd64.deb      # app desktop (dipende dal demone: installandolo hai tutto)
 
 sudoedit /etc/zt-shield/shield.yaml                # user: <tuo-utente>   (obbligatorio)
 sudo zt-probe -xdp-lo                              # il kernel accetta i programmi?
@@ -323,7 +326,7 @@ kubectl get pods                                         # consentito
 * **Servizio fermo = zero protezione:** nessun pinning; `StartLimit`+`ExecStartPre` evitano solo il morto-silenzioso.
 * **FIDO2 software = segreto su disco:** senza token fisico, firma senza tocco.
 * **Canary:** il kill arriva dopo il tocco e non ferma la cifratura in-place che salta le esche; sotto systemd serve `ReadWritePaths=` per le cartelle delle esche ([`docs/CANARY.md`](docs/CANARY.md) §3.2).
-* **Non è antivirus/IDS/egress e non cifra:** su Wi-Fi ostile serve comunque la VPN. Browser Flatpak/custom vanno in `extra_rules`, verifica in `audit` prima di `enforce`.
+* **Non è antivirus/IDS/egress e non cifra:** su Wi-Fi ostile serve comunque la VPN. Novità: stanza `vpn:` + `scripts/vpn_killswitch.sh` (solo traffico tunnel, con rollback) e auto-VPN su BSSID fidati (`scripts/nm_vpn.sh`, Proton incluso). Dettagli in [`docs/VPN_SETUP.md`](docs/VPN_SETUP.md). Browser Flatpak/custom vanno in `extra_rules`, verifica in `audit` prima di `enforce`.
 
 ---
 
@@ -333,9 +336,9 @@ Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock`
 
 | Strumento | Cosa è | Avvio |
 |---|---|---|
-| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete/Radar, live) | `./bin/zt-tui` (demone attivo) |
+| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete/Radar, live, filtro `f`, blast-radius, auto-suggest) | `./bin/zt-tui` (demone attivo) |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &` + `ZT_SOCKET=/tmp/z.sock ./bin/zt-tui` |
-| `zt-gui` | Finestra desktop stile macOS (sidebar, badge mode, eventi live) | `make gui`, poi `./zt-gui/build/bin/zt-gui` |
+| `zt-gui` | Finestra desktop stile macOS (sidebar a sezioni, dashboard sessione, search, radar canvas, Guida primo avvio) | `make gui`, poi `./zt-gui/build/bin/zt-gui` |
 
 ```bash
 make build-tui   # TUI (pura Go, senza toolchain eBPF)

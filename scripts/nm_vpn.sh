@@ -27,10 +27,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SSID="$(iwgetid -r 2>/dev/null || true)"
 BSSID="$(iwgetid -a -r 2>/dev/null | tr 'a-z' 'A-Z' || true)"
 if grep -qiF "$BSSID" "$ALLOWFILE" 2>/dev/null; then
-    logger -t zt-vpn "rete fidata ($SSID $BSSID): tunnel giù"
+    logger -t zt-vpn "rete fidata ($SSID $BSSID su $IFACE): tunnel giù"
     wg-quick down "$WG_PROFILE" 2>/dev/null || true
 else
-    logger -t zt-vpn "rete non fidata ($SSID $BSSID): alzo VPN"
+    logger -t zt-vpn "rete non fidata ($SSID $BSSID su $IFACE): alzo VPN"
     if [ "$PROTON" = "1" ]; then
         "$SCRIPT_DIR/proton_up.sh" connect || logger -t zt-vpn "ERRORE: proton_up fallito, resta scoperto"
     else
