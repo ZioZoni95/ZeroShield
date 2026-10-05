@@ -98,7 +98,8 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
 - Qualità: CI a 5 job + `zt-probe` e test root su kernel del runner,
   govulncheck, gosec, Dependabot, toolchain Go 1.26.8.
 - Distribuzione: pacchetti `zeroshield` e `zeroshield-gui` (`make package`),
-  release automatica sui tag `v*`.
+  release automatica sui tag `v*`. La GUI dipende dal demone: chi installa
+  la GUI ha sempre tutto (`apt install zeroshield-gui` tira dentro `zeroshield`).
 
 ## Limiti accettati
 

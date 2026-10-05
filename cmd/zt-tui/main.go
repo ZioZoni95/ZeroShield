@@ -17,6 +17,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -432,10 +433,79 @@ func (m model) rulesView() string {
 		return dimStyle.Render("Nessuna regola caricata.")
 	}
 	var rows []string
+	// Blast-radius: per ogni binario, quali regole raggiunge. Un exe in 3
+	// regole legge 3 famiglie di segreti: qui lo vedi prima del danno.
+	reach := map[string]map[string]bool{}
+	for _, r := range m.st.Rules {
+		for _, a := range r.Allow {
+			if reach[a] == nil {
+				reach[a] = map[string]bool{}
+			}
+			reach[a][r.Name] = true
+		}
+	}
 	for _, r := range m.st.Rules {
 		rows = append(rows, badgeOK.Render("■ "+r.Name))
 		rows = append(rows, "  file: "+strings.Join(r.Paths, ", "))
 		rows = append(rows, "  exe:  "+strings.Join(r.Allow, ", ")+"\n")
+	}
+	rows = append(rows, dimStyle.Render("── blast-radius (binario → regole raggiungibili) ──"))
+	type kv struct {
+		k string
+		n int
+	}
+	var wide []kv
+	for exe, set := range reach {
+		if len(set) > 1 {
+			wide = append(wide, kv{exe, len(set)})
+		}
+	}
+	sort.Slice(wide, func(i, j int) bool { return wide[i].n > wide[j].n })
+	if len(wide) == 0 {
+		rows = append(rows, dimStyle.Render("  nessun binario attraversa più regole: compartimentazione ok"))
+	} else {
+		for _, w := range wide {
+			var names []string
+			for n := range reach[w.k] {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			rows = append(rows, fmt.Sprintf("  ⚠️ %-18s → %s", w.k, strings.Join(names, ", ")))
+		}
+	}
+	// Auto-suggest: dai negati di sessione, il YAML da valutare. Copia a mano
+	// nel config dopo verifica: mai applicato da solo.
+	type sug struct {
+		rule, exe string
+		n         int
+	}
+	seen := map[string]*sug{}
+	var order []string
+	for _, ev := range m.events {
+		if ev.Action != "blocked" || ev.Exe == "" {
+			continue
+		}
+		k := ev.Rule + "\x00" + ev.Exe
+		if seen[k] == nil {
+			seen[k] = &sug{rule: ev.Rule, exe: ev.Exe}
+			order = append(order, k)
+		}
+		seen[k].n++
+	}
+	if len(order) > 0 {
+		rows = append(rows, dimStyle.Render("\n── suggerimenti (da negati di sessione, verifica prima) ──"))
+		for _, k := range order {
+			s := seen[k]
+			// Mai suggerire alla leggera binari fuori dai path di sistema:
+			// /tmp/ssh e' il classico bypass per rename, non un tool da autorizzare.
+			if strings.HasPrefix(s.exe, "/tmp/") || strings.HasPrefix(s.exe, "/home/") || strings.HasPrefix(s.exe, "/dev/") {
+				rows = append(rows, fmt.Sprintf("  ⛔%s  # %dx: SOSPETTO (fuori path sistema), NON autorizzare",
+					s.exe, s.n))
+				continue
+			}
+			rows = append(rows, fmt.Sprintf("  +%s  # %dx: aggiungi %q a allow di %q?",
+				s.exe, s.n, s.exe, s.rule))
+		}
 	}
 	return strings.Join(rows, "\n")
 }

@@ -41,6 +41,31 @@ Senza VM con `bpf` in LSM, ogni voce kernel sotto è teoria.
 - [ ] Egress per processo via cgroup (dopo kill-switch; nftables prima del C).
 - [ ] Hook AV esterno via fanotify `OPEN_PERM` (`av_socket:`, fail-open).
 
+## Fase 5 — Feature originali (proposte, da valutare)
+
+- [ ] **Honeytoken con lineage**: token finti marchiati + catena genitori
+  (`npm → node → cat`) via `/proc` al momento del tocco. Attribuzione
+  supply-chain, solo userspace.
+- [ ] **Incident bundle one-click**: a ogni kill/blocco grave, `.tar.gz` con
+  exe, cmdline, parenti, file aperti, ultime 50 righe log.
+- [ ] **Shadow-verify periodico**: il demone tenta da solo una lettura vietata
+  ogni N minuti; se passa invece di `EACCES`, hook caduto = allarme.
+  Anti morto-silenzioso integrato.
+- [ ] **Self-hash binario** (da GhostCatcher/OmniShield): SHA256 del proprio
+  eseguibile a ogni rescan vs valore a avvio; drift = alert critico. Solo Go.
+- [ ] **Atomic self-tests schedulati** (mini-Coalmine): batteria di micro-check
+  (open/unlink/rename negati, mappe non vuote, IPC vivo) ogni N minuti con
+  report pass/fail in UI. Estende shadow-verify, tutto userspace.
+- [ ] **Install-session mode**: `zt-shield run -- npm install x` attiva profilo
+  paranoico temporaneo + report dedicato (negati, canary). Riusa sensori
+  esistenti, zero kernel nuovo. Solo wrapper userspace.
+- [ ] **USB allowlist integrata**: default-deny BadUSB via `authorized_default`
+  + allow chiavette note, stato in UI. USBGuard esterno esiste ma pesante;
+  integrata nel profilo è originale nel nostro insieme.
+- [ ] **LKM gate** (da SPiCa): nega `insmod` post-init via `kernel_read_file`.
+  Caveat: root scarica prima i nostri hook; vale solo con Secure Boot.
+  Fase 3, mai prima della VM.
+
 ## Non-obiettivi (strutturali, non si pianificano)
 
 Root game over, whitelist=canale, FIDO2 software, backup (altrui ma obbligatorio
