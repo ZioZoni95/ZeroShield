@@ -2,6 +2,13 @@
 
 Solo appunti operativi. Teoria in `FEATURE_PLAN.md` (F1/F2).
 
+## Regola d'oro: accensioni solo in VM
+
+Il tunnel di lavoro attivo su questa macchina va **ignorato sempre**
+(`proton_current.sh` non lo elenca, i test non lo toccano). Prove di
+accensione/spegnimento SOLO in VM con snapshot: un kill-switch applicato
+male qui stacca lavoro e proxy git.
+
 ## Setup tunnel (una volta)
 
 1. account.protonvpn.com → Downloads → WireGuard configuration → server
