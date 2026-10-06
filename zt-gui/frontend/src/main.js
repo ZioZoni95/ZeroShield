@@ -41,6 +41,14 @@ function esc(s) {
     return String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 }
 
+// bound(fn): chiama un binding Go solo se esiste (stub di test vecchi o
+// ambienti senza backend completo). Ritorna sempre una Promise: undefined se
+// assente, mai un lancio. Così .then/.catch restano validi ovunque.
+function bound(fn, ...args) {
+    try { return typeof fn === 'function' ? fn(...args) : Promise.resolve(undefined); }
+    catch (e) { return Promise.reject(e); }
+}
+
 const ICO_BLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ICO_AUDIT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>';
 const ICO_WARN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3L22 20H2L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1.2" fill="currentColor"/></svg>';
@@ -96,13 +104,15 @@ function requestRender() {
 }
 
 let lastKey = '';
+let statusSeq = 0; // ogni stato ricevuto e' un mondo nuovo, anche con stesso time
 // force=true per gesti utente (click, tab, search): saltano la guardia.
 // I poll automatici chiamano render() liscio e vengono dedupati.
 function render(force) {
     // Guardia anti-sfarfallio: senza demone i poll falliti arrivano ogni 2s.
     // Rirendere tutto a ogni errore fa lampeggiare la pagina: se vista e
     // situazione non cambiano, si salta (gli stream live passano comunque).
-    const key = view + '|' + (status ? status.time || 'live' : 'off:' + offlineMsg);
+    // statusSeq impedisce di mangiare stati diversi con stesso timestamp.
+    const key = view + '|' + (status ? statusSeq + ':' + (status.time || 'live') + ':' + appVersion : 'off:' + offlineMsg);
     if (!force && key === lastKey && view !== 'events' && view !== 'radar') return;
     lastKey = key;
     paintBadge();
@@ -120,15 +130,16 @@ function render(force) {
     if (view === 'guide') return renderGuide();
     if (view === 'config') return renderConfig();
     return renderNet();
+}
 
 // Configurazione: file reale su disco (persiste a ogni boot) + toggle mode.
 // Regole e segreti si cambiano nel file con editor: la UI non riscrive YAML
 // alla cieca, solo mode: con confirm + restart.
 async function renderConfig() {
-    let txt = '';
-    try { txt = await ConfigText(); } catch (e) { txt = 'errore lettura: ' + (e.message || e); }
+    let txt = await bound(ConfigText, );
+    if (txt === undefined) txt = '(config non leggibile da questa build)'
     let mode = '';
-    try { mode = await ConfigMode(); } catch (_) {}
+    try { mode = await bound(ConfigMode, ); } catch (_) {}
     content.innerHTML = `${h2(ICO_KEY, 'Configurazione')}<p class="sub">File su disco: <span class="mono">/etc/zt-shield/shield.yaml</span> — letto a ogni avvio, persiste ai reboot.</p>
     <div class="rule ok"><h3>Modalità: ${esc(mode || '?')}</h3>
     <div><button class="chip${mode === 'audit' ? ' on' : ''}" id="m-audit">audit (logga)</button>
@@ -137,14 +148,16 @@ async function renderConfig() {
     <h2 style="margin-top:16px">File</h2><pre>${esc(txt)}</pre>`;
     const set = async (m) => {
         if (m === 'enforce' && !confirm('Passare a ENFORCE? Blocca davvero: solo a log puliti.')) return;
-        try { await SetConfigMode(m); toast('Modalità: ' + m, m === 'enforce'); } catch (e) { toast('Fallito: ' + (e.message || e), true); }
+        try {
+            if (await bound(SetConfigMode, m) === undefined) toast('Non supportato in questa build', true);
+            else toast('Modalità: ' + m, m === 'enforce');
+        } catch (e) { toast('Fallito: ' + (e.message || e), true); }
         render();
     };
     const ba = document.getElementById('m-audit');
     if (ba) ba.onclick = () => set('audit');
     const be = document.getElementById('m-enforce');
     if (be) be.onclick = () => set('enforce');
-}
 }
 
 // Prima apertura vera: non "offline", ma setup. Mai-configurato (servizio
@@ -154,7 +167,7 @@ let svcCached = '';
 async function renderFirstRun() {
     conn.textContent = 'prima configurazione';
     let st = '';
-    try { st = await ServiceState(); } catch (_) {}
+    try { st = await bound(ServiceState, ); } catch (_) {}
     svcCached = st || '';
     if (st && st !== 'missing' && st !== 'unknown') {
         // Installato ma spento: non setup, solo riattiva.
@@ -183,11 +196,12 @@ async function renderFirstRun() {
     wire('svc-install', async () => {
         const b = document.getElementById('svc-install');
         b.textContent = '…';
-        try { await ServiceInstall(); toast('Installato e attivo in audit', false); }
-        catch (e) { toast('Install fallita: ' + (e.message || e), true); }
+        try {
+            if (await bound(ServiceInstall, ) === undefined) toast('Non supportato in questa build', true); else toast('Installato e attivo in audit', false);
+        } catch (e) { toast('Install fallita: ' + (e.message || e), true); }
         render();
     });
-    Preflight().then(list => {
+    bound(Preflight).then(list => {
         const el = document.getElementById('preflight');
         if (!el) return;
         el.innerHTML = '<div class="checks">' + (list || []).map(c =>
@@ -234,11 +248,12 @@ function renderOffline() {
     wire('svc-install', async () => {
         const b = document.getElementById('svc-install');
         b.textContent = '…';
-        try { await ServiceInstall(); toast('Installato e attivo in audit', false); }
-        catch (e) { toast('Install fallita: ' + (e.message || e), true); }
+        try {
+            if (await bound(ServiceInstall, ) === undefined) toast('Non supportato in questa build', true); else toast('Installato e attivo in audit', false);
+        } catch (e) { toast('Install fallita: ' + (e.message || e), true); }
         render();
     });
-    Preflight().then(list => {
+    bound(Preflight).then(list => {
         const el = document.getElementById('preflight');
         if (!el) return;
         el.innerHTML = '<div class="checks">' + (list || []).map(c =>
@@ -248,8 +263,9 @@ function renderOffline() {
     wire('svc-start', async () => {
         const b = document.getElementById('svc-start');
         b.textContent = '…';
-        try { await ServiceStart(); toast('Protezione attivata', false); }
-        catch (e) { toast('Avvio fallito: ' + (e.message || e), true); }
+        try {
+            if (await bound(ServiceStart, ) === undefined) toast('Non supportato in questa build', true); else toast('Protezione attivata', false);
+        } catch (e) { toast('Avvio fallito: ' + (e.message || e), true); }
         render();
     });
 }
@@ -297,30 +313,33 @@ function renderStatus() {
     </div>`;
     content.querySelectorAll('[data-count]').forEach(el =>
         countUp(el, parseInt(el.dataset.count, 10)));
-    ServiceState().then(st => {
+    bound(ServiceState).then(st => {
         const el = document.getElementById('svc-state');
         if (el) el.textContent = st;
     }).catch(() => {});
-    ConfigMode().then(md => {
+    bound(ConfigMode).then(md => {
         const el = document.getElementById('cfg-mode');
         if (el) el.textContent = md || '(non letto)';
     }).catch(() => {});
     const stop = document.getElementById('svc-stop');
     if (stop) stop.onclick = async () => {
         if (!confirm('Fermare la protezione? Da qui in poi niente blocca più nulla.')) return;
-        try { await ServiceStop(); toast('Protezione fermata', true); }
-        catch (e) { toast('Stop fallito: ' + (e.message || e), true); }
+        try {
+            if (await bound(ServiceStop, ) === undefined) toast('Non supportato in questa build', true); else toast('Protezione fermata', true);
+        } catch (e) { toast('Stop fallito: ' + (e.message || e), true); }
     };
     const tog = document.getElementById('mode-toggle');
     if (tog) tog.onclick = async () => {
-        const cur = await ConfigMode().catch(() => '');
+        const cur = await bound(ConfigMode, ).catch(() => '');
         const next = cur === 'enforce' ? 'audit' : 'enforce';
         const warn = next === 'enforce'
             ? 'Passare a ENFORCE? Blocca davvero: solo a log puliti.'
             : 'Tornare ad audit? Da qui logga senza bloccare.';
         if (!confirm(warn)) return;
-        try { await SetConfigMode(next); toast('Modalità: ' + next + ' (servizio riavviato)', next === 'enforce'); }
-        catch (e) { toast('Cambio fallito: ' + (e.message || e), true); }
+        try {
+            if (await bound(SetConfigMode, next) === undefined) toast('Non supportato in questa build', true);
+            else toast('Modalità: ' + next + ' (servizio riavviato)', next === 'enforce');
+        } catch (e) { toast('Cambio fallito: ' + (e.message || e), true); }
         render();
     };
 }
@@ -705,7 +724,7 @@ function showOnboarding() {
     if (bk) bk.onclick = () => { obStep--; showOnboarding(); };
 }
 
-EventsOn('shield:status', st => { status = st; offlineMsg = ''; requestRender(); });
+EventsOn('shield:status', st => { status = st; statusSeq++; offlineMsg = ''; requestRender(); });
 EventsOn('shield:status-error', msg => { if (!status) { offlineMsg = msg; requestRender(); } });
 EventsOn('shield:event', ev => {
     events.push(ev);

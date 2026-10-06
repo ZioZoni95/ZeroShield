@@ -12,8 +12,8 @@ import (
 	"github.com/gen2brain/beeep"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"zt-shield/pkg/svc"
 	"zt-shield/pkg/ipc"
+	"zt-shield/pkg/svc"
 )
 
 // App struct: backend GUI sopra lo stesso socket IPC della TUI.

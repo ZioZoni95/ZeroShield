@@ -5,7 +5,7 @@
 <p align="center"><b>Lo scudo zero-trust nel tuo kernel Linux.</b><br/>
 Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e ladri di token — senza server, senza cloud, senza account.</p>
 <p align="center">
-  <a href="#-provalo-in-60-secondi-senza-root">Provalo in 60 secondi</a> ·
+  <a href="#-guarda-le-interfacce-in-60-secondi-demo-dati-finti">Demo 60 secondi</a> ·
   <a href="#interfacce-tui--gui-senza-root">TUI + GUI</a> ·
   <a href="#-profili">Profili</a> ·
   <a href="docs/TESTING_LAB.md">Lab di test</a>
@@ -43,9 +43,9 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 
 ---
 
-## ⚡ Provalo in 60 secondi (senza root)
+## ⚡ Guarda le interfacce in 60 secondi (demo, dati finti)
 
-Niente kernel, niente rischi: dati finti, solo per vedere le interfacce.
+Non è una prova della protezione (nessun kernel coinvolto): solo le UI con dati inventati, per decidere se ti piace come sono fatte.
 
 ```bash
 make build-tui build-mock
