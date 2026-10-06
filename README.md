@@ -109,18 +109,23 @@ flowchart TD
     WL -- "sì" --> ALLOW["✅ allow"]
     WL -- "no" --> DENY["⛔ deny -EACCES<br/>(audit: passa + log)"]
     ALLOW & DENY --> RING[("📝 ringbuf")]
-    RING --> DAEMON["demone Go: Sync + rescan<br/>fail-closed"]
-    DAEMON --> SOCK[("🔌 socket IPC")]
-    SOCK --> TUI["💻 zt-tui"]
-    SOCK --> GUI["🖥️ ZeroShield GUI"]
+    RING --> DAEMON["demone Go: Sync + rescan + canary<br/>fail-closed + watchdog"]
+    CANARY["🐤 canary fanotify<br/>tocco esca → kill (enforce)<br/>massa rename → alert"] -.-> DAEMON
+    DAEMON --> SOCK[("🔌 socket IPC lettura")]
+    DAEMON --> CTRL[("🔐 socket controllo<br/>ping/rescan, root o polkit")]
+    SOCK --> TUI["💻 zt-tui (legge)"]
+    SOCK --> GUI["🖥️ ZeroShield GUI (legge)"]
+    CTRL --> ACT["⚙️ azioni: rescan, avvio/stop,<br/>install, audit↔enforce<br/>(TUI tasti / GUI bottoni, auth di sistema)"]
     FIDO2["🔑 git/ssh firmati via token FIDO2<br/>(fuori dal kernel: tocco fisico)"] -.-> DAEMON
 
     classDef deny fill:#fde7ea,stroke:#d70015,color:#4a0a12;
     classDef ok fill:#e2f3e5,stroke:#1d8127,color:#0c2b12;
     classDef ipc fill:#efe7fb,stroke:#7b2fbe,color:#2a0a4a;
+    classDef act fill:#fff3cf,stroke:#9a6a00,color:#4a3500;
     class DENY deny;
     class OK,ALLOW ok;
     class SOCK,TUI,GUI ipc;
+    class CTRL,ACT act;
 ```
 
 ---
@@ -136,6 +141,7 @@ ZeroShield/
 │   ├── CANARY.md               # Canary anti-ransomware: guida d'uso, taratura, design
 │   ├── FEATURE_PLAN.md         # Estensioni pianificate (VPN kill-switch, egress)
 │   ├── FEATURE_STUDY.md        # Pseudosoluzioni annotate per le feature
+│   ├── FEATURE_DEEP_STUDY.md     # Studio feature con fonti + diagrammi
 │   ├── ROADMAP.md              # Piano unificato a fasi + feature originali
 │   ├── VPN_SETUP.md            # ProtonVPN + kill-switch: setup e test
 │   ├── FIX_APPLICATI.md        # Fix applicati e ancora da applicare
@@ -156,6 +162,8 @@ ZeroShield/
 ├── cmd/zt-mockd/main.go        # Finto demone con dati sintetici (verifica UI senza root/eBPF)
 ├── cmd/zt-probe/main.go        # Collaudo kernel: verifier per programma + XDP su loopback
 ├── pkg/ipc/                    # Socket Unix stato+eventi (demone root → UI utente, socket 0600 dell'utente protetto) + SafeText
+├── pkg/svc/                    # Azioni servizio da UI: stato, avvio/stop/install via pkexec, mode audit/enforce, preflight
+├── internal/priv/              # Canale controllo privilegiato (peer-cred + polkit): ping/rescan per CLI/UI
 ├── zt-gui/                     # GUI desktop Wails stile macOS (vedi docs/UI_RESEARCH.md)
 ├── internal/
 │   ├── config/                 # Profili, regole, parsing YAML, validazione (+ test)
@@ -273,12 +281,13 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
 > tag `v*` con i due `.deb` e i checksum. Prima disponibile: [v0.0.1](https://github.com/ZioZoni95/personal_zeroT/releases) (⚠️ ALPHA, solo lab).
 > In alternativa i pacchetti si costruiscono da sorgente (`make package`).
 
-I due file sono **complementari e vanno scaricati entrambi**:
+I due file sono **complementari e vanno scaricati entrambi** (la GUI da sola
+non basta: i dati live li produce il demone):
 
 | Pacchetto | Contiene | Da solo |
 |---|---|---|
 | `zeroshield` | demone, `zt-tui`, `zt-probe`, `zt-mockd`, servizio systemd, script (VPN, hardening, FIDO2), documentazione | funziona, **senza** app grafica |
-| `zeroshield-gui` | app desktop `zt-gui` | **non si installa**: dipende da `zeroshield`, e da un file scaricato a mano `apt` non lo trova (`Depends: zeroshield but it is not installable`) |
+| `zeroshield-gui` | app desktop `zt-gui` | **dipende da `zeroshield`**: passali entrambi ad `apt` nello stesso comando, così risolve la dipendenza dai file locali |
 
 Installa quindi i due insieme, in un solo comando:
 
@@ -373,13 +382,13 @@ Operativi — da sapere prima di `enforce`:
 
 ## 🖥️ Interfacce: TUI + GUI (senza root)
 
-Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock` (`pkg/ipc`), di proprietà dell'utente indicato in `user:` con modo `0600`: lo leggono solo lui e root. Le interfacce girano come quell'utente, in sola lettura: niente eBPF toccato dalle UI. Ogni testo che viene dai processi osservati (nome, percorso dell'exe) passa da `ipc.SafeText` nel demone, in un punto solo, prima di arrivare a TUI e GUI.
+Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock` (`pkg/ipc`), di proprietà dell'utente indicato in `user:` con modo `0600`: lo leggono solo lui e root. Le interfacce girano come quell'utente. Leggere è libero; **agire** (rescan, avvio/stop, install, audit↔enforce) passa dal canale di controllo (`internal/priv`, peer-cred + polkit) con auth di sistema e conferme: mai click silenziosi, mai password maneggiate dalle UI. Ogni testo che viene dai processi osservati (nome, percorso dell'exe) passa da `ipc.SafeText` nel demone, in un punto solo, prima di arrivare a TUI e GUI.
 
 | Strumento | Cosa è | Avvio |
 |---|---|---|
-| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete/Radar, live, filtro `f`, blast-radius, suggerimenti che non propongono mai interpreti né lettori generici, stato VPN, porte TCP/UDP in ascolto) | `zt-tui` (pacchetto) o `./bin/zt-tui` |
+| `zt-tui` | Terminale a 6 tab (Stato/Eventi/Regole/Rete/Radar/**Config**): filtro `f`, blast-radius, auto-suggest anti-bypass, preflight + azioni (`i` installa, `s` avvia, `m` mode, `R` rescan, `X` ferma) | `zt-tui` (pacchetto) o `./bin/zt-tui` |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock zt-mockd &` + `ZT_SOCKET=/tmp/z.sock zt-tui` (da sorgente: `./bin/…`) |
-| `zt-gui` | Finestra desktop stile macOS (sidebar a sezioni, dashboard sessione, ricerca eventi, radar canvas, stato VPN a quattro casi, Guida per pacchetto e per sorgente) | `zt-gui` (pacchetto `zeroshield-gui`) o `make gui` |
+| `zt-gui` | Finestra desktop stile macOS (sidebar a sezioni, dashboard sessione, ricerca eventi, radar canvas, stato VPN, vista **Configurazione** con toggle audit/enforce, Guida + wizard primo avvio, bottoni Installa/Attiva/Ferma) | `zt-gui` (pacchetto `zeroshield-gui`) o `make gui` |
 
 ```bash
 make build-tui   # TUI (pura Go, senza toolchain eBPF)
