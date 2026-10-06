@@ -387,7 +387,7 @@ Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock`
 | Strumento | Cosa è | Avvio |
 |---|---|---|
 | `zt-tui` | Terminale a 6 tab (Stato/Eventi/Regole/Rete/Radar/**Config**): filtro `f`, blast-radius, auto-suggest anti-bypass, preflight + azioni (`i` installa, `s` avvia, `m` mode, `R` rescan, `X` ferma) | `zt-tui` (pacchetto) o `./bin/zt-tui` |
-| `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock zt-mockd &` + `ZT_SOCKET=/tmp/z.sock zt-tui` (da sorgente: `./bin/…`) |
+| `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | TUI: `ZT_SOCKET=/tmp/z.sock zt-mockd &` + `ZT_SOCKET=/tmp/z.sock zt-tui` · GUI: `ZT_SOCKET=/tmp/z.sock zt-mockd &` + `ZT_SOCKET=/tmp/z.sock zt-gui` (da sorgente: `./bin/…`) |
 | `zt-gui` | Finestra desktop stile macOS (sidebar a sezioni, dashboard sessione, ricerca eventi, radar canvas, stato VPN, vista **Configurazione** con toggle audit/enforce, Guida + wizard primo avvio, bottoni Installa/Attiva/Ferma) | `zt-gui` (pacchetto `zeroshield-gui`) o `make gui` |
 
 ```bash
