@@ -1,6 +1,9 @@
 # Copyright (c) 2026 ZioZoni95
 # SPDX-License-Identifier: MIT
-# GUI desktop (Wails + WebKitGTK). Gira come utente, legge il socket del demone.
+# Pacchetto unico desktop: TUTTO dentro (demone + GUI + TUI + script + unit).
+# Chi scarica questo .deb ha il programma completo: niente secondo pacchetto,
+# niente dipendenze interne. Incompatibile con `zeroshield` puro (stessi file):
+# o l'uno o l'altro, mai entrambi.
 name: zeroshield-gui
 arch: ${ARCH}
 platform: linux
@@ -10,16 +13,41 @@ section: admin
 priority: optional
 maintainer: ZioZoni95 <noreply@github.com>
 description: |
-  Interfaccia desktop di ZeroShield: stato, eventi live, regole, radar di rete.
-  Solo lettura via socket Unix; richiede il demone del pacchetto zeroshield.
+  ZeroShield completo con interfaccia desktop: demone eBPF, TUI, GUI,
+  servizio systemd, script e documentazione in un solo pacchetto.
 vendor: ZioZoni95
-homepage: https://github.com/ZioZoni95/ZeroShield
+homepage: https://github.com/ZioZoni95/personal_zeroT
 license: MIT
 depends:
-  - zeroshield
+  - systemd
   - libgtk-3-0t64 | libgtk-3-0
   - libwebkit2gtk-4.1-0
+recommends:
+  - ufw
+conflicts:
+  - zeroshield
 contents:
+  # Demone + diagnostica (dal pacchetto base, qui integrati).
+  - src: bin/zt-shield
+    dst: /usr/sbin/zt-shield
+    file_info: { mode: 0755 }
+  - src: bin/zt-probe
+    dst: /usr/sbin/zt-probe
+    file_info: { mode: 0755 }
+  - src: bin/zt-tui
+    dst: /usr/bin/zt-tui
+    file_info: { mode: 0755 }
+  - src: bin/zt-mockd
+    dst: /usr/bin/zt-mockd
+    file_info: { mode: 0755 }
+  - src: packaging/zt-shield.service
+    dst: /usr/lib/systemd/system/zt-shield.service
+  # Config: mai sovrascritta agli aggiornamenti (regole scritte a mano).
+  - src: configs/shield.example.yaml
+    dst: /etc/zt-shield/shield.yaml
+    type: config|noreplace
+    file_info: { mode: 0644 }
+  # GUI desktop.
   - src: bin/zt-gui
     dst: /usr/bin/zt-gui
     file_info: { mode: 0755 }
@@ -27,5 +55,49 @@ contents:
     dst: /usr/share/applications/zeroshield.desktop
   - src: zt-gui/build/appicon.png
     dst: /usr/share/icons/hicolor/512x512/apps/zeroshield.png
+  # Script di sistema.
+  - src: scripts/harden_system.sh
+    dst: /usr/share/zeroshield/scripts/harden_system.sh
+    file_info: { mode: 0755 }
+  - src: scripts/setup_fido2.sh
+    dst: /usr/share/zeroshield/scripts/setup_fido2.sh
+    file_info: { mode: 0755 }
+  - src: scripts/check_prereqs.sh
+    dst: /usr/share/zeroshield/scripts/check_prereqs.sh
+    file_info: { mode: 0755 }
+  - src: scripts/vpn_killswitch.sh
+    dst: /usr/share/zeroshield/scripts/vpn_killswitch.sh
+    file_info: { mode: 0755 }
+  - src: scripts/nm_vpn.sh
+    dst: /usr/share/zeroshield/scripts/nm_vpn.sh
+    file_info: { mode: 0755 }
+  - src: scripts/proton_setup.sh
+    dst: /usr/share/zeroshield/scripts/proton_setup.sh
+    file_info: { mode: 0755 }
+  - src: scripts/proton_current.sh
+    dst: /usr/share/zeroshield/scripts/proton_current.sh
+    file_info: { mode: 0755 }
+  - src: scripts/proton_up.sh
+    dst: /usr/share/zeroshield/scripts/proton_up.sh
+    file_info: { mode: 0755 }
+  # Polkit: chi può comandare il demone via canale di controllo (auth admin).
+  - src: packaging/org.zeroshield.manage.policy
+    dst: /usr/share/polkit-1/actions/org.zeroshield.manage.policy
+    file_info: { mode: 0644 }
+  # Documentazione minima.
+  - src: README.md
+    dst: /usr/share/doc/zeroshield-gui/README.md
   - src: LICENSE
     dst: /usr/share/doc/zeroshield-gui/copyright
+  - src: docs/TEST_SANDBOX.md
+    dst: /usr/share/doc/zeroshield-gui/TEST_SANDBOX.md
+  - src: docs/TESTING_LAB.md
+    dst: /usr/share/doc/zeroshield-gui/TESTING_LAB.md
+  - src: docs/CANARY.md
+    dst: /usr/share/doc/zeroshield-gui/CANARY.md
+  - src: docs/VPN_SETUP.md
+    dst: /usr/share/doc/zeroshield-gui/VPN_SETUP.md
+scripts:
+  postinstall: packaging/postinstall.sh
+  preremove: packaging/preremove.sh
+  postremove: packaging/postremove.sh

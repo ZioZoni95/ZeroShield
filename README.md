@@ -287,13 +287,15 @@ non basta: i dati live li produce il demone):
 | Pacchetto | Contiene | Da solo |
 |---|---|---|
 | `zeroshield` | demone, `zt-tui`, `zt-probe`, `zt-mockd`, servizio systemd, script (VPN, hardening, FIDO2), documentazione | funziona, **senza** app grafica |
-| `zeroshield-gui` | app desktop `zt-gui` | **dipende da `zeroshield`**: passali entrambi ad `apt` nello stesso comando, così risolve la dipendenza dai file locali |
+| `zeroshield-gui` | **tutto**: demone, TUI, GUI, servizio, script, docs (incompatibile con `zeroshield`, o l'uno o l'altro) | **basta da solo**: un file, programma completo |
 
-Installa quindi i due insieme, in un solo comando:
+Scegli **uno** dei due (sono incompatibili tra loro, o l'uno o l'altro):
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./zeroshield_*_amd64.deb ./zeroshield-gui_*_amd64.deb     # solo demone+TUI: ometti il secondo file
+sudo apt install ./zeroshield-gui_*_amd64.deb   # tutto: demone + TUI + GUI
+# oppure, senza desktop:
+sudo apt install ./zeroshield_*_amd64.deb       # demone + TUI, niente GUI
 
 sudoedit /etc/zt-shield/shield.yaml                # user: <tuo-utente>   (obbligatorio)
 sudo zt-probe -xdp-lo                              # il kernel accetta i programmi?
