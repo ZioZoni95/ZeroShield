@@ -63,6 +63,15 @@ jobs:
           for f in $(go test -list '^Fuzz' ./internal/config | grep ^Fuzz); do
             go test -run '^$' -fuzz "^$f\$" -fuzztime 20s ./internal/config
           done
+      - name: Script VPN (comandi finti, senza rete)
+        run: |
+          bash scripts/test_nm_vpn.sh
+          bash scripts/test_proton.sh
+      - name: Kill-switch (network namespace usa e getta, root)
+        # Gira in un namespace: non tocca la rete del runner.
+        run: |
+          sudo apt-get install -y -q nftables iproute2
+          sudo bash scripts/test_killswitch.sh
       - name: Canary fanotify reale (root)
         # Test con fanotify vero: avvio, tocco esca, massa, kill in enforce.
         # GOCACHE separata: root non deve sporcare la cache dell'utente runner.
@@ -142,6 +151,12 @@ jobs:
           npm ci
           npm audit --audit-level=high
           npm run build
+      - name: Test GUI nel browser (Chrome di sistema, demone simulato)
+        # Il driver si installa senza salvarlo: package.json non cambia.
+        working-directory: zt-gui/frontend
+        run: |
+          npm i --no-save playwright-core
+          node tests/gui.test.mjs dist
       - name: Librerie GTK/WebKit
         run: |
           sudo apt-get update -q

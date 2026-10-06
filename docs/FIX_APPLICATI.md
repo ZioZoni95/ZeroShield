@@ -168,7 +168,8 @@ gira in CI.
 
 gosec, triage dei risultati restanti (non bloccanti, in SARIF):
 G115 su layout kernel/fanotify e `Mask.Size()` (valori limitati, falsi
-positivi); G302/G301 socket IPC 0666 (scelta documentata); G304 config da
+positivi); G302/G301 socket IPC 0666 (era una scelta documentata, **superata dalla sez. 13**:
+il socket del demone ora e' 0600 dell'utente protetto; resta 0666 solo per mock e test); G304 config da
 `-config` (input dell'admin); G704 `NOTIFY_SOCKET` (impostato da systemd).
 
 ## 11. Primo collaudo su kernel reale 2026-10-02 — APPLICATI
@@ -211,3 +212,82 @@ Dettagli, ambiente e comandi in `docs/TEST_SANDBOX.md`.
   e `FEATURE_PLAN` allineati.
 - **Trovato**: canary sotto systemd bloccato da `ProtectHome=read-only`;
   documentato l'override `ReadWritePaths`, fix strutturale in `PUNTI_APERTI`.
+
+## 13. Revisione di `main` del 2026-10-05 — APPLICATI
+
+Revisione del lavoro VPN, `netstat` e UI. Per ogni difetto: provato prima (dove possibile con
+un test che fallisce sulla versione vecchia), corretto, coperto da un test.
+
+**Kill-switch `scripts/vpn_killswitch.sh` (riscritto)** — test: `scripts/test_killswitch.sh`
+(54 controlli in un network namespace; verificato che fallisce sulla versione precedente).
+- `off` faceva `nft flush ruleset` e ricaricava un backup: se il ricaricamento falliva restava
+  la macchina **senza firewall**. Ora toglie solo la propria tabella.
+- Il backup stava in `/tmp/zt-nft.backup`: un file piazzato da un altro utente prima del primo
+  `on` veniva caricato come root da `off`. Nessun backup, nessun file di stato.
+- `on` cancellava la vecchia tabella e poi applicava la nuova: un errore (es. endpoint IPv6)
+  lasciava la macchina senza kill-switch. Ora un solo `nft -f` atomico, preceduto da `nft -c`.
+- `portal` aspettava 5 minuti in primo piano e poi **non riattivava** il kill-switch (commento e
+  codice si contraddicevano). Ora apre solo 80/443/DNS per N secondi con un timeout nel set
+  nft: lo chiude il kernel, anche se lo script muore.
+- Input validati (IPv4, `[IPv6]`, porta, interfaccia, CIDR v4/v6); endpoint con nome host
+  rifiutato; IPv6 supportato.
+
+**Auto-VPN `scripts/nm_vpn.sh` (riscritto)** — test: `scripts/test_nm_vpn.sh` (28 controlli).
+- BSSID vuoto (cavo, hotel) → `grep -F ""` combaciava con ogni riga → rete "fidata" → **VPN
+  spenta**. Ora BSSID vuoto, malformato o assente = non fidato = VPN su; confronto esatto.
+- Agiva su ogni evento `up` (docker0, veth, il tunnel stesso): ora solo interfacce fisiche.
+- Non spegne più la VPN su rete fidata (il BSSID si clona): solo con `AUTO_DOWN=1`.
+- Non rilancia un tunnel già attivo (falso errore "resta scoperto").
+- `PROTON=1` non trovava `proton_up.sh` installato in `dispatcher.d`: ora lo cerca anche in
+  `/usr/share/zeroshield/scripts`.
+
+**Helper Proton** — test: `scripts/test_proton.sh` (19 controlli).
+- `proton_current.sh` prendeva la prima interfaccia WireGuard (poteva essere il tunnel di
+  lavoro che dichiarava di ignorare): ora riconosce Proton dal nome e non sceglie mai da solo
+  altro; `--iface` per decidere.
+- `proton_setup.sh`: endpoint non-IP rifiutato (il kill-switch non può risolverlo); avviso (e
+  `--remove-source`) per la chiave privata rimasta nel file scaricato.
+
+**IPC e dati nuovi**
+- `Listening.Exe` (scelto dal processo osservato) arrivava grezzo a TUI e GUI: **iniezione ANSI/OSC**
+  (provata con `\x1b]52;…`). Ora `Status.sanitize()` in `ipc.UpdateStatus` sanifica ogni
+  stringa in un punto solo (anche eventi e canary); la TUI sanifica di nuovo in difesa.
+- Il socket era 0666: PID ed exe di tutti i processi (porte in ascolto comprese) arrivavano a
+  qualunque utente locale. Ora proprietà dell'utente protetto, modo 0600 (`NewServerOwnedBy`);
+  provato con utenti reali (protetto sì, altro utente `permission denied`, root sì).
+- `netstat`: aggiunto UDP (mDNS/LLMNR sono la superficie che XDP difende), tetto di 256 voci con
+  totale dichiarato (una riga di status oltre 1 MiB bloccava i client), ordine stabile, PID più
+  basso invece del primo lessicografico, test su un finto `/proc`.
+- Stato VPN reale (`internal/vpn`): tunnel UP, tabella nft attiva, età dell'handshake. Prima
+  `enabled && interfaccia UP` = verde, anche senza kill-switch e senza handshake. Controllo ogni
+  5 s (prima ogni 30). Il config valida `vpn.endpoint` (IP:porta) e `vpn.tunnel`.
+
+**TUI** — test: `cmd/zt-tui/review_test.go`.
+- I suggerimenti proponevano di autorizzare `python3.12`, `bash`, `/var/tmp/x`: ora solo percorsi
+  di sistema e mai shell, interpreti o lettori/copiatori generici (`cat`, `curl`, `rsync`...).
+- Il blast-radius contava `git` e `/usr/bin/git` come due binari e cambiava ordine a ogni
+  render: ora per nome base, ordine deterministico.
+- Tab Rete: UDP, IPv6 tra parentesi, troncamento dichiarato, quattro stati VPN.
+
+**GUI** — test nel browser: `zt-gui/frontend/tests/gui.test.mjs` (21 controlli; sul frontend
+precedente ne falliscono 14). Avviando anche l'app vera del pacchetto sotto Xvfb contro `zt-mockd`
+è emerso un difetto che nessuno stub trovava: i contatori di "Sessione" ripartivano da 0 a ogni
+render (il valore di partenza stava sull'elemento, che si ricostruisce), quindi con eventi in arrivo
+ogni pochi secondi restavano a zero. Ora il valore mostrato si ricorda fuori dal DOM.
+- La ricerca eventi perdeva focus e testo a ogni evento in arrivo: in un flood si riusciva a
+  digitare **una sola lettera**. Ora la barra si costruisce una volta e si aggiorna solo la
+  tabella; i render sono raggruppati con `requestAnimationFrame`.
+- Guida e wizard indicavano `make build` e un `cp` che **sovrascriveva** la config: ora due
+  percorsi (pacchetto `.deb` e sorgente, con `cp -n`); `zt-mockd` ora è nel pacchetto.
+- Versione letta dal binario (`Version()` + `-ldflags`); la costante `APP_VERSION` non era
+  nemmeno usata. Errore "permission denied" sul socket spiegato (utente non protetto).
+
+**Test e sicurezza dell'ambiente** — `test_killswitch.sh` verifica di essere in un network
+namespace diverso da quello di partenza prima di toccare `nft` (la sola variabile `ZT_IN_NETNS=1`
+avrebbe permesso di applicare un kill-switch sulla rete vera); `test_nm_vpn.sh` e `test_proton.sh`
+non procedono senza una directory temporanea valida. Il pacchetto GUI da solo non si installa
+(dipende dal demone): documentato, il README chiede di scaricare entrambi i file.
+
+**Documentazione e pacchetto** — `FEATURE_PLAN`, `FEATURE_STUDY`, `ROADMAP`,
+`PUNTI_APERTI`, `VPN_SETUP`, `shield.example.yaml` e README allineati al codice (lo stack VPN
+è dichiarato "non collaudato su rete reale"); `.deb` con script VPN, `zt-mockd` e `VPN_SETUP.md`.

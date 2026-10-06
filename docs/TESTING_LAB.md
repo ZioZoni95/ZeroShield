@@ -97,9 +97,34 @@ canale). `io_uring` artigianale → passa (limite noto, fail-open).
 `~/Documents/zt-mass` → allarme di massa. In enforce:
 `sh -c 'exec 3<~/Documents/.canary-wallet.dat; sleep 30'` → `Killed`.
 
-## 8. Checklist pass / rollback
+## 8. Fase 7 — VPN e kill-switch (VM con snapshot, mai sul lavoro vero)
 
-`bpf` in lsm, `zt-probe` tutto ✅, 5 prog in `bpftool`, `: >`/`truncate`/`mv`/`rm` negati,
+Procedura completa in [`VPN_SETUP.md`](VPN_SETUP.md). Controlli del lab:
+
+```bash
+make test-scripts                                          # prima di tutto: script nel namespace
+sudo scripts/vpn_killswitch.sh on <endpoint> <tunnel>      # tunnel su
+sudo scripts/vpn_killswitch.sh status                      # rc 0
+sudo wg-quick down <tunnel>                                # UI entro ~5 s: offline MA NON in chiaro
+sudo tcpdump -ni any not port 22                           # sul gateway: muto 60 s
+sudo scripts/vpn_killswitch.sh portal wlan0 30             # solo 80/443/DNS, poi si richiude
+sudo scripts/vpn_killswitch.sh off && sudo ufw status      # il firewall dell'utente e' intatto
+```
+
+Auto-VPN con NetworkManager vero: rete fidata → nessuna azione; rete ignota → tunnel su;
+cavo senza `wired` → tunnel su (mai giù); `journalctl -t zt-vpn`.
+
+## 9. Fase 8 — socket IPC e UI
+
+`ls -l /run/zt-shield/api.sock` → `srw------- <utente protetto>`. Da un secondo utente
+`zt-tui` deve dire "permission denied" (non "demone spento"); da root e dall'utente protetto
+funziona. Nella tab Rete: porte TCP **e UDP**, nessuna sequenza di controllo anche con un exe
+dal nome ostile (`cp /usr/bin/nc "/tmp/$(printf '\033]0;X\007')" && "/tmp/$(printf '\033]0;X\007')" -l 9999`).
+
+## 10. Checklist pass / rollback
+
+`make test-scripts` ok, kill-switch: tunnel killato → offline non in chiaro, `portal` si richiude,
+socket 0600 (secondo utente respinto), `bpf` in lsm, `zt-probe` tutto ✅, 5 prog in `bpftool`, `: >`/`truncate`/`mv`/`rm` negati,
 symlink a libc ignorato, canary alert/kill, EACCES cat, kubectl ok, `/tmp/ssh`
 negato, git-kube negato / git-creds riesce, flood riepilogato, ping loss,
 `run_cnt` cresce, `sport 5355` droppata, tcpdump muto, commit senza tocco ko

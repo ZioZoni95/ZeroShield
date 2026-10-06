@@ -6,7 +6,7 @@
 # incorporato nel binario Go, quindi `go build` da solo produce un eseguibile
 # che non contiene i programmi kernel.
 
-.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui gui-bin test test-root lint check package package-gui clean
+.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui gui-bin test test-root test-scripts lint check package package-gui clean
 
 # Versione nei binari e nei pacchetti: dal tag git (v0.1.0 -> 0.1.0), altrimenti
 # 0.0.0~dev+<commit> (il ~ ordina le dev prima di qualsiasi release in dpkg).
@@ -79,11 +79,11 @@ gui:
 # Richiede Node + libgtk-3-dev + libwebkit2gtk-4.1-dev. Usata dal pacchetto.
 gui-bin:
 	cd zt-gui/frontend && npm ci && npm run build
-	cd zt-gui && go build -tags desktop,production,webkit2_41 -trimpath -ldflags "-s -w" -o ../bin/zt-gui .
+	cd zt-gui && go build -tags desktop,production,webkit2_41 -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o ../bin/zt-gui .
 
 # Pacchetti .deb in dist/ (nfpm). Il demone include gli stub eBPF, quindi serve
 # la toolchain di `make build`. Installazione: sudo apt install ./dist/zeroshield_*.deb
-package: build build-probe
+package: build build-probe build-mock
 	mkdir -p dist
 	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm.yaml --packager deb --target dist/
 
@@ -95,6 +95,13 @@ package-gui: gui-bin
 # Nessun test richiede root o eBPF: per quello c'è TESTING.md.
 test:
 	go test ./internal/... ./pkg/...
+
+# Script VPN: nm_vpn e proton con comandi finti (nessun privilegio), kill-switch in un
+# network namespace usa e getta (serve root: non tocca la rete della macchina).
+test-scripts:
+	bash scripts/test_nm_vpn.sh
+	bash scripts/test_proton.sh
+	sudo bash scripts/test_killswitch.sh
 
 # Test che richiedono root (fanotify reale del canary). In CI girano con sudo.
 test-root:

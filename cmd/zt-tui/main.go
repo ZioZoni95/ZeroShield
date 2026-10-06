@@ -17,7 +17,6 @@ import (
 	"math"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -290,13 +289,25 @@ func (m model) tabBar() string {
 }
 
 func (m model) offlineView() string {
+	errText := fmt.Sprintf("%v", m.connErr)
+	// Il socket e' di proprieta' dell'utente protetto (0600): da un altro utente l'errore
+	// e' "permission denied", e dire "demone spento" manderebbe a cercare il problema
+	// sbagliato.
+	if m.connErr != nil && strings.Contains(strings.ToLower(errText), "permission denied") {
+		return "Il demone risponde, ma il socket " + ipc.SocketPath + " è riservato a root\n" +
+			"e all'utente protetto (campo 'user:' del config).\n\n" +
+			"Apri la TUI con quell'utente, oppure con sudo.\n\n" +
+			dimStyle.Render("ultimo errore: "+errText)
+	}
 	return "Demone non raggiungibile via " + ipc.SocketPath + ".\n\n" +
-		"Avvialo prima (profilo audit, non blocca nulla):\n" +
-		"  sudo SHIELD_USER=$USER ./bin/zt-shield\n\n" +
-		"oppure come servizio:\n" +
-		"  sudo bash scripts/install_service.sh $USER home\n" +
+		"Da pacchetto .deb:\n" +
+		"  sudoedit /etc/zt-shield/shield.yaml      (imposta user:, resta in audit)\n" +
+		"  sudo systemctl enable --now zt-shield\n" +
 		"  journalctl -u zt-shield -f\n\n" +
-		dimStyle.Render(fmt.Sprintf("ultimo errore: %v", m.connErr))
+		"Da sorgente (profilo audit, non blocca nulla):\n" +
+		"  sudo SHIELD_USER=$USER ./bin/zt-shield\n" +
+		"  sudo bash scripts/install_service.sh $USER home\n\n" +
+		dimStyle.Render("ultimo errore: "+errText)
 }
 
 func hookDot(ok bool) string {
@@ -433,44 +444,22 @@ func (m model) rulesView() string {
 		return dimStyle.Render("Nessuna regola caricata.")
 	}
 	var rows []string
-	// Blast-radius: per ogni binario, quali regole raggiunge. Un exe in 3
-	// regole legge 3 famiglie di segreti: qui lo vedi prima del danno.
-	reach := map[string]map[string]bool{}
-	for _, r := range m.st.Rules {
-		for _, a := range r.Allow {
-			if reach[a] == nil {
-				reach[a] = map[string]bool{}
-			}
-			reach[a][r.Name] = true
-		}
-	}
 	for _, r := range m.st.Rules {
 		rows = append(rows, badgeOK.Render("■ "+r.Name))
 		rows = append(rows, "  file: "+strings.Join(r.Paths, ", "))
 		rows = append(rows, "  exe:  "+strings.Join(r.Allow, ", ")+"\n")
 	}
 	rows = append(rows, dimStyle.Render("── blast-radius (binario → regole raggiungibili) ──"))
-	type kv struct {
-		k string
-		n int
+	var ra []ruleAllow
+	for _, r := range m.st.Rules {
+		ra = append(ra, ruleAllow{Name: r.Name, Allow: r.Allow})
 	}
-	var wide []kv
-	for exe, set := range reach {
-		if len(set) > 1 {
-			wide = append(wide, kv{exe, len(set)})
-		}
-	}
-	sort.Slice(wide, func(i, j int) bool { return wide[i].n > wide[j].n })
+	wide := blastRadius(ra)
 	if len(wide) == 0 {
 		rows = append(rows, dimStyle.Render("  nessun binario attraversa più regole: compartimentazione ok"))
 	} else {
 		for _, w := range wide {
-			var names []string
-			for n := range reach[w.k] {
-				names = append(names, n)
-			}
-			sort.Strings(names)
-			rows = append(rows, fmt.Sprintf("  ⚠️ %-18s → %s", w.k, strings.Join(names, ", ")))
+			rows = append(rows, fmt.Sprintf("  ⚠️ %-18s → %s", w.Exe, strings.Join(w.Rules, ", ")))
 		}
 	}
 	// Auto-suggest: dai negati di sessione, il YAML da valutare. Copia a mano
@@ -495,16 +484,13 @@ func (m model) rulesView() string {
 	if len(order) > 0 {
 		rows = append(rows, dimStyle.Render("\n── suggerimenti (da negati di sessione, verifica prima) ──"))
 		for _, k := range order {
-			s := seen[k]
-			// Mai suggerire alla leggera binari fuori dai path di sistema:
-			// /tmp/ssh e' il classico bypass per rename, non un tool da autorizzare.
-			if strings.HasPrefix(s.exe, "/tmp/") || strings.HasPrefix(s.exe, "/home/") || strings.HasPrefix(s.exe, "/dev/") {
-				rows = append(rows, fmt.Sprintf("  ⛔%s  # %dx: SOSPETTO (fuori path sistema), NON autorizzare",
-					s.exe, s.n))
+			sg := seen[k]
+			if ok, why := suggestVerdict(sg.exe); !ok {
+				rows = append(rows, fmt.Sprintf("  ⛔%s  # %dx: NON autorizzare — %s", sg.exe, sg.n, why))
 				continue
 			}
 			rows = append(rows, fmt.Sprintf("  +%s  # %dx: aggiungi %q a allow di %q?",
-				s.exe, s.n, s.exe, s.rule))
+				sg.exe, sg.n, sg.exe, sg.rule))
 		}
 	}
 	return strings.Join(rows, "\n")
@@ -529,32 +515,30 @@ func (m model) netView() string {
 		}
 		rows = append(rows, dimStyle.Render("  (il drop scarta anche le risposte da queste reti)"))
 	}
-	rows = append(rows, "")
-	if !s.Vpn.Enabled {
-		rows = append(rows, dimStyle.Render("VPN kill-switch: spento (tutto esce in chiaro su rete ostile)"))
-	} else if s.Vpn.Up {
-		rows = append(rows, badgeOK.Render("🔒 VPN su: "+s.Vpn.Tunnel+" → "+s.Vpn.Endpoint))
-	} else {
-		// Tunnel configurato ma giù = scoperto: rosso e chiaro.
-		rows = append(rows, badgeBlock.Render("⚠️ VPN GIÙ: "+s.Vpn.Tunnel+" assente, sei in chiaro!"))
-	}
-	// Porte in ascolto: superficie esposta ("chi può parlarmi?").
-	// Se non riconosci una riga, è quella da investigare.
-	rows = append(rows, "", "In ascolto:")
+	rows = append(rows, "", vpnLine(s.Vpn))
+	// Porte in ascolto: superficie esposta ("chi può parlarmi?"). Include UDP
+	// (mDNS/LLMNR sono la superficie che XDP difende). Se non riconosci una riga,
+	// è quella da investigare. Exe lo sceglie chi lancia il processo: sempre SafeText.
+	rows = append(rows, "", "In ascolto (TCP/UDP):")
 	if len(s.Listening) == 0 {
-		rows = append(rows, dimStyle.Render("  nessuna porta TCP in LISTEN"))
+		rows = append(rows, dimStyle.Render("  nessuna porta in ascolto"))
 	} else {
 		for _, l := range s.Listening {
-			who := dimStyle.Render("(sconosciuto)")
+			who := dimStyle.Render("(sconosciuto: processo di altri o già uscito)")
 			if l.Exe != "" {
-				who = fmt.Sprintf("%s pid=%d", l.Exe, l.PID)
+				who = fmt.Sprintf("%s pid=%d", ipc.SafeText(l.Exe), l.PID)
 			}
-			rows = append(rows, fmt.Sprintf("  👂 %-4s %-21s %s", l.Proto, fmt.Sprintf("%s:%d", l.Addr, l.Port), who))
+			rows = append(rows, fmt.Sprintf("  👂 %-4s %-23s %s", ipc.SafeText(l.Proto),
+				hostPort(ipc.SafeText(l.Addr), l.Port), who))
+		}
+		if s.ListeningTotal > len(s.Listening) {
+			rows = append(rows, dimStyle.Render(fmt.Sprintf("  … mostrate %d di %d", len(s.Listening), s.ListeningTotal)))
 		}
 	}
 	return strings.Join(rows, "\n")
 }
 
+// radarAngle distribuisce un IP sul giro a partire dall'hash: stabile tra frame,
 // cosi' ogni sorgente tiene la sua posizione mentre la spazzata gira.
 func radarAngle(ip string) float64 {
 	h := fnv.New32a()
@@ -683,11 +667,13 @@ func dump() string {
 		HookLSM: true, XDP: []string{"enp0s3"},
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
-		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: true},
+		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: true, KillSwitch: false, HandshakeAge: 42},
 		Listening: []ipc.ListenEntry{
 			{Proto: "tcp", Addr: "127.0.0.1", Port: 631, PID: 1234, Exe: "/usr/sbin/cupsd"},
 			{Proto: "tcp", Addr: "0.0.0.0", Port: 8080, PID: 5678, Exe: "/tmp/srv"},
+			{Proto: "udp", Addr: "0.0.0.0", Port: 5353, PID: 700, Exe: "/usr/sbin/avahi-daemon"},
 		},
+		ListeningTotal: 3,
 		TopSources: []ipc.SourceStat{
 			{IP: "192.168.100.7", Poison: 34, Subnet: 0, Total: 34, LastSeen: "2026-10-02T10:35:01Z"},
 			{IP: "192.168.100.23", Poison: 0, Subnet: 128, Total: 128, LastSeen: "2026-10-02T10:35:00Z"},
@@ -751,4 +737,36 @@ func main() {
 		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)
 	}
+}
+
+// vpnLine riassume tunnel e kill-switch combinando i tre fatti osservati dal demone.
+// Il verde richiede ENTRAMBI: un tunnel su senza kill-switch protegge solo finche'
+// regge, e la riga lo dice.
+func vpnLine(v ipc.VpnStatus) string {
+	if !v.Enabled {
+		return dimStyle.Render("VPN: non monitorata (nessuna stanza vpn: nel config; su rete ostile esci in chiaro)")
+	}
+	tun, ep := ipc.SafeText(v.Tunnel), ipc.SafeText(v.Endpoint)
+	hs := "handshake: mai/sconosciuto"
+	if v.HandshakeAge >= 0 {
+		hs = fmt.Sprintf("handshake: %ds fa", v.HandshakeAge)
+	}
+	switch {
+	case v.Up && v.KillSwitch:
+		return badgeOK.Render(fmt.Sprintf("🔒 VPN protetta: %s → %s · kill-switch attivo · %s", tun, ep, hs))
+	case v.Up:
+		return evCanary.Render(fmt.Sprintf("⚠️ VPN su (%s → %s) ma kill-switch NON attivo: se il tunnel cade esci in chiaro · %s", tun, ep, hs))
+	case v.KillSwitch:
+		return evCanary.Render(fmt.Sprintf("⛔ VPN giù (%s assente), kill-switch attivo: sei offline ma non in chiaro", tun))
+	default:
+		return badgeBlock.Render(fmt.Sprintf("⚠️ VPN GIÙ (%s assente) e nessun kill-switch: sei in chiaro!", tun))
+	}
+}
+
+// hostPort: l'IPv6 va tra parentesi, altrimenti "::1:22" non si legge.
+func hostPort(addr string, port uint16) string {
+	if strings.Contains(addr, ":") {
+		return fmt.Sprintf("[%s]:%d", addr, port)
+	}
+	return fmt.Sprintf("%s:%d", addr, port)
 }

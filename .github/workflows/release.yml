@@ -57,6 +57,12 @@ jobs:
           > (vedi `docs/TEST_SANDBOX.md`). Installare questo .deb su una macchina
           > vera non protegge nulla e può negarti i tuoi stessi file in enforce.**
 
+          Scarica ENTRAMBI i .deb e installali insieme: il pacchetto GUI da solo non si installa.
+
+          ```
+          sudo apt install ./zeroshield_*_amd64.deb ./zeroshield-gui_*_amd64.deb
+          ```
+
           Uso consentito: VM usa-e-getta con snapshot, dati finti, profilo audit.
           Prima accensione reale solo dopo riga enforce verde in TEST_SANDBOX.md.
           EOF

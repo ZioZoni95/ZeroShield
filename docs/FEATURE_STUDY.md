@@ -1,4 +1,11 @@
-# FEATURE_STUDY — pseudosoluzioni annotate (studio, non implementato)
+# FEATURE_STUDY — pseudosoluzioni annotate (studio)
+
+> **F1 e F2 sono stati implementati** (`scripts/vpn_killswitch.sh`, `scripts/nm_vpn.sh`) e
+> **hanno corretto proprio le trappole che questo studio elenca**, più altre emerse dalla
+> revisione: l'applicazione è atomica, il rollback non usa backup né `flush ruleset`, il
+> captive portal si chiude da solo per timeout del kernel, la fiducia nel BSSID non spegne mai
+> la VPN. Lo pseudocodice qui sotto è storico: la versione che vale è in
+> [`VPN_SETUP.md`](VPN_SETUP.md). F3 e F4 restano studio.
 
 Come leggere: per ogni feature, problema → idea → pseudocodice → trappole.
 Niente di questo gira: serve a decidere cosa costruire dopo, in che ordine.

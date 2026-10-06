@@ -1,43 +1,94 @@
 // Copyright (c) 2026 ZioZoni95
 // SPDX-License-Identifier: MIT
 
-// Package netstat: snapshot delle socket TCP in LISTEN da /proc, con PID/exe.
+// Package netstat: snapshot delle socket TCP in LISTEN e UDP in ascolto da /proc,
+// con PID/exe del proprietario.
 //
 // Perche' qui e non `ss`: zero dipendenze esterne, parsing puro Go, funziona
-// anche in container minimi. Il demone (root) vede i processi di tutti;
-// da utente vedi solo i tuoi (kernel filtra i readlink altrui).
-// Solo TCP LISTEN: e' cio' che espone superficie ("chi puo' parlarmi?").
-// UDP e' connectionless: niente stato, fuori da questo snapshot.
+// anche in container minimi. Il demone (root) vede i processi di tutti; da utente
+// vedi solo i tuoi (il kernel filtra i readlink altrui). Per questo il socket IPC
+// che pubblica questo dato e' di proprieta' dell'utente protetto (pkg/ipc).
+//
+// UDP incluso perche' le superfici che ZeroShield difende sono proprio UDP:
+// mDNS (5353) e LLMNR (5355). Un socket UDP "in ascolto" e' uno bound senza peer:
+// stato 07 e indirizzo remoto tutto zero.
 package netstat
 
 import (
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 // Entry: una porta in ascolto con proprietario best-effort.
 type Entry struct {
-	Proto string `json:"proto"` // tcp / tcp6
+	Proto string `json:"proto"` // tcp, tcp6, udp, udp6
 	Addr  string `json:"addr"`
 	Port  uint16 `json:"port"`
 	PID   int    `json:"pid,omitempty"`
 	Exe   string `json:"exe,omitempty"`
 }
 
-// Listening fotografa /proc/net/tcp e tcp6 in stato LISTEN (0A).
-func Listening() []Entry {
-	scanned := append(scanProto("/proc/net/tcp", "tcp"), scanProto("/proc/net/tcp6", "tcp6")...)
-	if len(scanned) == 0 {
-		return nil
+// Listening fotografa /proc e restituisce al massimo max voci, ordinate (proto,
+// porta, indirizzo) cosi' le UI non sfarfallano, piu' il totale trovato. Se
+// total > len(entries) la lista e' stata troncata: chi mostra deve dirlo.
+//
+// Il tetto serve perche' ogni voce viaggia nello status a ogni client: un host
+// con migliaia di socket (Docker, server) supererebbe il buffer di riga del client
+// IPC (1 MiB) e l'interfaccia smetterebbe di aggiornarsi.
+func Listening(max int) (entries []Entry, total int) {
+	return listening("/proc", max)
+}
+
+func listening(root string, max int) ([]Entry, int) {
+	var found []scanned
+	found = append(found, scanProto(filepath.Join(root, "net/tcp"), "tcp", false)...)
+	found = append(found, scanProto(filepath.Join(root, "net/tcp6"), "tcp6", false)...)
+	found = append(found, scanProto(filepath.Join(root, "net/udp"), "udp", true)...)
+	found = append(found, scanProto(filepath.Join(root, "net/udp6"), "udp6", true)...)
+	if len(found) == 0 {
+		return nil, 0
 	}
-	// Mappa inode->pid dai fd di tutti i processi visibili.
-	inodes := map[string][]int{} // "12345" -> pid
-	pids, _ := filepath.Glob("/proc/[0-9]*")
-	for _, p := range pids {
+	sort.Slice(found, func(i, j int) bool {
+		a, b := found[i].Entry, found[j].Entry
+		if a.Proto != b.Proto {
+			return a.Proto < b.Proto
+		}
+		if a.Port != b.Port {
+			return a.Port < b.Port
+		}
+		return a.Addr < b.Addr
+	})
+	total := len(found)
+	if max > 0 && len(found) > max {
+		found = found[:max]
+	}
+
+	// Mappa inode->pid dai fd dei processi visibili. Con piu' processi sullo stesso
+	// socket (fork) vince il PID piu' basso: Glob ordina in modo lessicografico
+	// ("1000" < "999") e il "primo" cambiava da un giro all'altro.
+	owners := inodeOwners(root)
+	out := make([]Entry, 0, len(found))
+	for _, s := range found {
+		e := s.Entry
+		if pid, ok := owners[s.ino]; ok {
+			e.PID = pid
+			if exe, err := os.Readlink(filepath.Join(root, strconv.Itoa(pid), "exe")); err == nil {
+				e.Exe = exe
+			}
+		}
+		out = append(out, e)
+	}
+	return out, total
+}
+
+func inodeOwners(root string) map[string]int {
+	owners := map[string]int{}
+	dirs, _ := filepath.Glob(filepath.Join(root, "[0-9]*"))
+	for _, p := range dirs {
 		pid, err := strconv.Atoi(filepath.Base(p))
 		if err != nil {
 			continue
@@ -48,53 +99,56 @@ func Listening() []Entry {
 		}
 		for _, fd := range fds {
 			link, err := os.Readlink(filepath.Join(p, "fd", fd.Name()))
-			if err != nil || !strings.HasPrefix(link, "socket:[") {
+			if err != nil || !strings.HasPrefix(link, "socket:[") || !strings.HasSuffix(link, "]") {
 				continue
 			}
 			ino := link[len("socket:[") : len(link)-1]
-			inodes[ino] = append(inodes[ino], pid)
-		}
-	}
-	out := make([]Entry, 0, len(scanned))
-	for _, s := range scanned {
-		e := s.Entry
-		if pids := inodes[s.ino]; len(pids) > 0 {
-			e.PID = pids[0]
-			if exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pids[0])); err == nil {
-				e.Exe = exe
+			if cur, ok := owners[ino]; !ok || pid < cur {
+				owners[ino] = pid
 			}
 		}
-		out = append(out, e)
 	}
-	return out
+	return owners
 }
 
-// scanProto parsa una tabella /proc/net/{tcp,tcp6} tenendo solo LISTEN.
-// Formato riga: sl local rem st ... inode. IP esadecimale network order
-// (per v6 con word da 32 bit invertite: conversione standard).
-func scanProto(path, proto string) []scanned {
+type scanned struct {
+	Entry
+	ino string
+}
+
+// scanProto parsa una tabella /proc/net/{tcp,tcp6,udp,udp6}.
+// Formato riga: sl local rem st ... inode. TCP: tiene solo LISTEN (0A).
+// UDP: tiene i socket bound senza peer (stato 07 e remoto tutto zero).
+// IP esadecimale con word da 32 bit little-endian (vedi splitAddr).
+func scanProto(path, proto string, udp bool) []scanned {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) < 2 {
+		return nil
+	}
 	var out []scanned
-	for _, line := range strings.Split(string(data), "\n")[1:] {
+	for _, line := range lines[1:] { // la prima riga e' l'intestazione
 		f := strings.Fields(line)
-		if len(f) < 10 || f[3] != "0A" {
-			continue // solo LISTEN
+		if len(f) < 10 {
+			continue
 		}
-		addr, port, ok := splitAddr(f[1], proto == "tcp6")
+		if udp {
+			if f[3] != "07" || strings.Trim(f[2], "0:") != "" {
+				continue // UDP connesso a un peer: non e' "in ascolto"
+			}
+		} else if f[3] != "0A" {
+			continue
+		}
+		addr, port, ok := splitAddr(f[1], strings.HasSuffix(proto, "6"))
 		if !ok {
 			continue
 		}
 		out = append(out, scanned{Entry: Entry{Proto: proto, Addr: addr, Port: port}, ino: f[9]})
 	}
 	return out
-}
-
-type scanned struct {
-	Entry
-	ino string
 }
 
 func splitAddr(s string, v6 bool) (string, uint16, bool) {
