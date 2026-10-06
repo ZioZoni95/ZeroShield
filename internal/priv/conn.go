@@ -36,7 +36,7 @@ func (s *Server) serve(conn net.Conn) {
 	w := bufio.NewWriter(conn)
 	for sc.Scan() {
 		var req Request
-		resp := Response{OK: true}
+		var resp Response
 		if err := json.Unmarshal(sc.Bytes(), &req); err != nil {
 			resp = Response{Error: "richiesta non JSON"}
 		} else {
