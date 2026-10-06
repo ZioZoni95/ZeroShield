@@ -262,6 +262,7 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
   ```
   `bpftool` arriva con `linux-tools-generic` (su Ubuntu 24.04 non esiste un pacchetto `bpftool`): il `Makefile` lo trova da solo, altrimenti `make build BPFTOOL=/percorso/bpftool`.
   Serve **Go ≥ 1.26** (`go.mod` dichiara `toolchain go1.26.8`, che Go scarica da solo). Se l'apt è più vecchio: `sudo snap install go --classic`.
+  Solo per la GUI (`make gui`): `sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev` + Node 22 + `go install github.com/wailsapp/wails/v2/cmd/wails@latest` (su Ubuntu 24.04 compila con tag `webkit2_41`, già nel Makefile).
 
 ---
 
