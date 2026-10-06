@@ -23,7 +23,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"zt-shield/internal/priv"
 	"zt-shield/pkg/ipc"
+	"zt-shield/pkg/svc"
 )
 
 var (
@@ -78,6 +80,9 @@ type eventMsg struct{ ev ipc.WireEvent }
 
 type canaryMsg struct{ a ipc.CanaryAlert }
 
+// flashMsg: avviso temporaneo da comandi (rescan, errori canale).
+type flashMsg struct{ txt string }
+
 type tickMsg struct{}
 
 // sweepMsg avanza la spazzata del radar (solo eye-candy: i dati restano eBPF).
@@ -101,6 +106,8 @@ type model struct {
 	prevMode string
 	flash    string
 	flashExp time.Time
+	armStop  time.Time // conferma stop: secondo X entro 5s
+	armMode  time.Time // conferma mode: secondo m entro 5s
 }
 
 var filterNames = []string{"tutti", "bloccati", "canary", "audit"}
@@ -135,6 +142,59 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "s":
+			// Avvia servizio via pkexec (dialogo di sistema). Mai password qui.
+			return m, func() tea.Msg {
+				if err := svc.Start(); err != nil {
+					return flashMsg{txt: "avvio: " + err.Error()}
+				}
+				return flashMsg{txt: "servizio in avvio, ricarico stato…"}
+			}
+		case "X":
+			// Stop con doppia pressione: la prima arma, la seconda entro 5s esegue.
+			// Fermare spegne la protezione: mai un singolo tasto distratto.
+			if time.Now().Before(m.armStop) {
+				m.armStop = time.Time{}
+				return m, func() tea.Msg {
+					if err := svc.Stop(); err != nil {
+						return flashMsg{txt: "stop: " + err.Error()}
+					}
+					return flashMsg{txt: "protezione fermata"}
+				}
+			}
+			m.armStop = time.Now().Add(5 * time.Second)
+			m.flash = "premi X di nuovo entro 5s per FERMARE la protezione"
+			m.flashExp = m.armStop
+			return m, nil
+		case "i":
+			// Installa servizio (config + unit + avvio audit) via pkexec.
+			return m, func() tea.Msg {
+				if err := svc.Install(svc.CurrentUser(), "home"); err != nil {
+					return flashMsg{txt: "install: " + err.Error()}
+				}
+				return flashMsg{txt: "installato e attivo in audit"}
+			}
+		case "m":
+			// Toggle audit/enforce con doppia pressione come lo stop.
+			// Enforce blocca davvero: solo a log puliti.
+			if time.Now().Before(m.armMode) {
+				m.armMode = time.Time{}
+				return m, func() tea.Msg {
+					cur := svc.ReadMode()
+					next := "enforce"
+					if cur == "enforce" {
+						next = "audit"
+					}
+					if err := svc.SetMode(next); err != nil {
+						return flashMsg{txt: "mode: " + err.Error()}
+					}
+					return flashMsg{txt: "modalità: " + next + " (servizio riavviato)"}
+				}
+			}
+			m.armMode = time.Now().Add(5 * time.Second)
+			m.flash = "premi m di nuovo entro 5s per CAMBIARE modalità (audit↔enforce)"
+			m.flashExp = m.armMode
+			return m, nil
 		case "tab", "l", "right":
 			m.tab = (m.tab + 1) % len(tabNames)
 			m.offset = 0
@@ -146,6 +206,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.offset = 0
 		case "r":
 			return m, fetchStatus
+		case "R":
+			// Rescan via canale privilegiato: da utente chiede auth polkit
+			// (dialogo di sistema) o spiega il diniego. Mai silenzioso.
+			return m, func() tea.Msg {
+				if _, err := priv.Call("rescan", nil); err != nil {
+					return flashMsg{txt: "rescan: " + err.Error()}
+				}
+				return flashMsg{txt: "rescan accodato"}
+			}
 		case " ":
 			if m.tab == tabEvents {
 				m.paused = !m.paused
@@ -196,6 +265,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sweepMsg:
 		m.sweep = (m.sweep + 15) % 360
 		return m, tickSweep
+	case flashMsg:
+		m.flash = msg.txt
+		m.flashExp = time.Now().Add(6 * time.Second)
+		return m, nil
 	case eventMsg:
 		m.events = append(m.events, msg.ev)
 		if len(m.events) > 200 {
@@ -253,7 +326,7 @@ func (m model) View() string {
 			b.WriteString(m.radarView())
 		}
 	}
-	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-5 vai · r aggiorna · q esci") +
+	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-5 vai · r aggiorna · R rescan · s avvia · i installa · m mode · X ferma · q esci") +
 		helpStyle.Render("   |   eventi: spazio pausa · f filtro · ↑/↓ scorri · fine torna live"))
 	return b.String()
 }
@@ -324,6 +397,7 @@ func (m model) statusView() string {
 		fmt.Sprintf("Home:     %s", s.Home),
 		fmt.Sprintf("LSM hook: %s   (fail-closed: se manca, il demone si ferma)", hookDot(s.HookLSM)),
 		fmt.Sprintf("File protetti: %d   Binari autorizzati: %d", s.Protected, s.Allowed),
+		fmt.Sprintf("Servizio: %s   (s avvia via pkexec, X ferma con conferma)", svc.State()),
 		fmt.Sprintf("Aggiornato: %s", s.Time),
 	}
 	return strings.Join(rows, "\n")

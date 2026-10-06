@@ -6,6 +6,7 @@ package priv
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,11 +28,12 @@ func TestPingRoundTrip(t *testing.T) {
 	srv.On("ping", func(uid uint32, _ map[string]any) (any, error) {
 		return map[string]any{"uid": uid}, nil
 	})
-	// Test gira da utente: il server accetta, ma l'azione richiede uid 0.
+	// Test gira da utente: il server accetta, ma l'azione richiede uid 0 o polkit.
+	// Senza dbus/policy atteso diniego esplicito, mai hang né allow silenzioso.
 	if _, err := Call("ping", nil); err == nil {
-		t.Log("nota: test gira da root, ping passato")
-	} else if err.Error() != "permesso negato: serve root (polkit in arrivo)" {
-		t.Errorf("errore inatteso: %v", err)
+		t.Log("nota: test gira da root o polkit ha autorizzato, ping passato")
+	} else if !strings.Contains(err.Error(), "permesso negato") {
+		t.Errorf("errore inatteso (atteso diniego pulito): %v", err)
 	}
 }
 

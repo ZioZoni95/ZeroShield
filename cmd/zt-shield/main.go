@@ -22,6 +22,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -92,6 +93,23 @@ Opzioni:
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("zt-shield", version)
+		return
+	}
+
+	// Sottocomando di controllo: stesso canale delle future UI.
+	// `zt-shield ctl ping|rescan` — da root esegue, da utente spiega il diniego.
+	if flag.NArg() >= 1 && flag.Arg(0) == "ctl" {
+		if flag.NArg() < 2 {
+			fmt.Fprintln(os.Stderr, "uso: zt-shield ctl ping|rescan")
+			os.Exit(2)
+		}
+		data, err := priv.Call(flag.Arg(1), nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ctl:", err)
+			os.Exit(1)
+		}
+		raw, _ := json.MarshalIndent(data, "", "  ")
+		fmt.Println(string(raw))
 		return
 	}
 

@@ -221,3 +221,10 @@ code { font-family: var(--mono); background: rgba(127,127,127,.18);
 .off-icon { font-size: 38px; margin-bottom: 4px; }
 .offline h2 { margin-bottom: 6px; }
 .offline .cards { margin: 14px 0; }
+.hero {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: 14px; padding: 14px 16px; margin: 12px 0;
+}
+.chip.big { font-size: 14px; padding: 9px 18px; }
+details summary { cursor: pointer; color: var(--dim); font-size: 13px; margin-top: 4px; }

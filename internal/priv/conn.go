@@ -26,11 +26,11 @@ func (s *Server) accept() {
 	}
 }
 
-// serve: una richiesta per riga, auth via SO_PEERCRED (uid reale del peer,
-// non falsificabile: lo dice il kernel, non il client).
+// serve: una richiesta per riga, auth via SO_PEERCRED (uid+pid reali del peer,
+// non falsificabili: li dice il kernel, non il client).
 func (s *Server) serve(conn net.Conn) {
 	defer conn.Close()
-	uid := peerUID(conn)
+	uid, pid := peerCred(conn)
 	sc := bufio.NewScanner(conn)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	w := bufio.NewWriter(conn)
@@ -45,10 +45,10 @@ func (s *Server) serve(conn net.Conn) {
 			s.mu.Unlock()
 			if fn == nil {
 				resp = Response{Error: "azione sconosciuta: " + req.Action}
-			} else if uid != 0 {
-				// Solo root finche' non c'e' polkit: le UI utente ricevono
-				// "permesso negato" esplicito invece di silenzio.
-				resp = Response{Error: "permesso negato: serve root (polkit in arrivo)"}
+			} else if err := authorize(uid, pid); err != nil {
+				// Root passa diretto; utente via polkit; senza dbus/policy:
+				// negato esplicito, mai silenzio.
+				resp = Response{Error: err.Error()}
 			} else if data, err := fn(uid, req.Args); err != nil {
 				resp = Response{Error: err.Error()}
 			} else {
@@ -66,22 +66,26 @@ func (s *Server) serve(conn net.Conn) {
 	}
 }
 
-// peerUID legge l'uid dal socket Unix (Linux SO_PEERCRED).
-func peerUID(conn net.Conn) uint32 {
+// peerCred legge uid+pid dal socket Unix (Linux SO_PEERCRED).
+// 0xFFFFFFFF = non verificabile: authorize nega comunque i non-root.
+func peerCred(conn net.Conn) (uint32, uint32) {
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
-		return 0xFFFFFFFF
+		return 0xFFFFFFFF, 0
 	}
 	f, err := uc.File()
 	if err != nil {
-		return 0xFFFFFFFF
+		return 0xFFFFFFFF, 0
 	}
 	defer f.Close()
 	cred, err := unix.GetsockoptUcred(int(f.Fd()), unix.SOL_SOCKET, unix.SO_PEERCRED)
 	if err != nil {
-		return 0xFFFFFFFF
+		return 0xFFFFFFFF, 0
 	}
-	return cred.Uid
+	if cred.Pid < 0 {
+		return cred.Uid, 0
+	}
+	return cred.Uid, uint32(cred.Pid)
 }
 
 // Call invia un'azione e attende la risposta. Client condiviso per CLI/TUI/GUI:
