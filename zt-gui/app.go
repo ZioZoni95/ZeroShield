@@ -12,6 +12,7 @@ import (
 	"github.com/gen2brain/beeep"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"zt-shield/pkg/svc"
 	"zt-shield/pkg/ipc"
 )
 
@@ -137,6 +138,49 @@ func (a *App) Version() string {
 // SocketPath dice al frontend dove guarda (debug finestre offline).
 func (a *App) SocketPath() string {
 	return ipc.SocketPath
+}
+
+// ServiceState per la UI: active/inactive/missing/unknown. Mai root richiesto.
+func (a *App) ServiceState() string {
+	return svc.State()
+}
+
+// ServiceInstall esegue install_service.sh via pkexec (dialogo di sistema).
+// Dopo l'installazione il servizio parte in audit: mai enforce di default.
+func (a *App) ServiceInstall() error {
+	return svc.Install(svc.CurrentUser(), "home")
+}
+
+// ServiceStart abilita+avvia via pkexec (dialogo di sistema, mai password nostre).
+func (a *App) ServiceStart() error {
+	return svc.Start()
+}
+
+// ServiceStop ferma il servizio. La UI deve mostrare l'avviso: protezione spenta.
+func (a *App) ServiceStop() error {
+	return svc.Stop()
+}
+
+// ConfigMode legge mode: dal config di sistema ("" se illeggibile).
+func (a *App) ConfigMode() string {
+	return svc.ReadMode()
+}
+
+// Preflight per l'out-of-box: semafori prerequisiti prima di installare.
+func (a *App) Preflight() []svc.Check {
+	return svc.Preflight()
+}
+
+// SetConfigMode cambia audit|enforce + restart via pkexec. La UI conferma prima:
+// enforce con log sporchi blocca i tool legittimi.
+func (a *App) SetConfigMode(mode string) error {
+	return svc.SetMode(mode)
+}
+
+// ConfigText rende il config di sistema (sola lettura qui; la scrittura passa
+// da SetConfigMode con auth). Persiste su disco: ogni boot lo rilegge.
+func (a *App) ConfigText() string {
+	return svc.ReadConfig()
 }
 
 // notifyText rende innocua una stringa esterna per il corpo della notifica:

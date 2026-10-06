@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  ZeroShield: chi puo' comandare il demone via canale di controllo.
+  auth_admin: click → dialogo di sistema → password admin, una tantum.
+  Installazione: copia in /usr/share/polkit-1/actions/ (lo fa il .deb).
+-->
+<policyconfig>
+  <action id="org.zeroshield.manage">
+    <description>Gestisci ZeroShield (rescan, cambio mode, rete)</description>
+    <message>Autenticazione richiesta per comandare ZeroShield</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

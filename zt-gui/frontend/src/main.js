@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight} from '../wailsjs/go/main/App.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -10,7 +10,7 @@ const viewTitle = document.getElementById('view-title');
 const conn = document.getElementById('conn');
 const evCount = document.getElementById('ev-count');
 const buttons = [...document.querySelectorAll('#sidebar button')];
-const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida'};
+const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida', config: 'Configurazione'};
 
 let view = 'status';
 let status = null;
@@ -95,16 +95,22 @@ function requestRender() {
     requestAnimationFrame(() => { renderQueued = false; render(); });
 }
 
-function render() {
-    // La vista Eventi si aggiorna in modo incrementale (vedi renderEvents): per ogni
-    // altra vista il DOM va ricostruito da zero.
-    if (!(view === 'events' && status)) delete content.dataset.view;
+let lastKey = '';
+// force=true per gesti utente (click, tab, search): saltano la guardia.
+// I poll automatici chiamano render() liscio e vengono dedupati.
+function render(force) {
+    // Guardia anti-sfarfallio: senza demone i poll falliti arrivano ogni 2s.
+    // Rirendere tutto a ogni errore fa lampeggiare la pagina: se vista e
+    // situazione non cambiano, si salta (gli stream live passano comunque).
+    const key = view + '|' + (status ? status.time || 'live' : 'off:' + offlineMsg);
+    if (!force && key === lastKey && view !== 'events' && view !== 'radar') return;
+    lastKey = key;
     paintBadge();
     cancelAnimationFrame(radarRAF);
     const oldTip = document.getElementById('radar-tip');
     if (oldTip) oldTip.style.display = 'none';
     viewTitle.textContent = TITLES[view] || view;
-    if (!status) return renderOffline();
+    if (!status) return renderFirstRun();
     conn.textContent = 'aggiornato ' + (status.time || '…');
     evCount.textContent = events.length > 0 ? events.length : '';
     if (view === 'status') return renderStatus();
@@ -112,7 +118,82 @@ function render() {
     if (view === 'rules') return renderRules();
     if (view === 'radar') return renderRadar();
     if (view === 'guide') return renderGuide();
+    if (view === 'config') return renderConfig();
     return renderNet();
+
+// Configurazione: file reale su disco (persiste a ogni boot) + toggle mode.
+// Regole e segreti si cambiano nel file con editor: la UI non riscrive YAML
+// alla cieca, solo mode: con confirm + restart.
+async function renderConfig() {
+    let txt = '';
+    try { txt = await ConfigText(); } catch (e) { txt = 'errore lettura: ' + (e.message || e); }
+    let mode = '';
+    try { mode = await ConfigMode(); } catch (_) {}
+    content.innerHTML = `${h2(ICO_KEY, 'Configurazione')}<p class="sub">File su disco: <span class="mono">/etc/zt-shield/shield.yaml</span> — letto a ogni avvio, persiste ai reboot.</p>
+    <div class="rule ok"><h3>Modalità: ${esc(mode || '?')}</h3>
+    <div><button class="chip${mode === 'audit' ? ' on' : ''}" id="m-audit">audit (logga)</button>
+    <button class="chip${mode === 'enforce' ? ' on' : ''}" id="m-enforce">enforce (blocca)</button></div>
+    <p class="sub">Enforce solo a log puliti, poi restart automatico.</p></div>
+    <h2 style="margin-top:16px">File</h2><pre>${esc(txt)}</pre>`;
+    const set = async (m) => {
+        if (m === 'enforce' && !confirm('Passare a ENFORCE? Blocca davvero: solo a log puliti.')) return;
+        try { await SetConfigMode(m); toast('Modalità: ' + m, m === 'enforce'); } catch (e) { toast('Fallito: ' + (e.message || e), true); }
+        render();
+    };
+    const ba = document.getElementById('m-audit');
+    if (ba) ba.onclick = () => set('audit');
+    const be = document.getElementById('m-enforce');
+    if (be) be.onclick = () => set('enforce');
+}
+}
+
+// Prima apertura vera: non "offline", ma setup. Mai-configurato (servizio
+// missing) = percorso guidato; demone spento ma installato = riattiva.
+// Distinguerli è tutta la differenza tra prodotto e demo.
+let svcCached = '';
+async function renderFirstRun() {
+    conn.textContent = 'prima configurazione';
+    let st = '';
+    try { st = await ServiceState(); } catch (_) {}
+    svcCached = st || '';
+    if (st && st !== 'missing' && st !== 'unknown') {
+        // Installato ma spento: non setup, solo riattiva.
+        return renderOffline();
+    }
+    content.innerHTML = `<div class="offline">
+    <div class="off-icon">🛡️</div>
+    <h2>Benvenuto in ZeroShield</h2>
+    <p class="sub">Tre passi e sei protetto. Audit prima (logga senza bloccare), enforce quando i log sono puliti.</p>
+    <div id="preflight"><span class="sub">Verifica prerequisiti…</span></div>
+    <div class="hero">
+      <div><b>1 · Installa e attiva</b><br><span class="sub">Config + servizio in audit. Password chiesta dal sistema.</span></div>
+      <div><button class="chip on big" id="svc-install">⬇ Installa</button></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">2 · Osserva</div><div class="sub">Tab Eventi: cosa toccherebbe bloccare.</div></div>
+      <div class="card"><div class="k">3 · Stringi</div><div class="sub">Passa a enforce solo a log puliti.</div></div>
+    </div>
+    <details><summary>Demo finta senza installare</summary>
+    <div class="card" style="margin-top:10px"><div><code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code></div><div class="sub">riapri la GUI con stesso socket</div></div></details>
+    </div>`;
+    const wire = (id, fn) => {
+        const b = document.getElementById(id);
+        if (b) b.onclick = fn;
+    };
+    wire('svc-install', async () => {
+        const b = document.getElementById('svc-install');
+        b.textContent = '…';
+        try { await ServiceInstall(); toast('Installato e attivo in audit', false); }
+        catch (e) { toast('Install fallita: ' + (e.message || e), true); }
+        render();
+    });
+    Preflight().then(list => {
+        const el = document.getElementById('preflight');
+        if (!el) return;
+        el.innerHTML = '<div class="checks">' + (list || []).map(c =>
+            `<div class="check${c.ok ? ' ok' : ' ko'}"><span>${c.ok ? '●' : '○'}</span><span>${esc(c.name)}${c.hint ? ` <i>(${esc(c.hint)})</i>` : ''}</span></div>`
+        ).join('') + '</div>';
+    }).catch(() => {});
 }
 
 function renderOffline() {
@@ -135,11 +216,42 @@ function renderOffline() {
     <div class="off-icon">🔌</div>
     <h2>Senza demone, niente ${what[0]}</h2>
     <p class="sub">${what[1]}<br>${esc(offlineMsg)}</p>${perm}
-    <div class="cards">
-      <div class="card"><div class="k">Da pacchetto .deb (serve root, VM)</div><div><code>sudo systemctl enable --now zt-shield</code></div><div class="sub">prima imposta <code>user:</code> in /etc/zt-shield/shield.yaml · profilo audit: logga, non blocca</div></div>
-      <div class="card"><div class="k">Da sorgente</div><div><code>sudo SHIELD_USER=$USER ./bin/zt-shield</code></div><div class="sub">in primo piano, profilo audit</div></div>
-      <div class="card"><div class="k">Demo (dati finti)</div><div><code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code></div><div class="sub">poi apri la GUI con lo stesso socket (da sorgente: ./bin/zt-mockd)</div></div>
-    </div>${guide}</div>`;
+    <div class="hero">
+      <div><b>Vuoi attivare la protezione ora?</b><br><span class="sub">Installa + avvia in audit (logga, non blocca). Password chiesta dal sistema, mai qui.</span></div>
+      <div><button class="chip on big" id="svc-install">⬇ Installa e attiva</button></div>
+    </div>
+    <div id="preflight"><span class="sub">Verifica prerequisiti…</span></div>
+    <details><summary>Altri modi (terminale, demo finta)</summary>
+    <div class="cards" style="margin-top:10px">
+      <div class="card"><div class="k">Solo avvia (già installato)</div><div><button class="chip on" id="svc-start">▶ Attiva protezione</button></div><div class="sub">enable --now via pkexec</div></div>
+      <div class="card"><div class="k">A mano (VM)</div><div><code>sudo systemctl enable --now zt-shield</code></div><div class="sub">prima <code>user:</code> in shield.yaml · audit</div></div>
+      <div class="card"><div class="k">Demo finta</div><div><code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code></div><div class="sub">riapri la GUI con stesso socket</div></div>
+    </div></details>${guide}</div>`;
+    const wire = (id, fn) => {
+        const b = document.getElementById(id);
+        if (b) b.onclick = fn;
+    };
+    wire('svc-install', async () => {
+        const b = document.getElementById('svc-install');
+        b.textContent = '…';
+        try { await ServiceInstall(); toast('Installato e attivo in audit', false); }
+        catch (e) { toast('Install fallita: ' + (e.message || e), true); }
+        render();
+    });
+    Preflight().then(list => {
+        const el = document.getElementById('preflight');
+        if (!el) return;
+        el.innerHTML = '<div class="checks">' + (list || []).map(c =>
+            `<div class="check${c.ok ? ' ok' : ' ko'}"><span>${c.ok ? '●' : '○'}</span><span>${esc(c.name)}${c.hint ? ` <i>(${esc(c.hint)})</i>` : ''}</span></div>`
+        ).join('') + '</div>';
+    }).catch(() => {});
+    wire('svc-start', async () => {
+        const b = document.getElementById('svc-start');
+        b.textContent = '…';
+        try { await ServiceStart(); toast('Protezione attivata', false); }
+        catch (e) { toast('Avvio fallito: ' + (e.message || e), true); }
+        render();
+    });
 }
 
 function renderStatus() {
@@ -180,9 +292,37 @@ function renderStatus() {
       <div class="card warn-top"><div class="k">Canary</div><div class="v" data-count="${nC}">0</div></div>
       <div class="card"><div class="k">Regola più colpita</div><div class="v small">${esc(topRule)}${topN ? ` ×${topN}` : ''}</div></div>
       <div class="card warn-top"><div class="k">Ultimo blocco</div><div class="v small mono">${lastB}</div></div>
+      <div class="card"><div class="k">Servizio</div><div class="v small" id="svc-state">…</div><div style="margin-top:6px"><button class="chip" id="svc-stop">⏹ Ferma</button></div></div>
+      <div class="card"><div class="k">Modalità config</div><div class="v small" id="cfg-mode">…</div><div style="margin-top:6px"><button class="chip" id="mode-toggle">⇄ audit/enforce</button></div></div>
     </div>`;
     content.querySelectorAll('[data-count]').forEach(el =>
         countUp(el, parseInt(el.dataset.count, 10)));
+    ServiceState().then(st => {
+        const el = document.getElementById('svc-state');
+        if (el) el.textContent = st;
+    }).catch(() => {});
+    ConfigMode().then(md => {
+        const el = document.getElementById('cfg-mode');
+        if (el) el.textContent = md || '(non letto)';
+    }).catch(() => {});
+    const stop = document.getElementById('svc-stop');
+    if (stop) stop.onclick = async () => {
+        if (!confirm('Fermare la protezione? Da qui in poi niente blocca più nulla.')) return;
+        try { await ServiceStop(); toast('Protezione fermata', true); }
+        catch (e) { toast('Stop fallito: ' + (e.message || e), true); }
+    };
+    const tog = document.getElementById('mode-toggle');
+    if (tog) tog.onclick = async () => {
+        const cur = await ConfigMode().catch(() => '');
+        const next = cur === 'enforce' ? 'audit' : 'enforce';
+        const warn = next === 'enforce'
+            ? 'Passare a ENFORCE? Blocca davvero: solo a log puliti.'
+            : 'Tornare ad audit? Da qui logga senza bloccare.';
+        if (!confirm(warn)) return;
+        try { await SetConfigMode(next); toast('Modalità: ' + next + ' (servizio riavviato)', next === 'enforce'); }
+        catch (e) { toast('Cambio fallito: ' + (e.message || e), true); }
+        render();
+    };
 }
 
 function filterEvents() {

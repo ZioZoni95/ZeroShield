@@ -12,7 +12,7 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 </p>
 <p align="center"><i>MIT © 2026 ZioZoni95 · binari: <code>zt-shield</code> <code>zt-tui</code> <code>zt-gui</code></i></p>
 <p align="center">
-  <a href="https://github.com/ZioZoni95/ZeroShield/actions/workflows/ci.yml"><img src="https://github.com/ZioZoni95/ZeroShield/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/ZioZoni95/personal_zeroT/actions/workflows/ci.yml"><img src="https://github.com/ZioZoni95/personal_zeroT/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go"/>
   <img src="https://img.shields.io/badge/eBPF-cilium%2Febpf-8A2BE2" alt="eBPF"/>
   <img src="https://img.shields.io/badge/TUI-Bubble_Tea-FF75B7" alt="TUI"/>
@@ -36,7 +36,7 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 | **Demone `zt-shield` end-to-end** | ⚠️ **mai avviato** | non parte senza BPF LSM (fail-closed, voluto). Il collegamento di IPC, stato VPN e porte in ascolto dentro il demone è compilato, analizzato (`vet`, staticcheck) e coperto dai test dei singoli pacchetti, ma **mai eseguito insieme** |
 | Config, IPC, audit, whitelist, `netstat` | ✅ test unitari | `go test -race`, fuzz, CI; socket IPC provato con utenti reali (protetto sì, altro utente no) |
 | **Hook LSM (segreti)** | 🟡 **verifier ok, mai agganciato** | `zt-probe` in CI: i 4 programmi accettati dal kernel del runner GitHub; attach + blocco reale da provare in VM |
-| Pacchetti `.deb` | ✅ costruiti e installati qui | installazione, reinstallazione, rimozione (`make package`). **Mai pubblicati**: nessuna release esiste ancora e il workflow di release non è mai stato eseguito |
+| Pacchetti `.deb` | ✅ costruiti, installati qui e **pubblicati** | installazione, reinstallazione, rimozione (`make package`); [release v0.0.1](https://github.com/ZioZoni95/personal_zeroT/releases) (pre-release ⚠️ ALPHA) |
 | Kill-switch VPN (`vpn_killswitch.sh`) | 🟡 **provato in un network namespace** | 54 controlli (`scripts/test_killswitch.sh`, previsto nel workflow CI): mai su una rete reale, mai con un tunnel vero |
 | Auto-VPN (`nm_vpn.sh`), helper Proton | 🟡 **provati con comandi finti** | `scripts/test_nm_vpn.sh`, `scripts/test_proton.sh`: mai con NetworkManager vero né con ProtonVPN |
 | Script (`harden_system.sh`, `setup_fido2.sh`) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
@@ -270,8 +270,8 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
 
 > [!NOTE]
 > **Stato delle release:** il workflow `.github/workflows/release.yml` crea una **pre-release** a ogni
-> tag `v*` con i due `.deb` e i checksum, ma **non è mai stato eseguito: oggi non esiste nessuna
-> release da scaricare.** Finché non c'è, i pacchetti si costruiscono da sorgente (`make package`).
+> tag `v*` con i due `.deb` e i checksum. Prima disponibile: [v0.0.1](https://github.com/ZioZoni95/personal_zeroT/releases) (⚠️ ALPHA, solo lab).
+> In alternativa i pacchetti si costruiscono da sorgente (`make package`).
 
 I due file sono **complementari e vanno scaricati entrambi**:
 

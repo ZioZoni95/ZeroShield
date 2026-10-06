@@ -23,7 +23,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"zt-shield/internal/priv"
 	"zt-shield/pkg/ipc"
+	"zt-shield/pkg/svc"
 )
 
 var (
@@ -63,9 +65,10 @@ const (
 	tabRules
 	tabNet
 	tabRadar
+	tabConfig
 )
 
-var tabNames = []string{"Stato", "Eventi", "Regole", "Rete", "Radar"}
+var tabNames = []string{"Stato", "Eventi", "Regole", "Rete", "Radar", "Config"}
 
 // --- messaggi ----------------------------------------------------------------
 
@@ -77,6 +80,9 @@ type statusMsg struct {
 type eventMsg struct{ ev ipc.WireEvent }
 
 type canaryMsg struct{ a ipc.CanaryAlert }
+
+// flashMsg: avviso temporaneo da comandi (rescan, errori canale).
+type flashMsg struct{ txt string }
 
 type tickMsg struct{}
 
@@ -101,6 +107,8 @@ type model struct {
 	prevMode string
 	flash    string
 	flashExp time.Time
+	armStop  time.Time // conferma stop: secondo X entro 5s
+	armMode  time.Time // conferma mode: secondo m entro 5s
 }
 
 var filterNames = []string{"tutti", "bloccati", "canary", "audit"}
@@ -135,17 +143,79 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "s":
+			// Avvia servizio via pkexec (dialogo di sistema). Mai password qui.
+			return m, func() tea.Msg {
+				if err := svc.Start(); err != nil {
+					return flashMsg{txt: "avvio: " + err.Error()}
+				}
+				return flashMsg{txt: "servizio in avvio, ricarico stato…"}
+			}
+		case "X":
+			// Stop con doppia pressione: la prima arma, la seconda entro 5s esegue.
+			// Fermare spegne la protezione: mai un singolo tasto distratto.
+			if time.Now().Before(m.armStop) {
+				m.armStop = time.Time{}
+				return m, func() tea.Msg {
+					if err := svc.Stop(); err != nil {
+						return flashMsg{txt: "stop: " + err.Error()}
+					}
+					return flashMsg{txt: "protezione fermata"}
+				}
+			}
+			m.armStop = time.Now().Add(5 * time.Second)
+			m.flash = "premi X di nuovo entro 5s per FERMARE la protezione"
+			m.flashExp = m.armStop
+			return m, nil
+		case "i":
+			// Installa servizio (config + unit + avvio audit) via pkexec.
+			return m, func() tea.Msg {
+				if err := svc.Install(svc.CurrentUser(), "home"); err != nil {
+					return flashMsg{txt: "install: " + err.Error()}
+				}
+				return flashMsg{txt: "installato e attivo in audit"}
+			}
+		case "m":
+			// Toggle audit/enforce con doppia pressione come lo stop.
+			// Enforce blocca davvero: solo a log puliti.
+			if time.Now().Before(m.armMode) {
+				m.armMode = time.Time{}
+				return m, func() tea.Msg {
+					cur := svc.ReadMode()
+					next := "enforce"
+					if cur == "enforce" {
+						next = "audit"
+					}
+					if err := svc.SetMode(next); err != nil {
+						return flashMsg{txt: "mode: " + err.Error()}
+					}
+					return flashMsg{txt: "modalità: " + next + " (servizio riavviato)"}
+				}
+			}
+			m.armMode = time.Now().Add(5 * time.Second)
+			m.flash = "premi m di nuovo entro 5s per CAMBIARE modalità (audit↔enforce)"
+			m.flashExp = m.armMode
+			return m, nil
 		case "tab", "l", "right":
 			m.tab = (m.tab + 1) % len(tabNames)
 			m.offset = 0
 		case "shift+tab", "h", "left":
 			m.tab = (m.tab + len(tabNames) - 1) % len(tabNames)
 			m.offset = 0
-		case "1", "2", "3", "4", "5":
+		case "1", "2", "3", "4", "5", "6":
 			m.tab = int(msg.String()[0] - '1')
 			m.offset = 0
 		case "r":
 			return m, fetchStatus
+		case "R":
+			// Rescan via canale privilegiato: da utente chiede auth polkit
+			// (dialogo di sistema) o spiega il diniego. Mai silenzioso.
+			return m, func() tea.Msg {
+				if _, err := priv.Call("rescan", nil); err != nil {
+					return flashMsg{txt: "rescan: " + err.Error()}
+				}
+				return flashMsg{txt: "rescan accodato"}
+			}
 		case " ":
 			if m.tab == tabEvents {
 				m.paused = !m.paused
@@ -196,6 +266,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sweepMsg:
 		m.sweep = (m.sweep + 15) % 360
 		return m, tickSweep
+	case flashMsg:
+		m.flash = msg.txt
+		m.flashExp = time.Now().Add(6 * time.Second)
+		return m, nil
 	case eventMsg:
 		m.events = append(m.events, msg.ev)
 		if len(m.events) > 200 {
@@ -251,9 +325,11 @@ func (m model) View() string {
 			b.WriteString(m.netView())
 		case tabRadar:
 			b.WriteString(m.radarView())
+		case tabConfig:
+			b.WriteString(m.configView())
 		}
 	}
-	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-5 vai · r aggiorna · q esci") +
+	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-6 vai · r aggiorna · R rescan · s avvia · i installa · m mode · X ferma · q esci") +
 		helpStyle.Render("   |   eventi: spazio pausa · f filtro · ↑/↓ scorri · fine torna live"))
 	return b.String()
 }
@@ -299,15 +375,31 @@ func (m model) offlineView() string {
 			"Apri la TUI con quell'utente, oppure con sudo.\n\n" +
 			dimStyle.Render("ultimo errore: "+errText)
 	}
-	return "Demone non raggiungibile via " + ipc.SocketPath + ".\n\n" +
-		"Da pacchetto .deb:\n" +
-		"  sudoedit /etc/zt-shield/shield.yaml      (imposta user:, resta in audit)\n" +
-		"  sudo systemctl enable --now zt-shield\n" +
-		"  journalctl -u zt-shield -f\n\n" +
-		"Da sorgente (profilo audit, non blocca nulla):\n" +
-		"  sudo SHIELD_USER=$USER ./bin/zt-shield\n" +
-		"  sudo bash scripts/install_service.sh $USER home\n\n" +
-		dimStyle.Render("ultimo errore: "+errText)
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("🛡️ ZeroShield — prima accensione") + "\n\n")
+	b.WriteString("Il demone non risponde: niente dati, niente protezione.\n")
+	b.WriteString("Prerequisiti (● ok / ○ manca):\n")
+	for _, c := range svc.Preflight() {
+		mark := badgeOK.Render("●")
+		if !c.OK {
+			mark = badgeOff.Render("○")
+		}
+		line := fmt.Sprintf("  %s %s", mark, c.Name)
+		if c.Hint != "" {
+			line += dimStyle.Render(" (" + c.Hint + ")")
+		}
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\nAzioni da qui (chiedono password di sistema, mai qui dentro):\n")
+	b.WriteString("  i  installa servizio + avvia in audit\n")
+	b.WriteString("  s  avvia servizio già installato\n\n")
+	b.WriteString("A mano (VM):\n")
+	b.WriteString("  sudoedit /etc/zt-shield/shield.yaml      (imposta user:, resta in audit)\n")
+	b.WriteString("    → dichiara QUALE home proteggere (sotto sudo $HOME sarebbe /root)\n")
+	b.WriteString("  sudo systemctl enable --now zt-shield\n")
+	b.WriteString("    → enable = a ogni boot, --now = subito; audit logga senza negare\n\n")
+	b.WriteString(dimStyle.Render("ultimo errore: " + errText))
+	return b.String()
 }
 
 func hookDot(ok bool) string {
@@ -324,6 +416,7 @@ func (m model) statusView() string {
 		fmt.Sprintf("Home:     %s", s.Home),
 		fmt.Sprintf("LSM hook: %s   (fail-closed: se manca, il demone si ferma)", hookDot(s.HookLSM)),
 		fmt.Sprintf("File protetti: %d   Binari autorizzati: %d", s.Protected, s.Allowed),
+		fmt.Sprintf("Servizio: %s   (s avvia via pkexec, X ferma con conferma)", svc.State()),
 		fmt.Sprintf("Aggiornato: %s", s.Time),
 	}
 	return strings.Join(rows, "\n")
@@ -437,6 +530,20 @@ func (m model) eventsView() string {
 		rows = append(rows, dimStyle.Render(fmt.Sprintf("… +%d sopra (fine = torna live)", m.offset)))
 	}
 	return strings.Join(rows, "\n")
+}
+
+// configView: file reale su disco (persiste ai reboot) + mode live.
+// Regole e segreti si cambiano nel file con editor: qui solo toggle mode
+// con doppia pressione, come in GUI.
+func (m model) configView() string {
+	var b strings.Builder
+	b.WriteString(dimStyle.Render("File: /etc/zt-shield/shield.yaml — letto a ogni avvio, persiste ai reboot.\n\n"))
+	txt := svc.ReadConfig()
+	for _, line := range strings.Split(strings.TrimRight(txt, "\n"), "\n") {
+		b.WriteString(dimStyle.Render(line) + "\n")
+	}
+	b.WriteString(fmt.Sprintf("\nModalità: %s   (m per cambiare con conferma)\n", m.st.Mode))
+	return b.String()
 }
 
 func (m model) rulesView() string {
