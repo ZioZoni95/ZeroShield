@@ -166,6 +166,11 @@ func (a *App) ConfigMode() string {
 	return svc.ReadMode()
 }
 
+// Preflight per l'out-of-box: semafori prerequisiti prima di installare.
+func (a *App) Preflight() []svc.Check {
+	return svc.Preflight()
+}
+
 // SetConfigMode cambia audit|enforce + restart via pkexec. La UI conferma prima:
 // enforce con log sporchi blocca i tool legittimi.
 func (a *App) SetConfigMode(mode string) error {

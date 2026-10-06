@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -83,10 +84,20 @@ func Stop() error {
 // (/usr/share/zeroshield, da .deb), poi sorgente accanto al binario GUI/TUI.
 // Ritorna "" se assente: il chiamante mostra il comando manuale.
 func InstallScript() string {
-	for _, p := range []string{
+	cands := []string{
 		"/usr/share/zeroshield/scripts/install_service.sh",
 		"/usr/local/share/zeroshield/scripts/install_service.sh",
-	} {
+	}
+	// Dev: risali dall'eseguibile (es. zt-gui/build/bin/zt-gui o bin/zt-tui)
+	// fino a trovare scripts/install_service.sh nel tree sorgente.
+	if exe, err := os.Executable(); err == nil {
+		d := filepath.Dir(exe)
+		for i := 0; i < 5; i++ {
+			cands = append(cands, filepath.Join(d, "scripts/install_service.sh"))
+			d = filepath.Dir(d)
+		}
+	}
+	for _, p := range cands {
 		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
 			return p
 		}
@@ -129,6 +140,55 @@ func CurrentUser() string {
 		if u := strings.TrimSpace(string(out)); u != "" && u != "root" {
 			return u
 		}
+	}
+	return ""
+}
+
+// Check: un prerequisito con esito e suggerimento.
+type Check struct {
+	Name string `json:"name"`
+	OK   bool   `json:"ok"`
+	Hint string `json:"hint,omitempty"`
+}
+
+// Preflight verifica l'ambiente prima di installare: la UI mostra semafori,
+// non un bottone cieco che fallisce a metà. Mai root richiesto per leggere.
+func Preflight() []Check {
+	kver, kerr := exec.Command("uname", "-r").Output()
+	kernel := strings.TrimSpace(string(kver))
+	// Confronto numerico major.minor (lessicografico direbbe 5.9 > 5.15).
+	kOK := false
+	if kerr == nil {
+		var maj, min int
+		if _, err := fmt.Sscanf(kernel, "%d.%d", &maj, &min); err == nil {
+			kOK = maj > 5 || (maj == 5 && min >= 15)
+		}
+	}
+	btfOK := false
+	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); err == nil {
+		btfOK = true
+	}
+	lsmOK := false
+	if data, err := os.ReadFile("/sys/kernel/security/lsm"); err == nil {
+		for _, m := range strings.Split(strings.TrimSpace(string(data)), ",") {
+			if m == "bpf" {
+				lsmOK = true
+			}
+		}
+	}
+	_, ufwErr := exec.LookPath("ufw")
+	return []Check{
+		{Name: "Kernel ≥ 5.15 (" + kernel + ")", OK: kOK, Hint: ifThen(!kOK, "serve kernel recente con eBPF")},
+		{Name: "BTF (/sys/kernel/btf/vmlinux)", OK: btfOK, Hint: ifThen(!btfOK, "kernel senza debug info: cambia kernel")},
+		{Name: "BPF negli LSM attivi", OK: lsmOK, Hint: ifThen(!lsmOK, "append lsm=...,bpf in GRUB + reboot (README)")},
+		{Name: "ufw (firewall)", OK: ufwErr == nil, Hint: ifThen(ufwErr != nil, "sudo apt install ufw (opzionale ma consigliato)")},
+		{Name: "Script install_service.sh", OK: InstallScript() != "", Hint: ifThen(InstallScript() == "", "manca nei path noti")},
+	}
+}
+
+func ifThen(c bool, s string) string {
+	if c {
+		return s
 	}
 	return ""
 }

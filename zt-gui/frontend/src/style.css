@@ -228,3 +228,8 @@ code { font-family: var(--mono); background: rgba(127,127,127,.18);
 }
 .chip.big { font-size: 14px; padding: 9px 18px; }
 details summary { cursor: pointer; color: var(--dim); font-size: 13px; margin-top: 4px; }
+.checks { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.check { display: flex; gap: 8px; font-size: 13px; }
+.check.ok { color: var(--green); }
+.check.ko { color: var(--red); }
+.check i { color: var(--dim); }

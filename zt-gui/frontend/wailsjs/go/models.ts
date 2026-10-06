@@ -139,3 +139,24 @@ export namespace ipc {
 
 }
 
+export namespace svc {
+	
+	export class Check {
+	    name: string;
+	    ok: boolean;
+	    hint?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Check(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.ok = source["ok"];
+	        this.hint = source["hint"];
+	    }
+	}
+
+}
+

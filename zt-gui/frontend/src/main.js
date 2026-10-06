@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceStart, ServiceStop, ConfigMode, SetConfigMode} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, Preflight} from '../wailsjs/go/main/App.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -95,16 +95,22 @@ function requestRender() {
     requestAnimationFrame(() => { renderQueued = false; render(); });
 }
 
-function render() {
-    // La vista Eventi si aggiorna in modo incrementale (vedi renderEvents): per ogni
-    // altra vista il DOM va ricostruito da zero.
-    if (!(view === 'events' && status)) delete content.dataset.view;
+let lastKey = '';
+// force=true per gesti utente (click, tab, search): saltano la guardia.
+// I poll automatici chiamano render() liscio e vengono dedupati.
+function render(force) {
+    // Guardia anti-sfarfallio: senza demone i poll falliti arrivano ogni 2s.
+    // Rirendere tutto a ogni errore fa lampeggiare la pagina: se vista e
+    // situazione non cambiano, si salta (gli stream live passano comunque).
+    const key = view + '|' + (status ? status.time || 'live' : 'off:' + offlineMsg);
+    if (!force && key === lastKey && view !== 'events' && view !== 'radar') return;
+    lastKey = key;
     paintBadge();
     cancelAnimationFrame(radarRAF);
     const oldTip = document.getElementById('radar-tip');
     if (oldTip) oldTip.style.display = 'none';
     viewTitle.textContent = TITLES[view] || view;
-    if (!status) return renderOffline();
+    if (!status) return renderFirstRun();
     conn.textContent = 'aggiornato ' + (status.time || '…');
     evCount.textContent = events.length > 0 ? events.length : '';
     if (view === 'status') return renderStatus();
@@ -113,6 +119,55 @@ function render() {
     if (view === 'radar') return renderRadar();
     if (view === 'guide') return renderGuide();
     return renderNet();
+}
+
+// Prima apertura vera: non "offline", ma setup. Mai-configurato (servizio
+// missing) = percorso guidato; demone spento ma installato = riattiva.
+// Distinguerli è tutta la differenza tra prodotto e demo.
+let svcCached = '';
+async function renderFirstRun() {
+    conn.textContent = 'prima configurazione';
+    let st = '';
+    try { st = await ServiceState(); } catch (_) {}
+    svcCached = st || '';
+    if (st && st !== 'missing' && st !== 'unknown') {
+        // Installato ma spento: non setup, solo riattiva.
+        return renderOffline();
+    }
+    content.innerHTML = `<div class="offline">
+    <div class="off-icon">🛡️</div>
+    <h2>Benvenuto in ZeroShield</h2>
+    <p class="sub">Tre passi e sei protetto. Audit prima (logga senza bloccare), enforce quando i log sono puliti.</p>
+    <div id="preflight"><span class="sub">Verifica prerequisiti…</span></div>
+    <div class="hero">
+      <div><b>1 · Installa e attiva</b><br><span class="sub">Config + servizio in audit. Password chiesta dal sistema.</span></div>
+      <div><button class="chip on big" id="svc-install">⬇ Installa</button></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">2 · Osserva</div><div class="sub">Tab Eventi: cosa toccherebbe bloccare.</div></div>
+      <div class="card"><div class="k">3 · Stringi</div><div class="sub">Passa a enforce solo a log puliti.</div></div>
+    </div>
+    <details><summary>Demo finta senza installare</summary>
+    <div class="card" style="margin-top:10px"><div><code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code></div><div class="sub">riapri la GUI con stesso socket</div></div></details>
+    </div>`;
+    const wire = (id, fn) => {
+        const b = document.getElementById(id);
+        if (b) b.onclick = fn;
+    };
+    wire('svc-install', async () => {
+        const b = document.getElementById('svc-install');
+        b.textContent = '…';
+        try { await ServiceInstall(); toast('Installato e attivo in audit', false); }
+        catch (e) { toast('Install fallita: ' + (e.message || e), true); }
+        render();
+    });
+    Preflight().then(list => {
+        const el = document.getElementById('preflight');
+        if (!el) return;
+        el.innerHTML = '<div class="checks">' + (list || []).map(c =>
+            `<div class="check${c.ok ? ' ok' : ' ko'}"><span>${c.ok ? '●' : '○'}</span><span>${esc(c.name)}${c.hint ? ` <i>(${esc(c.hint)})</i>` : ''}</span></div>`
+        ).join('') + '</div>';
+    }).catch(() => {});
 }
 
 function renderOffline() {
@@ -139,6 +194,7 @@ function renderOffline() {
       <div><b>Vuoi attivare la protezione ora?</b><br><span class="sub">Installa + avvia in audit (logga, non blocca). Password chiesta dal sistema, mai qui.</span></div>
       <div><button class="chip on big" id="svc-install">⬇ Installa e attiva</button></div>
     </div>
+    <div id="preflight"><span class="sub">Verifica prerequisiti…</span></div>
     <details><summary>Altri modi (terminale, demo finta)</summary>
     <div class="cards" style="margin-top:10px">
       <div class="card"><div class="k">Solo avvia (già installato)</div><div><button class="chip on" id="svc-start">▶ Attiva protezione</button></div><div class="sub">enable --now via pkexec</div></div>
@@ -156,6 +212,13 @@ function renderOffline() {
         catch (e) { toast('Install fallita: ' + (e.message || e), true); }
         render();
     });
+    Preflight().then(list => {
+        const el = document.getElementById('preflight');
+        if (!el) return;
+        el.innerHTML = '<div class="checks">' + (list || []).map(c =>
+            `<div class="check${c.ok ? ' ok' : ' ko'}"><span>${c.ok ? '●' : '○'}</span><span>${esc(c.name)}${c.hint ? ` <i>(${esc(c.hint)})</i>` : ''}</span></div>`
+        ).join('') + '</div>';
+    }).catch(() => {});
     wire('svc-start', async () => {
         const b = document.getElementById('svc-start');
         b.textContent = '…';

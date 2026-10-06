@@ -372,15 +372,29 @@ func (m model) offlineView() string {
 			"Apri la TUI con quell'utente, oppure con sudo.\n\n" +
 			dimStyle.Render("ultimo errore: "+errText)
 	}
-	return "Demone non raggiungibile via " + ipc.SocketPath + ".\n\n" +
-		"Da pacchetto .deb:\n" +
-		"  sudoedit /etc/zt-shield/shield.yaml      (imposta user:, resta in audit)\n" +
-		"  sudo systemctl enable --now zt-shield\n" +
-		"  journalctl -u zt-shield -f\n\n" +
-		"Da sorgente (profilo audit, non blocca nulla):\n" +
-		"  sudo SHIELD_USER=$USER ./bin/zt-shield\n" +
-		"  sudo bash scripts/install_service.sh $USER home\n\n" +
-		dimStyle.Render("ultimo errore: "+errText)
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("🛡️ ZeroShield — prima accensione") + "\n\n")
+	b.WriteString("Il demone non risponde: niente dati, niente protezione.\n")
+	b.WriteString("Prerequisiti (● ok / ○ manca):\n")
+	for _, c := range svc.Preflight() {
+		mark := badgeOK.Render("●")
+		if !c.OK {
+			mark = badgeOff.Render("○")
+		}
+		line := fmt.Sprintf("  %s %s", mark, c.Name)
+		if c.Hint != "" {
+			line += dimStyle.Render(" (" + c.Hint + ")")
+		}
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\nAzioni da qui (chiedono password di sistema, mai qui dentro):\n")
+	b.WriteString("  i  installa servizio + avvia in audit\n")
+	b.WriteString("  s  avvia servizio già installato\n\n")
+	b.WriteString("A mano (VM):\n")
+	b.WriteString("  sudoedit /etc/zt-shield/shield.yaml      (imposta user:, resta in audit)\n")
+	b.WriteString("  sudo systemctl enable --now zt-shield\n\n")
+	b.WriteString(dimStyle.Render("ultimo errore: " + errText))
+	return b.String()
 }
 
 func hookDot(ok bool) string {

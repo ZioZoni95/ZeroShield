@@ -10,6 +10,10 @@ export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }
 
+export function Preflight() {
+  return window['go']['main']['App']['Preflight']();
+}
+
 export function ServiceInstall() {
   return window['go']['main']['App']['ServiceInstall']();
 }
