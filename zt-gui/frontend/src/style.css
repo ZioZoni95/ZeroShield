@@ -215,6 +215,18 @@ code { font-family: var(--mono); background: rgba(127,127,127,.18);
 .ob-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
 .ob-dot.on { background: var(--accent); }
 .ob-btns { display: flex; gap: 8px; justify-content: flex-end; }
+.ob-profiles { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+.off-banner {
+    background: var(--red-soft); color: var(--red); font-weight: 700;
+    border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px;
+}
+.ob-user { display: flex; gap: 8px; margin: 10px 0 4px; }
+.ob-user input {
+    flex: 1; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 12px; outline: none;
+}
+.ob-user input:focus { border-color: var(--accent); }
 
 /* --- Offline contestuale --- */
 .offline { max-width: 640px; }

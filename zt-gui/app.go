@@ -151,6 +151,14 @@ func (a *App) ServiceInstall() error {
 	return svc.Install(svc.CurrentUser(), "home")
 }
 
+// ServiceInstallAs come sopra ma con utente e profilo espliciti (wizard).
+func (a *App) ServiceInstallAs(user, profile string) error {
+	if profile == "" {
+		profile = "home"
+	}
+	return svc.Install(user, profile)
+}
+
 // ServiceStart abilita+avvia via pkexec (dialogo di sistema, mai password nostre).
 func (a *App) ServiceStart() error {
 	return svc.Start()

@@ -304,6 +304,10 @@ func (m model) View() string {
 		m.modeBadge(),
 		dimStyle.Render(m.st.Profile),
 		dimStyle.Render(clock)))
+	if m.connErr != nil && m.st.Profile != "" {
+		// Demone ammutolito ma avevamo dati: card ferme, non vive.
+		b.WriteString(evBlock.Render("⚠ DATI FERMI: demone muto, quello sotto è l'ultimo stato noto") + "\n")
+	}
 	b.WriteString(m.tabBar() + "\n")
 	if m.flash != "" && time.Now().Before(m.flashExp) {
 		b.WriteString(evBlock.Render(m.flash) + "\n")
@@ -377,7 +381,7 @@ func (m model) offlineView() string {
 	}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("🛡️ ZeroShield — prima accensione") + "\n\n")
-	b.WriteString("Il demone non risponde: niente dati, niente protezione.\n")
+	b.WriteString("Demone non raggiungibile: niente dati, niente protezione.\n")
 	b.WriteString("Prerequisiti (● ok / ○ manca):\n")
 	for _, c := range svc.Preflight() {
 		mark := badgeOK.Render("●")

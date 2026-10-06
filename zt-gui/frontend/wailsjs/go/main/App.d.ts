@@ -13,6 +13,8 @@ export function Preflight():Promise<Array<svc.Check>>;
 
 export function ServiceInstall():Promise<void>;
 
+export function ServiceInstallAs(arg1:string,arg2:string):Promise<void>;
+
 export function ServiceStart():Promise<void>;
 
 export function ServiceState():Promise<string>;

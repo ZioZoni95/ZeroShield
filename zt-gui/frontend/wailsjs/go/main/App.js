@@ -22,6 +22,10 @@ export function ServiceInstall() {
   return window['go']['main']['App']['ServiceInstall']();
 }
 
+export function ServiceInstallAs(arg1, arg2) {
+  return window['go']['main']['App']['ServiceInstallAs'](arg1, arg2);
+}
+
 export function ServiceStart() {
   return window['go']['main']['App']['ServiceStart']();
 }

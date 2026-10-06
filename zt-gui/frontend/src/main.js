@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight} from '../wailsjs/go/main/App.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -59,7 +59,7 @@ const ICO_BIRD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4-1
 function h2(icon, text) { return `<h2>${icon}${esc(text)}</h2>`; }
 
 function paintBadge() {
-    if (!status) { badge.className = 'badge off'; modeText.textContent = 'non connesso'; return; }
+    if (!status) { badge.className = 'badge off'; modeText.textContent = 'DISATTIVO'; return; }
     if (status.mode === 'enforce') { badge.className = 'badge enforce'; modeText.textContent = 'ENFORCE · blocca'; }
     else { badge.className = 'badge audit'; modeText.textContent = 'AUDIT · logga'; }
     // Toast su cambio mode (non al primo paint): transizione pericolosa merita avviso.
@@ -120,8 +120,19 @@ function render(force) {
     const oldTip = document.getElementById('radar-tip');
     if (oldTip) oldTip.style.display = 'none';
     viewTitle.textContent = TITLES[view] || view;
-    if (!status) return renderFirstRun();
-    conn.textContent = 'aggiornato ' + (status.time || '…');
+    // Senza demone: solo Stato fa da setup; le altre tab spiegano cosa manca
+    // loro (non lo stesso muro ovunque, e non setup ripetuto).
+    if (!status) return view === 'status' ? renderFirstRun() : renderOffline();
+    // Frozen: demone muto da oltre 15s = card ferme, non dati vivi.
+    // Distingue "tutto calmo" da "demone piantato senza chiudersi".
+    const staleSec = Math.floor((Date.now() - lastStatusAt) / 1000);
+    if (staleSec > 15) {
+        conn.innerHTML = `⚠️ dati fermi da ${staleSec}s — demone muto? <button class="linklike" id="conn-retry">riprova</button>`;
+        const rt = document.getElementById('conn-retry');
+        if (rt) rt.onclick = () => render(true);
+    } else {
+        conn.textContent = 'aggiornato ' + (status.time || '…');
+    }
     evCount.textContent = events.length > 0 ? events.length : '';
     if (view === 'status') return renderStatus();
     if (view === 'events') return renderEvents();
@@ -227,6 +238,7 @@ function renderOffline() {
     const perm = /permission denied/i.test(offlineMsg)
         ? '<p class="warn">Il demone risponde ma il socket è riservato a root e all\'utente protetto (<code>user:</code> nel config). Apri la GUI con quell\'utente.</p>' : '';
     content.innerHTML = `<div class="offline">
+    <div class="off-banner">⛔ PROTEZIONE DISATTIVA — demone spento, questa vista mostra cosa manca</div>
     <div class="off-icon">🔌</div>
     <h2>Senza demone, niente ${what[0]}</h2>
     <p class="sub">${what[1]}<br>${esc(offlineMsg)}</p>${perm}
@@ -573,9 +585,17 @@ function renderRadar() {
 // Guida primo avvio: il demone vuole root, le UI no. Passo-passo con comandi
 // copiabili. Niente viene eseguito da qui: tutto resta nel tuo terminale.
 function renderGuide() {
-    content.innerHTML = `${h2(ICO_AUDIT, 'Guida avvio')}<p class="sub">Il demone vuole root, le UI no. Segui i passi, uno alla volta.</p>` +
+    content.innerHTML = `${h2(ICO_AUDIT, 'Guida avvio')}<p class="sub">Il demone vuole root, le UI no. Segui i passi, uno alla volta.</p>
+    <p><button class="chip on" id="guide-replay">↺ Rivedi introduzione guidata</button></p>` +
         renderGuideBody() +
         `<p class="sub">Solo demo senza root: <code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code> + UI con stesso socket (dati finti).</p>`;
+    const rp = document.getElementById('guide-replay');
+    // Replay: azzera passo e flag, mostra da capo. Per chi ha saltato troppo in fretta.
+    if (rp) rp.onclick = () => {
+        try { localStorage.removeItem('zs-onboarded-v2'); } catch (_) {}
+        obStep = 0;
+        showOnboarding();
+    };
 }
 
 // Chi usa questa GUI l'ha quasi sempre installata dal pacchetto .deb (che tira dentro
@@ -666,10 +686,11 @@ async function boot() {
     render();
     // Versione dal binario (ldflags al build): se manca il binding, nessun errore.
     try { appVersion = await Version(); requestRender(); } catch (_) {}
-    // Onboarding: solo se demone mai visto E wizard mai completato.
-    // Flag in localStorage (per-utente, niente root): chi reinstalla lo rivede.
+    // Onboarding: se demone mai visto. Salta = solo questa sessione
+    // (sessionStorage), Ho capito = per sempre (localStorage). Così chi
+    // skippa per sbaglio rivede il wizard al prossimo avvio.
     try {
-        if (!status && !localStorage.getItem('zs-onboarded')) {
+        if (!status && !localStorage.getItem('zs-onboarded-v2') && !sessionStorage.getItem('zs-skip')) {
             showOnboarding();
         }
     } catch (_) {}
@@ -682,9 +703,9 @@ const OB_STEPS = [
     ['👋 Benvenuto in ZeroShield',
      'Questa GUI è solo la vetrina: la protezione vive nel demone (root) che parla su socket. Ora sei <b>offline</b>: nessun demone in ascolto, niente è attivo.',
      ''],
-    ['1 · Installa e imposta l\'utente',
-     'Dal pacchetto .deb il demone è già installato (non parte da solo). Scrivi il tuo utente in <b>user:</b>: il socket sarà leggibile solo da lui e da root.',
-     'sudoedit /etc/zt-shield/shield.yaml'],
+    ['1 · Chi proteggiamo e dove?',
+     'Utente da proteggere + profilo iniziale (sempre <b>audit</b>: logga senza bloccare). Premi Installa: config, servizio e avvio in un colpo solo.',
+     'USER_INPUT'],
     ['2 · Verifica il kernel',
      'Serve la voce <b>bpf</b> tra gli LSM attivi (senza: GRUB + reboot, vedi README). Ogni programma eBPF deve risultare ✅.',
      'sudo zt-probe -xdp-lo\ncat /sys/kernel/security/lsm'],
@@ -702,8 +723,21 @@ function showOnboarding() {
     const [t, d, c] = OB_STEPS[obStep];
     const dots = OB_STEPS.map((_, i) =>
         `<span class="ob-dot${i === obStep ? ' on' : ''}"></span>`).join('');
-    ov.innerHTML = `<div class="ob-card"><h2>${t}</h2><p>${d}</p>` +
-        (c ? `<pre>${esc(c)}</pre>` : '') +
+    // Step 1 (indice 1): utente + profilo + installa mirato. Configura davvero,
+    // non spiega soltanto: alla fine di questo step il servizio gira in audit.
+    const userBox = c === 'USER_INPUT'
+        ? `<div class="ob-user"><input id="ob-user" placeholder="il tuo utente Linux" autocomplete="off"></div>
+           <div class="ob-profiles">
+             <button class="chip prof on" data-p="home">🏠 home</button>
+             <button class="chip prof" data-p="corporate">🏢 corporate</button>
+             <button class="chip prof" data-p="public-wifi">📶 public-wifi</button>
+             <button class="chip prof" data-p="paranoid">🔒 paranoid</button>
+           </div>
+           <div class="sub" id="ob-prof-desc">home: audit, regole base. Il profilo giusto per iniziare.</div>
+           <div><button id="ob-install" class="chip on big">⬇ Installa e attiva</button> <span class="sub" id="ob-msg"></span></div>`
+        : '';
+    ov.innerHTML = `<div class="ob-card"><h2>${t}</h2><p>${d}</p>` + userBox +
+        (c && c !== 'USER_INPUT' ? `<pre>${esc(c)}</pre>` : '') +
         `<div class="ob-dots">${dots}</div>
         <div class="ob-btns">
           <button id="ob-skip" class="chip">Salta</button>
@@ -712,19 +746,53 @@ function showOnboarding() {
             ? '<button id="ob-next" class="chip on">Avanti →</button>'
             : '<button id="ob-done" class="chip on">Ho capito ✓</button>'}
         </div></div>`;
-    const done = () => {
-        try { localStorage.setItem('zs-onboarded', '1'); } catch (_) {}
+    const done = (remember) => {
+        try {
+            if (remember) localStorage.setItem('zs-onboarded-v2', '1');
+            else sessionStorage.setItem('zs-skip', '1');
+        } catch (_) {}
         ov.remove();
     };
-    document.getElementById('ob-skip').onclick = done;
-    document.getElementById('ob-done') && (document.getElementById('ob-done').onclick = done);
+    document.getElementById('ob-skip').onclick = () => done(false);
+    document.getElementById('ob-done') && (document.getElementById('ob-done').onclick = () => done(true));
     const nx = document.getElementById('ob-next');
     if (nx) nx.onclick = () => { obStep++; showOnboarding(); };
     const bk = document.getElementById('ob-back');
     if (bk) bk.onclick = () => { obStep--; showOnboarding(); };
+    const ins = document.getElementById('ob-install');
+    const PROF_DESC = {
+        home: 'home: audit, regole base. Il profilo giusto per iniziare.',
+        corporate: 'corporate: enforce da subito, DNS interni mantenuti. Solo se sai cosa fai.',
+        'public-wifi': 'public-wifi: enforce + segreti browser + DoT. Per reti ostili.',
+        paranoid: 'paranoid: come public-wifi ma DoT rigido (rompe i captive portal).',
+    };
+    let obProfile = 'home';
+    document.querySelectorAll('#onboard .chip.prof').forEach(ch => {
+        ch.onclick = () => {
+            document.querySelectorAll('#onboard .chip.prof').forEach(x => x.classList.remove('on'));
+            ch.classList.add('on');
+            obProfile = ch.dataset.p;
+            const dd = document.getElementById('ob-prof-desc');
+            if (dd) dd.textContent = PROF_DESC[obProfile] || '';
+        };
+    });
+    if (ins) ins.onclick = async () => {
+        const u = (document.getElementById('ob-user').value || '').trim();
+        const msg = document.getElementById('ob-msg');
+        if (!u) { msg.textContent = 'Scrivi prima il tuo utente.'; return; }
+        if (!/^[a-z_][a-z0-9_-]*$/i.test(u)) { msg.textContent = 'Nome utente non valido.'; return; }
+        ins.textContent = '…';
+        try {
+            if (typeof ServiceInstallAs !== 'function') throw new Error('non supportato in questa build');
+            await ServiceInstallAs(u, obProfile);
+            msg.textContent = `Installato (${obProfile}) e attivo in audit per ${u}. Chiudi e guarda lo Stato.`;
+        } catch (e) { msg.textContent = 'Fallito: ' + (e.message || e); }
+        ins.textContent = '⬇ Installa e attiva';
+    };
 }
 
-EventsOn('shield:status', st => { status = st; statusSeq++; offlineMsg = ''; requestRender(); });
+let lastStatusAt = 0;
+EventsOn('shield:status', st => { status = st; statusSeq++; lastStatusAt = Date.now(); offlineMsg = ''; requestRender(); });
 EventsOn('shield:status-error', msg => { if (!status) { offlineMsg = msg; requestRender(); } });
 EventsOn('shield:event', ev => {
     events.push(ev);
