@@ -5,6 +5,8 @@ import {svc} from '../models';
 
 export function ConfigMode():Promise<string>;
 
+export function ConfigText():Promise<string>;
+
 export function GetStatus():Promise<ipc.Status>;
 
 export function Preflight():Promise<Array<svc.Check>>;

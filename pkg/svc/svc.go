@@ -196,7 +196,15 @@ func ifThen(c bool, s string) string {
 // ConfigPath del demone di sistema.
 const ConfigPath = "/etc/zt-shield/shield.yaml"
 
-// ReadMode legge mode: dal config di sistema (nessun privilegio: 0644).
+// ReadConfig rende il testo del config (o il motivo per cui manca).
+func ReadConfig() string {
+	data, err := os.ReadFile(ConfigPath)
+	if err != nil {
+		return "config assente (" + ConfigPath + "): installa prima il servizio."
+	}
+	return string(data)
+}
+
 // Ritorna "" se illeggibile: la UI mostra "sconosciuta", non inventa.
 func ReadMode() string {
 	data, err := os.ReadFile(ConfigPath)

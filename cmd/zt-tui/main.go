@@ -65,9 +65,10 @@ const (
 	tabRules
 	tabNet
 	tabRadar
+	tabConfig
 )
 
-var tabNames = []string{"Stato", "Eventi", "Regole", "Rete", "Radar"}
+var tabNames = []string{"Stato", "Eventi", "Regole", "Rete", "Radar", "Config"}
 
 // --- messaggi ----------------------------------------------------------------
 
@@ -201,7 +202,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab", "h", "left":
 			m.tab = (m.tab + len(tabNames) - 1) % len(tabNames)
 			m.offset = 0
-		case "1", "2", "3", "4", "5":
+		case "1", "2", "3", "4", "5", "6":
 			m.tab = int(msg.String()[0] - '1')
 			m.offset = 0
 		case "r":
@@ -324,9 +325,11 @@ func (m model) View() string {
 			b.WriteString(m.netView())
 		case tabRadar:
 			b.WriteString(m.radarView())
+		case tabConfig:
+			b.WriteString(m.configView())
 		}
 	}
-	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-5 vai · r aggiorna · R rescan · s avvia · i installa · m mode · X ferma · q esci") +
+	b.WriteString("\n" + helpStyle.Render("tab cambia · 1-6 vai · r aggiorna · R rescan · s avvia · i installa · m mode · X ferma · q esci") +
 		helpStyle.Render("   |   eventi: spazio pausa · f filtro · ↑/↓ scorri · fine torna live"))
 	return b.String()
 }
@@ -392,7 +395,9 @@ func (m model) offlineView() string {
 	b.WriteString("  s  avvia servizio già installato\n\n")
 	b.WriteString("A mano (VM):\n")
 	b.WriteString("  sudoedit /etc/zt-shield/shield.yaml      (imposta user:, resta in audit)\n")
-	b.WriteString("  sudo systemctl enable --now zt-shield\n\n")
+	b.WriteString("    → dichiara QUALE home proteggere (sotto sudo $HOME sarebbe /root)\n")
+	b.WriteString("  sudo systemctl enable --now zt-shield\n")
+	b.WriteString("    → enable = a ogni boot, --now = subito; audit logga senza negare\n\n")
 	b.WriteString(dimStyle.Render("ultimo errore: " + errText))
 	return b.String()
 }
@@ -525,6 +530,20 @@ func (m model) eventsView() string {
 		rows = append(rows, dimStyle.Render(fmt.Sprintf("… +%d sopra (fine = torna live)", m.offset)))
 	}
 	return strings.Join(rows, "\n")
+}
+
+// configView: file reale su disco (persiste ai reboot) + mode live.
+// Regole e segreti si cambiano nel file con editor: qui solo toggle mode
+// con doppia pressione, come in GUI.
+func (m model) configView() string {
+	var b strings.Builder
+	b.WriteString(dimStyle.Render("File: /etc/zt-shield/shield.yaml — letto a ogni avvio, persiste ai reboot.\n\n"))
+	txt := svc.ReadConfig()
+	for _, line := range strings.Split(strings.TrimRight(txt, "\n"), "\n") {
+		b.WriteString(dimStyle.Render(line) + "\n")
+	}
+	b.WriteString(fmt.Sprintf("\nModalità: %s   (m per cambiare con conferma)\n", m.st.Mode))
+	return b.String()
 }
 
 func (m model) rulesView() string {

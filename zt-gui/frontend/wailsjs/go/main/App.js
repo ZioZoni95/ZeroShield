@@ -6,6 +6,10 @@ export function ConfigMode() {
   return window['go']['main']['App']['ConfigMode']();
 }
 
+export function ConfigText() {
+  return window['go']['main']['App']['ConfigText']();
+}
+
 export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }

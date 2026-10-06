@@ -177,6 +177,12 @@ func (a *App) SetConfigMode(mode string) error {
 	return svc.SetMode(mode)
 }
 
+// ConfigText rende il config di sistema (sola lettura qui; la scrittura passa
+// da SetConfigMode con auth). Persiste su disco: ogni boot lo rilegge.
+func (a *App) ConfigText() string {
+	return svc.ReadConfig()
+}
+
 // notifyText rende innocua una stringa esterna per il corpo della notifica:
 // niente sequenze di controllo, niente markup interpretato dal notification server.
 func notifyText(s string) string { return html.EscapeString(ipc.SafeText(s)) }

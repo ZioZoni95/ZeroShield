@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, Preflight} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight} from '../wailsjs/go/main/App.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -10,7 +10,7 @@ const viewTitle = document.getElementById('view-title');
 const conn = document.getElementById('conn');
 const evCount = document.getElementById('ev-count');
 const buttons = [...document.querySelectorAll('#sidebar button')];
-const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida'};
+const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida', config: 'Configurazione'};
 
 let view = 'status';
 let status = null;
@@ -118,7 +118,33 @@ function render(force) {
     if (view === 'rules') return renderRules();
     if (view === 'radar') return renderRadar();
     if (view === 'guide') return renderGuide();
+    if (view === 'config') return renderConfig();
     return renderNet();
+
+// Configurazione: file reale su disco (persiste a ogni boot) + toggle mode.
+// Regole e segreti si cambiano nel file con editor: la UI non riscrive YAML
+// alla cieca, solo mode: con confirm + restart.
+async function renderConfig() {
+    let txt = '';
+    try { txt = await ConfigText(); } catch (e) { txt = 'errore lettura: ' + (e.message || e); }
+    let mode = '';
+    try { mode = await ConfigMode(); } catch (_) {}
+    content.innerHTML = `${h2(ICO_KEY, 'Configurazione')}<p class="sub">File su disco: <span class="mono">/etc/zt-shield/shield.yaml</span> — letto a ogni avvio, persiste ai reboot.</p>
+    <div class="rule ok"><h3>Modalità: ${esc(mode || '?')}</h3>
+    <div><button class="chip${mode === 'audit' ? ' on' : ''}" id="m-audit">audit (logga)</button>
+    <button class="chip${mode === 'enforce' ? ' on' : ''}" id="m-enforce">enforce (blocca)</button></div>
+    <p class="sub">Enforce solo a log puliti, poi restart automatico.</p></div>
+    <h2 style="margin-top:16px">File</h2><pre>${esc(txt)}</pre>`;
+    const set = async (m) => {
+        if (m === 'enforce' && !confirm('Passare a ENFORCE? Blocca davvero: solo a log puliti.')) return;
+        try { await SetConfigMode(m); toast('Modalità: ' + m, m === 'enforce'); } catch (e) { toast('Fallito: ' + (e.message || e), true); }
+        render();
+    };
+    const ba = document.getElementById('m-audit');
+    if (ba) ba.onclick = () => set('audit');
+    const be = document.getElementById('m-enforce');
+    if (be) be.onclick = () => set('enforce');
+}
 }
 
 // Prima apertura vera: non "offline", ma setup. Mai-configurato (servizio
