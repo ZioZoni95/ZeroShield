@@ -43,6 +43,7 @@ import (
 	"zt-shield/internal/config"
 	"zt-shield/internal/lsm"
 	"zt-shield/internal/netstat"
+	"zt-shield/internal/priv"
 	"zt-shield/internal/vpn"
 	"zt-shield/internal/watchdog"
 	"zt-shield/internal/xdp"
@@ -270,6 +271,7 @@ Opzioni:
 	// systemd riavvia, invece di un demone che si dichiara vivo ma non lavora.
 	var lastRescan atomic.Int64
 	lastRescan.Store(time.Now().UnixNano())
+	rescanReq := make(chan struct{}, 1)
 	// Il tunnel puo' cadere tra un rescan e l'altro: con la VPN configurata lo stato
 	// si rilegge ogni 5 s (non ogni rescan_seconds) e si ripubblica solo se cambia.
 	// Stessa goroutine del rescan: nessuno stato condiviso da proteggere.
@@ -287,6 +289,12 @@ Opzioni:
 				log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
 				refreshRadar()
 				curVpn = vpn.Check(cfg.Vpn, vpn.ExecRunner)
+				publishStatus()
+				lastRescan.Store(time.Now().UnixNano())
+			case <-rescanReq:
+				p, a = mgr.Sync()
+				log.Printf("🔄 Rescan su richiesta: file=%d binari=%d", p, a)
+				refreshRadar()
 				publishStatus()
 				lastRescan.Store(time.Now().UnixNano())
 			case <-vpnC:
@@ -321,6 +329,27 @@ Opzioni:
 				}
 			}
 		}()
+	}
+
+	// --- Canale di controllo privilegiato ----------------------------------------------
+	// Stesso protocollo per CLI/TUI/GUI future: oggi ping + rescan, root-only
+	// finche' non c'e' polkit. Non fatale come il socket IPC.
+	if cs, err := priv.NewServer(); err != nil {
+		log.Printf("⚠️ controllo non attivo: %v", err)
+	} else {
+		defer cs.Close()
+		cs.On("ping", func(uid uint32, _ map[string]any) (any, error) {
+			return map[string]any{"version": version, "mode": cfg.Mode, "pid": os.Getpid()}, nil
+		})
+		cs.On("rescan", func(uid uint32, _ map[string]any) (any, error) {
+			select {
+			case rescanReq <- struct{}{}:
+				return map[string]any{"queued": true}, nil
+			default:
+				return map[string]any{"queued": false, "note": "rescan già in coda"}, nil
+			}
+		})
+		log.Printf("🔌 Controllo attivo su %s (root-only)", priv.SocketPath)
 	}
 
 	// --- Audit ------------------------------------------------------------------------
