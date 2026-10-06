@@ -32,11 +32,14 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 |---|---|---|
 | XDP anti-poisoning + radar | ✅ **testato su kernel reale** | `zt-probe -xdp-lo`: verifier ok, 5355/5353 droppati, 9999 passa |
 | Canary anti-ransomware (fanotify) | ✅ **testato su kernel reale** | tocco esca, allarme di massa, kill in enforce (`make test-root`) |
-| TUI / GUI / mock | ✅ testato | `zt-tui --dump` contro `zt-mockd`; build GUI in CI |
-| Config, IPC, audit, whitelist | ✅ test unitari | `go test -race`, fuzz, CI |
+| TUI / GUI / mock | ✅ testato | TUI: test unitari + `--dump`. GUI: **l'app vera del pacchetto avviata sotto Xvfb contro `zt-mockd`** (si collega, mostra stato, eventi, versione) e il frontend in un browser con demone simulato (21 controlli, `zt-gui/frontend/tests/gui.test.mjs`) |
+| **Demone `zt-shield` end-to-end** | ⚠️ **mai avviato** | non parte senza BPF LSM (fail-closed, voluto). Il collegamento di IPC, stato VPN e porte in ascolto dentro il demone è compilato, analizzato (`vet`, staticcheck) e coperto dai test dei singoli pacchetti, ma **mai eseguito insieme** |
+| Config, IPC, audit, whitelist, `netstat` | ✅ test unitari | `go test -race`, fuzz, CI; socket IPC provato con utenti reali (protetto sì, altro utente no) |
 | **Hook LSM (segreti)** | 🟡 **verifier ok, mai agganciato** | `zt-probe` in CI: i 4 programmi accettati dal kernel del runner GitHub; attach + blocco reale da provare in VM |
-| Pacchetti `.deb` | ✅ testato | installazione, reinstallazione, rimozione (`make package`) |
-| Script (`harden_system.sh`, …) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
+| Pacchetti `.deb` | ✅ costruiti e installati qui | installazione, reinstallazione, rimozione (`make package`). **Mai pubblicati**: nessuna release esiste ancora e il workflow di release non è mai stato eseguito |
+| Kill-switch VPN (`vpn_killswitch.sh`) | 🟡 **provato in un network namespace** | 54 controlli (`scripts/test_killswitch.sh`, previsto nel workflow CI): mai su una rete reale, mai con un tunnel vero |
+| Auto-VPN (`nm_vpn.sh`), helper Proton | 🟡 **provati con comandi finti** | `scripts/test_nm_vpn.sh`, `scripts/test_proton.sh`: mai con NetworkManager vero né con ProtonVPN |
+| Script (`harden_system.sh`, `setup_fido2.sh`) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
 
 ---
 
@@ -141,7 +144,7 @@ ZeroShield/
 │   ├── TEST_SANDBOX.md         # Cosa è stato testato davvero, dove e come
 │   ├── UI_RESEARCH.md          # Ricerca TUI/GUI e architettura IPC
 │   └── gemini-code-1790668303538.md # Specifiche iniziali e storico
-├── Makefile                    # make build | probe | test | test-root | package | package-gui | gui
+├── Makefile                    # make build | probe | test | test-scripts | test-root | package | package-gui | gui
 ├── packaging/                  # nfpm (.deb), unit systemd, script del pacchetto, .desktop
 ├── .github/                    # CI (5 job + zt-probe), release sui tag v*, Dependabot
 ├── go.mod
@@ -149,10 +152,10 @@ ZeroShield/
 │   ├── zerotrust.c             # Kernel C: XDP (rete) e LSM (open/unlink/rename/truncate)
 │   └── gen.go                  # go:generate bpf2go (stub Go generati, non versionati)
 ├── cmd/zt-shield/main.go       # Entrypoint del demone
-├── cmd/zt-tui/main.go          # TUI Bubble Tea (stato/eventi live, senza root)
+├── cmd/zt-tui/                 # TUI Bubble Tea (stato/eventi live, senza root); suggest.go = suggerimenti e blast-radius
 ├── cmd/zt-mockd/main.go        # Finto demone con dati sintetici (verifica UI senza root/eBPF)
 ├── cmd/zt-probe/main.go        # Collaudo kernel: verifier per programma + XDP su loopback
-├── pkg/ipc/                    # Socket Unix stato+eventi (demone root → UI utente)
+├── pkg/ipc/                    # Socket Unix stato+eventi (demone root → UI utente, socket 0600 dell'utente protetto) + SafeText
 ├── zt-gui/                     # GUI desktop Wails stile macOS (vedi docs/UI_RESEARCH.md)
 ├── internal/
 │   ├── config/                 # Profili, regole, parsing YAML, validazione (+ test)
@@ -160,13 +163,19 @@ ZeroShield/
 │   ├── xdp/                    # Attach XDP (generic), trie LPM subnet
 │   ├── audit/                  # Consumer ring buffer, output text/JSON
 │   ├── canary/                 # Esche anti-ransomware (fanotify)
+│   ├── netstat/                # Porte TCP in LISTEN e UDP in ascolto da /proc (con PID/exe)
+│   ├── vpn/                    # Stato reale di tunnel, kill-switch nft e handshake WireGuard
 │   └── watchdog/               # sd_notify per il watchdog systemd
 ├── configs/shield.example.yaml # Configurazione commentata
 └── scripts/
     ├── check_prereqs.sh        # Kernel, BTF, LSM bpf, toolchain
     ├── harden_system.sh        # Hardening per profilo: UFW, resolved, sysctl
     ├── setup_fido2.sh          # Chiave SSH FIDO2 + firma commit Git
-    └── install_service.sh      # Installazione come servizio systemd
+    ├── install_service.sh      # Installazione come servizio systemd
+    ├── vpn_killswitch.sh       # Kill-switch nftables (on/off/status/portal), solo la propria tabella
+    ├── nm_vpn.sh               # Auto-VPN: dispatcher NetworkManager (fail-closed)
+    ├── proton_{setup,current,up}.sh  # Helper ProtonVPN (solo lettura/installazione, mai login)
+    └── test_{killswitch,nm_vpn,proton}.sh  # Test degli script VPN (namespace / comandi finti)
 ```
 
 ---
@@ -258,12 +267,23 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
 
 ## 📦 Installazione da pacchetto (Ubuntu / Debian)
 
-Ogni tag `v*` pubblica una [release](https://github.com/ZioZoni95/ZeroShield/releases) con due pacchetti `.deb` e i checksum:
+> [!NOTE]
+> **Stato delle release:** il workflow `.github/workflows/release.yml` crea una **pre-release** a ogni
+> tag `v*` con i due `.deb` e i checksum, ma **non è mai stato eseguito: oggi non esiste nessuna
+> release da scaricare.** Finché non c'è, i pacchetti si costruiscono da sorgente (`make package`).
+
+I due file sono **complementari e vanno scaricati entrambi**:
+
+| Pacchetto | Contiene | Da solo |
+|---|---|---|
+| `zeroshield` | demone, `zt-tui`, `zt-probe`, `zt-mockd`, servizio systemd, script (VPN, hardening, FIDO2), documentazione | funziona, **senza** app grafica |
+| `zeroshield-gui` | app desktop `zt-gui` | **non si installa**: dipende da `zeroshield`, e da un file scaricato a mano `apt` non lo trova (`Depends: zeroshield but it is not installable`) |
+
+Installa quindi i due insieme, in un solo comando:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./zeroshield_*_amd64.deb          # demone, zt-tui, zt-probe, servizio
-sudo apt install ./zeroshield-gui_*_amd64.deb      # app desktop (dipende dal demone: installandolo hai tutto)
+sudo apt install ./zeroshield_*_amd64.deb ./zeroshield-gui_*_amd64.deb     # solo demone+TUI: ometti il secondo file
 
 sudoedit /etc/zt-shield/shield.yaml                # user: <tuo-utente>   (obbligatorio)
 sudo zt-probe -xdp-lo                              # il kernel accetta i programmi?
@@ -271,7 +291,7 @@ sudo systemctl enable --now zt-shield              # parte in audit (profilo hom
 zt-tui                                             # stato ed eventi live
 ```
 
-Il servizio **non** si avvia da solo all'installazione. Script di sistema in `/usr/share/zeroshield/scripts/`, documentazione in `/usr/share/doc/zeroshield/`. Da sorgente: `make package && sudo apt install ./dist/zeroshield_*.deb`.
+Installare i pacchetti **non basta ad avere la protezione**: il servizio non si avvia da solo, serve `user:` nel config, serve `bpf` tra gli LSM del kernel (senza, il demone si ferma di proposito) e gli hook LSM non sono mai stati agganciati in enforce (vedi la tabella in alto). Il servizio **non** si avvia da solo all'installazione. Script di sistema in `/usr/share/zeroshield/scripts/`, documentazione in `/usr/share/doc/zeroshield/`. Da sorgente: `make package && sudo apt install ./dist/zeroshield_*.deb`.
 
 ---
 
@@ -310,6 +330,20 @@ cp /usr/bin/cat /tmp/ssh && /tmp/ssh ~/.kube/config      # deve restare negato (
 kubectl get pods                                         # consentito
 ```
 
+### Test del progetto
+
+```bash
+make test            # Go: unitari con -race (config, IPC, audit, netstat, vpn, TUI...), nessun privilegio
+make test-scripts    # script VPN: nm_vpn e proton con comandi finti; kill-switch in un network namespace (sudo)
+make test-root       # canary: fanotify reale (sudo)
+make probe           # il kernel accetta i programmi eBPF? XDP su loopback (sudo)
+
+# GUI nel browser (Chrome di sistema, demone simulato; non salva nulla in package.json)
+cd zt-gui/frontend && npm ci && npm run build && npm i --no-save playwright-core && node tests/gui.test.mjs dist
+```
+
+Questi test sono nel workflow CI (`.github/workflows/ci.yml`). I test di script e GUI sono stati aggiunti con la PR #14: il loro primo run sui runner GitHub va guardato lì.
+
 ---
 
 ## 🚧 Limiti noti (Q4 2026, verificati sul codice)
@@ -330,24 +364,27 @@ Operativi — da sapere prima di `enforce`:
 * **`block_subnets` scarta anche le risposte:** mai gateway/DNS dentro; `/<8` rifiutati.
 * **Servizio fermo = zero protezione** (no pinning). FIDO2 software = segreto su disco.
 * **Canary:** kill dopo il tocco, non ferma in-place che salta esche; sotto systemd servono `ReadWritePaths` ([`docs/CANARY.md`](docs/CANARY.md)).
-* **VPN nuova:** stanza `vpn:` + `scripts/vpn_killswitch.sh` (solo tunnel, rollback) e auto-VPN su BSSID (`scripts/nm_vpn.sh`, Proton incluso) — [`docs/VPN_SETUP.md`](docs/VPN_SETUP.md). Browser Flatpak/custom in `extra_rules`, verifica in `audit` prima di `enforce`.
+* **VPN:** il demone **monitora** (tunnel, kill-switch nft, handshake) ma non applica niente: il kill-switch lo applica `scripts/vpn_killswitch.sh`, a mano. Mai provato su una rete reale né con un tunnel vero: prima in VM con snapshot ([`docs/VPN_SETUP.md`](docs/VPN_SETUP.md)). Il BSSID si clona con un access point falso: l'auto-VPN lo usa solo per **non** alzare il tunnel e non lo spegne mai da solo (salvo `AUTO_DOWN=1`).
+* **Socket IPC dell'utente protetto (0600):** stato ed eventi contengono PID, exe e percorsi dei processi di tutti, quindi li leggono solo root e l'utente indicato in `user:`. Un secondo utente sulla stessa macchina non vede la GUI/TUI (errore "permission denied").
+* **Browser Flatpak/custom** in `extra_rules`, verifica in `audit` prima di `enforce`.
 
 ---
 
 ## 🖥️ Interfacce: TUI + GUI (senza root)
 
-Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock` (`pkg/ipc`). Le interfacce girano come utente, in sola lettura: niente eBPF toccato dalle UI.
+Il demone gira root e pubblica stato/eventi sul socket `/run/zt-shield/api.sock` (`pkg/ipc`), di proprietà dell'utente indicato in `user:` con modo `0600`: lo leggono solo lui e root. Le interfacce girano come quell'utente, in sola lettura: niente eBPF toccato dalle UI. Ogni testo che viene dai processi osservati (nome, percorso dell'exe) passa da `ipc.SafeText` nel demone, in un punto solo, prima di arrivare a TUI e GUI.
 
 | Strumento | Cosa è | Avvio |
 |---|---|---|
-| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete/Radar, live, filtro `f`, blast-radius, auto-suggest) | `./bin/zt-tui` (demone attivo) |
-| `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &` + `ZT_SOCKET=/tmp/z.sock ./bin/zt-tui` |
-| `zt-gui` | Finestra desktop stile macOS (sidebar a sezioni, dashboard sessione, search, radar canvas, Guida primo avvio) | `make gui`, poi `./zt-gui/build/bin/zt-gui` |
+| `zt-tui` | Terminale a tab (Stato/Eventi/Regole/Rete/Radar, live, filtro `f`, blast-radius, suggerimenti che non propongono mai interpreti né lettori generici, stato VPN, porte TCP/UDP in ascolto) | `zt-tui` (pacchetto) o `./bin/zt-tui` |
+| `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock zt-mockd &` + `ZT_SOCKET=/tmp/z.sock zt-tui` (da sorgente: `./bin/…`) |
+| `zt-gui` | Finestra desktop stile macOS (sidebar a sezioni, dashboard sessione, ricerca eventi, radar canvas, stato VPN a quattro casi, Guida per pacchetto e per sorgente) | `zt-gui` (pacchetto `zeroshield-gui`) o `make gui` |
 
 ```bash
 make build-tui   # TUI (pura Go, senza toolchain eBPF)
 make build-mock  # mock (idem)
 make gui         # GUI (richiede wails CLI, Node, libgtk-3-dev, libwebkit2gtk-4.1-dev)
+make gui-bin     # GUI senza la CLI Wails (come nel pacchetto): Node + le stesse librerie
 ```
 
 Anteprima TUI senza TTY: `./bin/zt-tui --dump`. Nota: fuori da env snap le GUI GTK vanno lanciate con `GTK_PATH`/`GIO_MODULE_DIR` ripuliti (vedi `docs/PUNTI_APERTI.md`). Dettagli ricerca in [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md).

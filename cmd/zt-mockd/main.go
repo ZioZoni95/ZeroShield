@@ -54,11 +54,13 @@ func main() {
 		HookLSM: true, XDP: []string{"enp0s3 (mock)"},
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
-		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: false},
+		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: false, KillSwitch: true, HandshakeAge: -1},
 		Listening: []ipc.ListenEntry{
 			{Proto: "tcp", Addr: "127.0.0.1", Port: 631, PID: 1234, Exe: "/usr/sbin/cupsd"},
 			{Proto: "tcp", Addr: "0.0.0.0", Port: 8080, Exe: ""},
+			{Proto: "udp", Addr: "0.0.0.0", Port: 5353, PID: 700, Exe: "/usr/sbin/avahi-daemon"},
 		},
+		ListeningTotal: 3,
 		TopSources: []ipc.SourceStat{
 			{IP: "192.168.100.7", Poison: 34, Subnet: 0, Total: 34, LastSeen: "2026-10-02T10:35:01Z"},
 			{IP: "192.168.100.23", Poison: 0, Subnet: 128, Total: 128, LastSeen: "2026-10-02T10:35:00Z"},

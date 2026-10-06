@@ -58,6 +58,8 @@ Il demone gira root (eBPF/XDP/LSM). La UI **mai root**:
 - demone root espone socket Unix `/run/zt-shield/api.sock` sola lettura per
   stato/eventi + endpoint scrittura (cambio mode, rescan) via **polkit**:
   solo admin autorizza le azioni privilegiate, la UI gira come utente.
+  *(Implementato: la parte di sola lettura. Il socket e' di proprieta' dell'utente
+  protetto, modo 0600: lo leggono solo lui e root. Gli endpoint di scrittura non esistono.)*
 - TUI/GUI = client thin: leggono eventi (oggi stdout/stderr, domani socket
   JSON), non toccano mappe eBPF direttamente.
 - Azioni pericolose (passare a `enforce`, modificare `block_subnets`) con

@@ -5,3 +5,5 @@ import {ipc} from '../models';
 export function GetStatus():Promise<ipc.Status>;
 
 export function SocketPath():Promise<string>;
+
+export function Version():Promise<string>;

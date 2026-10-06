@@ -51,15 +51,15 @@ rescan_seconds: 30
 #     allow: ["openssl"]
 #     deny_write: true
 
-# VPN kill-switch (branch feat/vpn-killswitch, vedi docs/FEATURE_PLAN.md F1).
-# Spento di default. Con enabled: true esce SOLO il tunnel + endpoint.
-# Applica con: sudo scripts/vpn_killswitch.sh on <endpoint> <tunnel>
-# (lo YAML documenta l'intento, lo script applica le regole nftables).
+# VPN: il demone MONITORA tunnel e kill-switch e li mostra in TUI/GUI (tunnel su,
+# tabella nft attiva, handshake WireGuard). NON applica niente: il kill-switch lo
+# applichi tu con  sudo scripts/vpn_killswitch.sh on <endpoint> <tunnel>
+# Spenta di default. Dettagli e prove da fare in VM: docs/VPN_SETUP.md
 # vpn:
 #   enabled: true
-#   endpoint: "203.0.113.7:51820"
-#   tunnel: "wg0"
-#   allow_lan: ["192.168.1.0/24"]   # es. stampante; vuoto = niente
+#   endpoint: "203.0.113.7:51820"   # IPv4:porta oppure "[2001:db8::1]:51820"; mai un nome host
+#   tunnel: "wg0"                   # max 15 caratteri: lettere, cifre, _ . -
+#   allow_lan: ["192.168.1.0/24"]   # es. stampante; IPv4 o IPv6; vuoto = niente
 #   # block_dhcp: true              # SOLO se sai cosa fai: senza DHCP il tunnel non si riallaccia
 
 # Aggiunge regole a quelle del profilo:

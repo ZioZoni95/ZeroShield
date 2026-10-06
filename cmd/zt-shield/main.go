@@ -25,10 +25,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -43,6 +43,7 @@ import (
 	"zt-shield/internal/config"
 	"zt-shield/internal/lsm"
 	"zt-shield/internal/netstat"
+	"zt-shield/internal/vpn"
 	"zt-shield/internal/watchdog"
 	"zt-shield/internal/xdp"
 	"zt-shield/pkg/ipc"
@@ -97,10 +98,11 @@ Opzioni:
 	if err != nil {
 		log.Fatalf("Configurazione: %v", err)
 	}
-	home, err := cfg.HomeDir()
+	acct, err := cfg.Account()
 	if err != nil {
 		log.Fatal(err)
 	}
+	home := acct.HomeDir
 	log.Printf("⚙️ Profilo: %s | modalità: %s | home: %s", cfg.Profile, cfg.Mode, home)
 
 	// Su kernel < 5.11 il caricamento delle mappe e' limitato a RLIMIT_MEMLOCK.
@@ -225,13 +227,22 @@ Opzioni:
 	// --- IPC per le UI ----------------------------------------------------------------
 	// Socket Unix sola-lettura per TUI/GUI (stato + stream eventi). Non fatale:
 	// senza socket il demone protegge comunque, solo senza interfaccia.
+	// Il socket e' dell'utente protetto (0600): stato ed eventi contengono PID, exe e
+	// percorsi dei processi di tutti, non vanno a qualunque utente locale.
 	var srv *ipc.Server
-	if s, err := ipc.NewServer(); err != nil {
+	uid, uerr := strconv.Atoi(acct.Uid)
+	gid, gerr := strconv.Atoi(acct.Gid)
+	if uerr != nil || gerr != nil {
+		log.Printf("⚠️ IPC non attivo: uid/gid di %q non numerici (%q/%q)", acct.Username, acct.Uid, acct.Gid)
+	} else if s, err := ipc.NewServerOwnedBy(uid, gid); err != nil {
 		log.Printf("⚠️ IPC non attivo (niente TUI/GUI): %v", err)
 	} else {
 		srv = s
 		defer srv.Close()
 	}
+	// Stato VPN osservato (tunnel, kill-switch nft, handshake). Il demone non applica
+	// nulla: misura e avvisa. Proprieta' della goroutine di rescan dopo l'avvio.
+	curVpn := vpn.Check(cfg.Vpn, vpn.ExecRunner)
 	// publishStatus fotografa demone per le UI. Chiamata a ogni cambio rilevante
 	// (avvio, rescan) perche' il protocollo ritrasmette ai connessi.
 	publishStatus := func() {
@@ -242,13 +253,14 @@ Opzioni:
 		for _, r := range cfg.AllRules() {
 			rules = append(rules, ipc.RuleSummary{Name: r.Name, Paths: r.Paths, Allow: r.Allow})
 		}
+		listening, listeningTotal := listeningSnapshot()
 		srv.UpdateStatus(ipc.Status{
 			Profile: cfg.Profile, Mode: cfg.Mode, Home: home,
 			HookLSM: true, XDP: xdpNames,
 			Protected: p, Allowed: a,
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
-			Vpn: vpnStatus(cfg), TopSources: topSrc,
-			Listening: listeningSnapshot(), Rules: rules,
+			Vpn: curVpn, TopSources: topSrc,
+			Listening: listening, ListeningTotal: listeningTotal, Rules: rules,
 		})
 	}
 	publishStatus()
@@ -258,13 +270,33 @@ Opzioni:
 	// systemd riavvia, invece di un demone che si dichiara vivo ma non lavora.
 	var lastRescan atomic.Int64
 	lastRescan.Store(time.Now().UnixNano())
+	// Il tunnel puo' cadere tra un rescan e l'altro: con la VPN configurata lo stato
+	// si rilegge ogni 5 s (non ogni rescan_seconds) e si ripubblica solo se cambia.
+	// Stessa goroutine del rescan: nessuno stato condiviso da proteggere.
+	var vpnC <-chan time.Time
+	if cfg.Vpn.Enabled {
+		vt := time.NewTicker(5 * time.Second)
+		defer vt.Stop()
+		vpnC = vt.C
+	}
 	go func() {
-		for range ticker.C {
-			p, a = mgr.Sync()
-			log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
-			refreshRadar()
-			publishStatus()
-			lastRescan.Store(time.Now().UnixNano())
+		for {
+			select {
+			case <-ticker.C:
+				p, a = mgr.Sync()
+				log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
+				refreshRadar()
+				curVpn = vpn.Check(cfg.Vpn, vpn.ExecRunner)
+				publishStatus()
+				lastRescan.Store(time.Now().UnixNano())
+			case <-vpnC:
+				if st := vpn.Check(cfg.Vpn, vpn.ExecRunner); st != curVpn {
+					log.Printf("🔒 VPN: tunnel=%v kill-switch=%v handshake=%ds (prima: tunnel=%v kill-switch=%v)",
+						st.Up, st.KillSwitch, st.HandshakeAge, curVpn.Up, curVpn.KillSwitch)
+					curVpn = st
+					publishStatus()
+				}
+			}
 		}
 	}()
 
@@ -360,29 +392,22 @@ Opzioni:
 	log.Println("🛑 Chiusura agent e rilascio hook eBPF.")
 }
 
-// listeningSnapshot converte internal/netstat in ipc (taglie diverse, stesso dato).
-// A ogni publish: porte in ascolto fresche per tab Rete ("chi può parlarmi?").
-func listeningSnapshot() []ipc.ListenEntry {
-	var out []ipc.ListenEntry
-	for _, e := range netstat.Listening() {
+// maxListening: tetto delle porte in ascolto nello status. Ogni voce viaggia a ogni
+// client a ogni publish: oltre qualche centinaio la riga supera il buffer del client.
+const maxListening = 256
+
+// listeningSnapshot converte internal/netstat in ipc (taglie diverse, stesso dato) e
+// restituisce anche il totale, cosi' le UI dichiarano il troncamento. La sanificazione
+// dei testi la fa ipc.UpdateStatus, in un punto solo.
+func listeningSnapshot() ([]ipc.ListenEntry, int) {
+	entries, total := netstat.Listening(maxListening)
+	out := make([]ipc.ListenEntry, 0, len(entries))
+	for _, e := range entries {
 		out = append(out, ipc.ListenEntry{
 			Proto: e.Proto, Addr: e.Addr, Port: e.Port, PID: e.PID, Exe: e.Exe,
 		})
 	}
-	return out
-}
-
-// vpnStatus fotografa kill-switch config + tunnel reale (esiste interfaccia?).
-// Chiamato a ogni publish: se il tunnel cade tra un rescan e l'altro, le UI
-// lo mostrano rosso al massimo dopo rescan_seconds.
-func vpnStatus(cfg *config.Config) ipc.VpnStatus {
-	st := ipc.VpnStatus{Enabled: cfg.Vpn.Enabled, Endpoint: cfg.Vpn.Endpoint, Tunnel: cfg.Vpn.Tunnel}
-	if !cfg.Vpn.Enabled || cfg.Vpn.Tunnel == "" {
-		return st
-	}
-	iface, err := net.InterfaceByName(cfg.Vpn.Tunnel)
-	st.Up = err == nil && iface.Flags&net.FlagUp != 0
-	return st
+	return out, total
 }
 
 // must: usato solo per i Put sulle mappe delle impostazioni, dove un errore

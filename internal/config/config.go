@@ -15,7 +15,9 @@ import (
 	"net"
 	"os"
 	"os/user"
+	"regexp"
 	"sort"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -57,16 +59,46 @@ type CanaryConfig struct {
 	ExcludeExe []string `yaml:"exclude_exe"` // sottostringhe exe escluse dal conteggio massa
 }
 
-// VpnConfig: kill-switch su Wi-Fi ostile (vedi docs/FEATURE_PLAN.md F1).
-// Non cifra nulla da solo: presuppone un tunnel WireGuard gestito altrove
-// (wg-quick/NM). Abilitato = solo traffico VPN esce, il resto DROP.
-// Spento di default: senza tunnel configurato bloccherebbe tutta la rete.
+// VpnConfig descrive il tunnel che il demone deve MONITORARE (docs/VPN_SETUP.md).
+//
+// Il demone non applica il kill-switch: lo fa scripts/vpn_killswitch.sh, con gli
+// stessi valori. Qui servono a mostrare nelle UI lo stato reale (tunnel su, handshake,
+// tabella nft attiva) e a dare l'allarme se il tunnel cade. Non cifra nulla da solo:
+// presuppone un tunnel WireGuard gestito altrove (wg-quick/NM). Spento di default.
 type VpnConfig struct {
 	Enabled   bool     `yaml:"enabled"`
-	Endpoint  string   `yaml:"endpoint"`   // IP:porta del server VPN (unico allowed in chiaro)
-	Tunnel    string   `yaml:"tunnel"`     // interfaccia tunnel (es. wg0)
+	Endpoint  string   `yaml:"endpoint"`   // IP:porta del server VPN, o [IPv6]:porta (mai un nome host)
+	Tunnel    string   `yaml:"tunnel"`     // interfaccia tunnel (es. wg0), max 15 caratteri
 	BlockDHCP bool     `yaml:"block_dhcp"` // default false: bloccarlo impedisce al tunnel di riallacciarsi
-	AllowLAN  []string `yaml:"allow_lan"`  // CIDR extra (es. stampante); vuoto = niente
+	AllowLAN  []string `yaml:"allow_lan"`  // CIDR extra (es. stampante), IPv4 o IPv6; vuoto = niente
+}
+
+// ifaceNameRe: nomi interfaccia Linux ragionevoli (IFNAMSIZ = 16 con il terminatore).
+// Vieta spazi, punto e virgola e slash: il nome finisce in comandi e regole nft.
+var ifaceNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
+
+// validateVpn: rifiuta qui, con un messaggio chiaro, cio' che lo script rifiuterebbe
+// a meta' applicazione. Con il kill-switch un valore sbagliato significa rete morta.
+func validateVpn(v VpnConfig) error {
+	host, port, err := net.SplitHostPort(v.Endpoint)
+	if err != nil {
+		return fmt.Errorf("vpn.endpoint %q non valido: serve IP:porta (es. 203.0.113.7:51820 o [2001:db8::1]:51820)", v.Endpoint)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("vpn.endpoint %q: serve un indirizzo IP, non un nome host (il kill-switch non puo' risolvere il DNS)", v.Endpoint)
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("vpn.endpoint %q: porta fuori da 1-65535", v.Endpoint)
+	}
+	if !ifaceNameRe.MatchString(v.Tunnel) {
+		return fmt.Errorf("vpn.tunnel %q non valido (1-15 caratteri tra lettere, cifre, _ . -)", v.Tunnel)
+	}
+	for _, s := range v.AllowLAN {
+		if _, _, err := net.ParseCIDR(s); err != nil {
+			return fmt.Errorf("vpn.allow_lan: %q non e' un CIDR valido", s)
+		}
+	}
+	return nil
 }
 
 // Config: file YAML completo. I campi non presenti nel file restano quelli del profilo.
@@ -294,18 +326,8 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.Vpn.Enabled {
-		// Senza endpoint il kill-switch bloccherebbe tutto compreso il tunnel:
-		// meglio un errore chiaro subito che rete morta dopo.
-		if c.Vpn.Endpoint == "" {
-			return fmt.Errorf("vpn.endpoint mancante (IP:porta del server, unico allowed in chiaro)")
-		}
-		if c.Vpn.Tunnel == "" {
-			return fmt.Errorf("vpn.tunnel mancante (interfaccia tunnel, es. wg0)")
-		}
-		for _, s := range c.Vpn.AllowLAN {
-			if _, n, err := net.ParseCIDR(s); err != nil || n.IP.To4() == nil {
-				return fmt.Errorf("vpn.allow_lan: %q non è un CIDR IPv4 valido", s)
-			}
+		if err := validateVpn(c.Vpn); err != nil {
+			return err
 		}
 	}
 	for i, r := range c.AllRules() {
@@ -342,10 +364,10 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// HomeDir: sotto sudo e sotto systemd $HOME e' /root, quindi $HOME non e' utilizzabile.
-// Si risolve l'utente reale con ordine di precedenza: config, SHIELD_USER (impostata dalla
-// unit systemd), SUDO_USER (imposta solo da sudo).
-func (c *Config) HomeDir() (string, error) {
+// Account risolve l'utente da proteggere. Precedenza: config, SHIELD_USER (impostata
+// dalla unit systemd), SUDO_USER (solo sotto sudo). Sotto sudo e sotto systemd $HOME
+// e' /root, quindi $HOME non e' utilizzabile.
+func (c *Config) Account() (*user.User, error) {
 	name := c.User
 	if name == "" {
 		name = os.Getenv("SHIELD_USER")
@@ -354,11 +376,20 @@ func (c *Config) HomeDir() (string, error) {
 		name = os.Getenv("SUDO_USER")
 	}
 	if name == "" {
-		return "", fmt.Errorf("utente da proteggere non definito: imposta 'user' nel config, SHIELD_USER, o usa sudo")
+		return nil, fmt.Errorf("utente da proteggere non definito: imposta 'user' nel config, SHIELD_USER, o usa sudo")
 	}
 	u, err := user.Lookup(name)
 	if err != nil {
-		return "", fmt.Errorf("utente %q non trovato: %w", name, err)
+		return nil, fmt.Errorf("utente %q non trovato: %w", name, err)
+	}
+	return u, nil
+}
+
+// HomeDir: home dell'utente protetto (vedi Account).
+func (c *Config) HomeDir() (string, error) {
+	u, err := c.Account()
+	if err != nil {
+		return "", err
 	}
 	return u.HomeDir, nil
 }

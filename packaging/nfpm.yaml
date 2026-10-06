@@ -22,6 +22,8 @@ depends:
   - systemd
 recommends:
   - ufw
+  - nftables
+  - wireguard-tools
 suggests:
   - zeroshield-gui
   - fido2-tools
@@ -34,6 +36,10 @@ contents:
     file_info: { mode: 0755 }
   - src: bin/zt-tui
     dst: /usr/bin/zt-tui
+    file_info: { mode: 0755 }
+  # Demone finto con dati sintetici: la guida della GUI lo indica per la demo.
+  - src: bin/zt-mockd
+    dst: /usr/bin/zt-mockd
     file_info: { mode: 0755 }
   - src: packaging/zt-shield.service
     dst: /usr/lib/systemd/system/zt-shield.service
@@ -51,6 +57,23 @@ contents:
   - src: scripts/check_prereqs.sh
     dst: /usr/share/zeroshield/scripts/check_prereqs.sh
     file_info: { mode: 0755 }
+  # VPN: kill-switch nftables, auto-VPN per NetworkManager, helper Proton.
+  # Nessuno parte da solo (vedi docs/VPN_SETUP.md): li lanci tu, in VM la prima volta.
+  - src: scripts/vpn_killswitch.sh
+    dst: /usr/share/zeroshield/scripts/vpn_killswitch.sh
+    file_info: { mode: 0755 }
+  - src: scripts/nm_vpn.sh
+    dst: /usr/share/zeroshield/scripts/nm_vpn.sh
+    file_info: { mode: 0755 }
+  - src: scripts/proton_setup.sh
+    dst: /usr/share/zeroshield/scripts/proton_setup.sh
+    file_info: { mode: 0755 }
+  - src: scripts/proton_current.sh
+    dst: /usr/share/zeroshield/scripts/proton_current.sh
+    file_info: { mode: 0755 }
+  - src: scripts/proton_up.sh
+    dst: /usr/share/zeroshield/scripts/proton_up.sh
+    file_info: { mode: 0755 }
   - src: README.md
     dst: /usr/share/doc/zeroshield/README.md
   - src: LICENSE
@@ -61,6 +84,8 @@ contents:
     dst: /usr/share/doc/zeroshield/TESTING_LAB.md
   - src: docs/CANARY.md
     dst: /usr/share/doc/zeroshield/CANARY.md
+  - src: docs/VPN_SETUP.md
+    dst: /usr/share/doc/zeroshield/VPN_SETUP.md
 scripts:
   postinstall: packaging/postinstall.sh
   preremove: packaging/preremove.sh

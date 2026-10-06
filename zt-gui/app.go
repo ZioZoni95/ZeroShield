@@ -129,6 +129,11 @@ func (a *App) GetStatus() (ipc.Status, error) {
 	return ipc.GetStatus()
 }
 
+// Version e' la versione del binario, valorizzata dal build (non scritta a mano nel JS).
+func (a *App) Version() string {
+	return version
+}
+
 // SocketPath dice al frontend dove guarda (debug finestre offline).
 func (a *App) SocketPath() string {
 	return ipc.SocketPath
