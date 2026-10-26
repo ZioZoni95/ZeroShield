@@ -280,11 +280,12 @@ Aggiungi i tuoi segreti (wallet crypto, password manager, ecc.) con `extra_rules
 
 > [!NOTE]
 > **Stato delle release:** il workflow `.github/workflows/release.yml` crea una **pre-release** a ogni
-> tag `v*` con i due `.deb` e i checksum. Prima disponibile: [v0.0.1](https://github.com/ZioZoni95/personal_zeroT/releases) (⚠️ ALPHA, solo lab).
+> tag `v*` con due `.deb` e i checksum. Pubblicate: [v0.0.1, v0.0.2, v0.0.3](https://github.com/ZioZoni95/ZeroShield/releases) (⚠️ ALPHA, solo lab).
+> Ogni release è un'istantanea indipendente del codice al suo tag, non cumulativa.
 > In alternativa i pacchetti si costruiscono da sorgente (`make package`).
 
-I due file sono **complementari e vanno scaricati entrambi** (la GUI da sola
-non basta: i dati live li produce il demone):
+Da **v0.0.3** i due file sono **alternativi: ne scarichi uno solo**. Nelle v0.0.1 e v0.0.2 la GUI era
+un pacchetto separato che richiedeva `zeroshield` (andavano installati insieme).
 
 | Pacchetto | Contiene | Da solo |
 |---|---|---|

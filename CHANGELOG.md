@@ -19,6 +19,11 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 ### Corretti
 - `harden_system.sh` abortiva se il profilo UFW `OpenSSH` non esisteva.
 - `setup_fido2.sh` con `sudo` configurava l'utente root.
+- Note di release e README dicevano di installare entrambi i `.deb`: dalla v0.0.3 sono alternativi
+  (`zeroshield-gui` ha `Conflicts: zeroshield`).
+- `test_harden.sh` da utente normale lanciava l'hardening vero via `sudo` (che azzera PATH e
+  override): ora salta la sezione prima di chiamarlo, e `harden_system.sh` rifiuta `sudo` quando
+  ha gli override di test.
 
 ## [0.0.3] — 2026-10-06
 

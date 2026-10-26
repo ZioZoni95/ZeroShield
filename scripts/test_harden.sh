@@ -37,6 +37,18 @@ exit 0
 STUB
 chmod +x "$T/bin/ss"
 
+# Rete di sicurezza: se per qualunque motivo i finti non sono i primi nel PATH, il test si
+# ferma PRIMA di toccare il sistema (harden_system.sh, da root, modificherebbe UFW e DNS veri).
+assert_stubs() {
+    local c
+    for c in ufw systemctl sysctl ss; do
+        if [ "$(PATH="$T/bin:$PATH" command -v "$c")" != "$T/bin/$c" ]; then
+            echo "ERRORE: $c non e' il comando finto: rifiuto di proseguire"; exit 2
+        fi
+    done
+}
+assert_stubs
+
 fresh() {
     rm -f "$T/calls" "$T/sshd_port" "$T/sysctl.conf"
     printf '[Resolve]\n#LLMNR=yes\n#MulticastDNS=yes\n#DNS=\n' > "$T/resolved.conf"
@@ -59,16 +71,17 @@ check "stampa i comandi come [dry-run]" 'echo "$out" | grep -q "\[dry-run\] ufw 
 check "mostra il diff di resolved.conf" 'echo "$out" | grep -q "^+LLMNR=no" && echo "$out" | grep -q "^+DNSOverTLS=opportunistic"'
 check "mostra il nuovo contenuto sysctl" 'echo "$out" | grep -q "net.ipv4.conf.all.accept_redirects = 0"'
 check "dice che non ha modificato nulla" 'echo "$out" | grep -q "nessuna modifica fatta"'
-check "ZT_DRY_RUN=1 equivale a --dry-run" '(fresh; ZT_DRY_RUN=1 harden home >/dev/null; ! grep -vE "^(ss -|systemctl is-enabled)" "$T/calls")'
+check "ZT_DRY_RUN=1 equivale a --dry-run" '(fresh; ZT_DRY_RUN=1 harden home >/dev/null; ! grep -vE "^(ss -|systemctl is-enabled)" "$T/calls" 2>/dev/null)'
 
 echo "== esecuzione reale (comandi finti)"
-fresh
-out="$(harden paranoid)"; rc=$?
-# Il test gira da non root: harden_system.sh farebbe `exec sudo`. Se sudo manca o chiede la
-# password il test salta questa parte invece di fallire per un motivo estraneo.
+# Solo da root: da utente normale harden_system.sh fa `exec sudo`, e sudo azzera PATH e le
+# variabili ZT_*, cioe' scarta i comandi finti ed esegue l'hardening VERO sul sistema.
+# Il controllo sta PRIMA di qualunque chiamata (in CI e' successo: DNS del runner rotto).
 if [ "$(id -u)" -ne 0 ]; then
-    echo "  ⏭️  non root: sezione saltata (si esegue con sudo in CI)"
+    echo "  ⏭️  non root: sezione saltata (si esegue con sudo, sempre con comandi finti)"
 else
+    fresh
+    out="$(harden paranoid)"; rc=$?
     check "esce 0" '[ $rc -eq 0 ]'
     check "non invoca mai 'ufw allow OpenSSH'" '! grep -q "OpenSSH" "$T/calls" 2>/dev/null'
     check "senza sshd non apre nessuna porta in ingresso" '! grep -q "ufw allow" "$T/calls" 2>/dev/null'

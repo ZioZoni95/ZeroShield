@@ -36,7 +36,15 @@ done
 # silenzosamente sbagliato, e 'case' in bash non fallisce su un valore inatteso.
 PROFILE="${PROFILE:-home}"
 # Riesegui come root invece di fallire (non in dry-run: li' non si scrive nulla).
-if [ "$DRY_RUN" != 1 ] && [ "$(id -u)" -ne 0 ]; then exec sudo "$0" "$@"; fi
+if [ "$DRY_RUN" != 1 ] && [ "$(id -u)" -ne 0 ]; then
+    # sudo azzera l'ambiente: gli override di test (ZT_RESOLVED_CONF, ZT_SYSCTL_FILE) e un
+    # PATH con comandi finti andrebbero persi e lo script modificherebbe il sistema VERO.
+    if [ -n "${ZT_RESOLVED_CONF:-}${ZT_SYSCTL_FILE:-}" ]; then
+        echo "❌ ZT_RESOLVED_CONF/ZT_SYSCTL_FILE sono override da test e richiedono root o --dry-run: rifiuto di passare da sudo."
+        exit 3
+    fi
+    exec sudo "$0" "$@"
+fi
 
 # run: esegue il comando, oppure lo stampa in dry-run.
 run() {
