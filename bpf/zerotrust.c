@@ -547,11 +547,29 @@ int BPF_PROG(zt_file_rename, struct inode *old_dir, struct dentry *old_dentry,
 
 // truncate(2)/ftruncate(2) su un segreto: stesso wipe di O_TRUNC ma senza open
 // in scrittura con flag. path_truncate copre truncate(2) (e ftruncate sui kernel
-// < 6.2; dopo, ftruncate richiede comunque un fd aperto in scrittura, che per
-// i non-whitelistati passa solo senza O_TRUNC: limite residuo, vedi README).
+// < 6.2). Dal 6.2 ftruncate(fd) passa da security_file_truncate: un processo che ha
+// aperto un segreto in sola scrittura (consentito, senza deny_write) potrebbe
+// azzerarlo con ftruncate. Per questo c'e' anche lsm/file_truncate (sotto).
 SEC("lsm/path_truncate")
 int BPF_PROG(zt_path_truncate, const struct path *path) {
     struct inode *victim = BPF_CORE_READ(path, dentry, d_inode);
+    if (!victim)
+        return 0;
+    struct file_key fk = {};
+    fk.ino = BPF_CORE_READ(victim, i_ino);
+    fk.dev = BPF_CORE_READ(victim, i_sb, s_dev);
+    __u32 *rp = bpf_map_lookup_elem(&protected_files, &fk);
+    if (!rp)
+        return 0;
+    return check_access(fk, *rp & 0x7FFFFFFF);
+}
+
+// ftruncate(2) su un fd gia' aperto (kernel >= 6.2). OPZIONALE: sui kernel che non hanno
+// security_file_truncate il simbolo bpf_lsm_file_truncate non esiste e il programma non si
+// carica; bpf/load.go lo esclude prima del caricamento. Stessa regola di path_truncate.
+SEC("lsm/file_truncate")
+int BPF_PROG(zt_file_truncate, struct file *file) {
+    struct inode *victim = BPF_CORE_READ(file, f_inode);
     if (!victim)
         return 0;
     struct file_key fk = {};

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZioZoni95
 // SPDX-License-Identifier: MIT
 
-package xdp
+package bpf
 
 import (
 	"encoding/binary"
@@ -9,14 +9,16 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/rlimit"
-
-	"zt-shield/bpf"
 )
 
 const (
 	xdpDrop = 1
 	xdpPass = 2
 )
+
+// Questi test eseguono il vero xdp_shield con BPF_PROG_TEST_RUN (serve root; senza, si
+// saltano). Stanno in package bpf perche' richiedono gli stub generati: il job `test`
+// della CI non li ha, il job `ebpf` si'.
 
 // xdpObjs: solo il programma XDP e le mappe che usa. I programmi LSM restano fuori
 // perche' molti kernel (CI, container) non li caricano: qui si prova solo il parser.
@@ -33,7 +35,7 @@ func loadXDP(t *testing.T) *xdpObjs {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		t.Skipf("memlock: %v", err)
 	}
-	spec, err := bpf.LoadShield()
+	spec, err := LoadShield()
 	if err != nil {
 		t.Fatalf("spec eBPF: %v", err)
 	}

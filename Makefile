@@ -106,6 +106,7 @@ test-scripts:
 # Test che richiedono root (fanotify reale del canary). In CI girano con sudo.
 test-root:
 	sudo -E env "PATH=$(PATH)" go test -count=1 -run Root -v ./internal/canary
+	sudo -E env "PATH=$(PATH)" go test -count=1 -v ./bpf
 
 lint:
 	go vet ./...

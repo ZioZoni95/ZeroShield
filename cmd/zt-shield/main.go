@@ -36,7 +36,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 
@@ -152,8 +151,8 @@ Opzioni:
 
 	// Carica i programmi e le mappe in un colpo solo. Se fallisce qui non e' stato
 	// agganciato nulla: e' l'unico punto in cui un errore e' recuperabile.
-	var objs bpf.ShieldObjects
-	if err := bpf.LoadShieldObjects(&objs, nil); err != nil {
+	objs, err := bpf.Load()
+	if err != nil {
 		log.Fatalf("Errore caricamento programmi eBPF: %v", err)
 	}
 	defer objs.Close()
@@ -167,7 +166,7 @@ Opzioni:
 	// l'utente crede di essere protetto. Per questo Attach() fa restituire l'errore
 	// e main lo trasforma in uscita fatale invece di proseguire.
 	mgr := lsm.New(objs.ProtectedFiles, objs.AllowedExes,
-		[]*ebpf.Program{objs.ZtFileOpen, objs.ZtFileUnlink, objs.ZtFileRename, objs.ZtPathTruncate},
+		objs.LSMPrograms(),
 		home, cfg.AllRules())
 
 	// Richieste di rescan (da `ctl rescan`, dalla UI e da inotify). Capienza 1: una

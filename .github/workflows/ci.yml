@@ -119,6 +119,10 @@ jobs:
           sudo ./bin/zt-probe -xdp-lo | tee probe.txt
           { echo '### zt-probe (kernel del runner)'; echo '```'; cat probe.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           grep -E '^(✅|⚠️|❌)' probe.txt | while IFS= read -r l; do echo "::notice title=zt-probe::$l"; done
+      - name: Parser XDP + loader (BPF_PROG_TEST_RUN, root)
+        # Pacchetti sintetici contro il vero xdp_shield: VLAN singola/doppia/tripla,
+        # IPv4 e IPv6, troncati. Senza privilegi i test si saltano da soli.
+        run: sudo -E env "PATH=$PATH" GOCACHE=/tmp/gocache-root go test -count=1 -v ./bpf
       - name: Pacchetto .deb (zeroshield)
         run: |
           make package BPFTOOL="$BPFTOOL"
