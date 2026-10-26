@@ -19,37 +19,67 @@
 #     reinstallazione o riformattazione, quindi non puo' essere fatto da qui.
 set -euo pipefail
 
-PROFILE="${1:-home}"
+# Uso: harden_system.sh [profilo] [--dry-run]. Con --dry-run (o ZT_DRY_RUN=1) non tocca il
+# sistema: lavora su copie temporanee dei file e mostra il diff di cio' che cambierebbe,
+# e stampa i comandi (ufw, systemctl, sysctl) invece di eseguirli. Non serve root.
+# Provalo SEMPRE prima della prima esecuzione vera.
+DRY_RUN="${ZT_DRY_RUN:-0}"
+PROFILE=""
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=1 ;;
+        home|corporate|public-wifi|paranoid) PROFILE="$arg" ;;
+        *) echo "Uso: $0 [home|corporate|public-wifi|paranoid] [--dry-run]"; exit 1 ;;
+    esac
+done
 # Validazione esplicita dell'argomento: senza, un refuso diventa un profilo
 # silenzosamente sbagliato, e 'case' in bash non fallisce su un valore inatteso.
-case "$PROFILE" in
-    home|corporate|public-wifi|paranoid) ;;
-    *) echo "Uso: $0 [home|corporate|public-wifi|paranoid]"; exit 1 ;;
-esac
-# Riesegui come root invece di fallire: comodo, ma perche' accettare sudo qui e non
-# in ogni altro script? Lo si fa per compatta'. Tutti i comandi sotto sono gia' root-only.
-[ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+PROFILE="${PROFILE:-home}"
+# Riesegui come root invece di fallire (non in dry-run: li' non si scrive nulla).
+if [ "$DRY_RUN" != 1 ] && [ "$(id -u)" -ne 0 ]; then exec sudo "$0" "$@"; fi
 
-echo "🧱 Profilo: $PROFILE"
+# run: esegue il comando, oppure lo stampa in dry-run.
+run() {
+    if [ "$DRY_RUN" = 1 ]; then echo "   [dry-run] $*"; else "$@"; fi
+}
+
+echo "🧱 Profilo: $PROFILE$([ "$DRY_RUN" = 1 ] && echo " (DRY-RUN: nulla viene modificato)")"
 
 # --- Firewall ---
 # FIX applicato: `allow OpenSSH` PRIMA di `enable`. Senza, default deny incoming
 # nega l'SSH in ingresso e il lockout si vede alla connessione successiva.
 # Senza listener SSH la regola allow e' innocua. Verifica SEMPRE con una seconda
 # sessione prima di chiudere la prima.
+# ssh_ports: porte TCP su cui sshd ASCOLTA davvero (non assume il 22 ne' il profilo
+# "OpenSSH", che non esiste se openssh-server non e' installato: con set -e un
+# `ufw allow OpenSSH` fallito abortiva l'intero hardening).
+ssh_ports() {
+    ss -Hltnp 2>/dev/null | awk '/"sshd"/ { n = split($4, a, ":"); print a[n] }' | sort -un
+}
 if command -v ufw >/dev/null; then
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow OpenSSH
+    run ufw default deny incoming
+    run ufw default allow outgoing
+    ports="$(ssh_ports)"
+    if [ -n "$ports" ]; then
+        for p in $ports; do run ufw allow "$p/tcp"; done
+    else
+        echo "ℹ️  sshd non in ascolto: nessuna regola SSH in ingresso."
+    fi
     # Log ridotto nelle reti ostili: la LAN puo' generare volumi di log e riempire /var.
-    case "$PROFILE" in public-wifi|paranoid) ufw logging low ;; esac
-    ufw --force enable
+    case "$PROFILE" in public-wifi|paranoid) run ufw logging low ;; esac
+    run ufw --force enable
 else
     echo "⚠️  ufw non installato, salto il firewall"
 fi
 
 # --- systemd-resolved: niente LLMNR/mDNS; DNS cifrato dove ha senso ---
-RESOLVED_CONF="/etc/systemd/resolved.conf"
+RESOLVED_CONF="${ZT_RESOLVED_CONF:-/etc/systemd/resolved.conf}"
+RESOLVED_REAL="$RESOLVED_CONF"
+if [ "$DRY_RUN" = 1 ] && [ -f "$RESOLVED_CONF" ]; then
+    # In dry-run si modifica una copia e alla fine se ne mostra il diff.
+    RESOLVED_CONF="$(mktemp)"
+    cp "$RESOLVED_REAL" "$RESOLVED_CONF"
+fi
 # set_resolved chiave valore: imposta una chiave in modo idempotente.
 # Se esiste gia' (commentata o no) la sostituisce, altrimenti la inserisce subito
 # dopo [Resolve]. Senza questo controllo, rieseguire lo script duplicerebbe le chiavi.
@@ -69,7 +99,7 @@ if [ -f "$RESOLVED_CONF" ]; then
     # Backup una tantum: -n non sovrascrive, quindi il backup originale sopravvive
     # alle riesecuzioni. Non sovrascrivere MAI resolved.conf qui sopra: se lo fai,
     # perdi il file di fabbrica e con esso i default commentati che spiegano le opzioni.
-    cp -n "$RESOLVED_CONF" "$RESOLVED_CONF.zt-backup"
+    [ "$DRY_RUN" = 1 ] || cp -n "$RESOLVED_CONF" "$RESOLVED_CONF.zt-backup"
     # LLMNR e mDNS sono i vettori di Responder/Inveigh. spenti in resolved, ma il
     # programma XDP li blocca anche a livello driver: difesa a due livelli.
     set_resolved LLMNR no
@@ -96,13 +126,22 @@ if [ -f "$RESOLVED_CONF" ]; then
     esac
     # FIX: con set -e, un resolver non gestito da systemd faceva abortire lo
     # script qui, prima di sysctl/avahi. Ora tollerante con avviso.
-    systemctl restart systemd-resolved || echo "⚠️  restart systemd-resolved fallito, continuo"
+    if [ "$DRY_RUN" = 1 ]; then
+        echo "--- diff $RESOLVED_REAL ---"
+        diff -u "$RESOLVED_REAL" "$RESOLVED_CONF" || true
+        rm -f "$RESOLVED_CONF"
+        run systemctl restart systemd-resolved
+    else
+        systemctl restart systemd-resolved || echo "⚠️  restart systemd-resolved fallito, continuo"
+    fi
 fi
 
 # --- sysctl di rete ---
 # File in /etc/sysctl.d con suffisso 99, cosi' viene applicato per ultimo e sovrascrive
 # eventuali default di /etc/sysctl.conf. `sysctl --system` rilegge tutti i file.
-SYSCTL_FILE="/etc/sysctl.d/99-zt-shield.conf"
+SYSCTL_FILE="${ZT_SYSCTL_FILE:-/etc/sysctl.d/99-zt-shield.conf}"
+SYSCTL_REAL="$SYSCTL_FILE"
+[ "$DRY_RUN" = 1 ] && SYSCTL_FILE="$(mktemp)"
 {
     echo "# Generato da zt-shield harden_system.sh (profilo: $PROFILE)"
     cat << 'CONF'
@@ -137,7 +176,14 @@ CONF
 } > "$SYSCTL_FILE"
 # FIX: `sysctl --system` nascondeva l'output ma con set -e una chiave ignota
 # abortiva tutto. Ora mostra gli errori e non blocca il resto.
-sysctl --system || echo "⚠️  sysctl --system con errori (vedi sopra), continuo"
+if [ "$DRY_RUN" = 1 ]; then
+    echo "--- $SYSCTL_REAL (nuovo contenuto) ---"
+    cat "$SYSCTL_FILE"
+    rm -f "$SYSCTL_FILE"
+    run sysctl --system
+else
+    sysctl --system || echo "⚠️  sysctl --system con errori (vedi sopra), continuo"
+fi
 
 # --- Servizi di discovery su LAN ostili ---
 # avahi implementa mDNS e NBT-NS: se resta attivo, continua a emettere e ad
@@ -145,7 +191,7 @@ sysctl --system || echo "⚠️  sysctl --system con errori (vedi sopra), contin
 case "$PROFILE" in public-wifi|paranoid)
     # is-enabled fallisce se il servizio non esiste: in quel caso si salta.
     if systemctl is-enabled avahi-daemon >/dev/null 2>&1; then
-        systemctl disable --now avahi-daemon.service avahi-daemon.socket
+        run systemctl disable --now avahi-daemon.service avahi-daemon.socket
         echo "🔇 avahi-daemon disabilitato"
     fi
     ;;
@@ -153,4 +199,5 @@ esac
 
 # Promemoria finale deliberato: tutto questo e' filtraggio e occultamento del traffico.
 # Non e' cifratura, e su una rete controllata dall'attaccante non e' un confine.
+[ "$DRY_RUN" = 1 ] && { echo "✅ Dry-run completato: nessuna modifica fatta. Rilancia senza --dry-run per applicare."; exit 0; }
 echo "✅ Hardening applicato. Su reti non fidate usa anche una VPN (WireGuard): questi controlli non cifrano il traffico."

@@ -13,6 +13,12 @@ SK_KEY="$HOME/.ssh/id_ed25519_sk"
 SW_KEY="$HOME/.ssh/id_ed25519"
 # 700: la directory non deve essere leggibile da altri utenti, altrimenti i permessi
 # sui singoli file non proteggono piu' nulla (ssh lo segnala e rifiuta la chiave).
+# Da utente normale: con sudo $HOME e' /root e la chiave e la config git andrebbero
+# all'utente sbagliato, in silenzio.
+if [ "$(id -u)" -eq 0 ]; then
+    echo "❌ Eseguilo come il tuo utente, senza sudo (la chiave e la config git sono per-utente)."
+    exit 1
+fi
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 
 # Genera solo se non esiste gia' niente: sovrascrivere una chiave esistente la
@@ -27,8 +33,8 @@ if [ ! -f "$SK_KEY" ] && [ ! -f "$SW_KEY" ]; then
         # verify-required = PIN + tocco fisico a ogni operazione.
         #
         # NOTA: resident + verify-required e' la combinazione piu' scomoda possibile:
-        # chiede PIN e tocco a ogni singolo commit. Dopo due settimane lo disattivi
-        # (genera con -O verify=-1, il default: tocco fisico comunque obbligatorio).
+        # chiede PIN e tocco a ogni singolo commit. Se e' troppo, rigenera senza
+        # -O verify-required: il default (no-verify-required) chiede solo il tocco fisico.
         ssh-keygen -t ed25519-sk -O resident -O verify-required -f "$SK_KEY" -C "zt-shield-hardware-key"
     else
         echo "⚠️  Nessun token FIDO2: genero una chiave ED25519 software (usa una passphrase robusta)."

@@ -153,7 +153,7 @@ func (m *Manager) Sync() (protected, allowed int) {
 			// con nome regola, cosi' l'utente sa cosa allargare o dove mettere path assoluto.
 			exe, ok := resolveExe(m.home, a)
 			if !ok {
-				log.Printf("⚠️ regola %q: binario %q non risolto (PATH demone: %q + /snap/bin + ~/.local/bin), NON in whitelist", r.Name, a, os.Getenv("PATH"))
+				m.warnOnce("unresolved:"+r.Name+":"+a, fmt.Sprintf("⚠️ regola %q: binario %q non risolto (PATH demone: %q + /snap/bin + ~/.local/bin), NON in whitelist", r.Name, a, os.Getenv("PATH")))
 				continue
 			}
 			// FIX: un binario modificabile dall'utente in whitelist e' un bypass:
@@ -161,7 +161,7 @@ func (m *Manager) Sync() (protected, allowed int) {
 			// legge i segreti come "aws". Si accettano solo binari (e directory
 			// padri) di root e non scrivibili da altri.
 			if err := trustedExe(exe); err != nil {
-				log.Printf("⛔ regola %q: binario %q (%s) NON in whitelist: %v. Installalo in un percorso di root (es. /usr/local/bin)", r.Name, a, exe, err)
+				m.warnOnce("untrusted:"+r.Name+":"+a+":"+err.Error(), fmt.Sprintf("⛔ regola %q: binario %q (%s) NON in whitelist: %v. Installalo in un percorso di root (es. /usr/local/bin)", r.Name, a, exe, err))
 				continue
 			}
 			if k, ok := fileKey(exe); ok {

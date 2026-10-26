@@ -299,3 +299,35 @@ func TestCanaryWritePathsAndDropin(t *testing.T) {
 		t.Errorf("drop-in malformato:\n%s", d)
 	}
 }
+
+// Il token di glab (GitLab CLI) e' tra i segreti dei profili: era il vettore dell'incidente
+// da cui nasce il progetto. npm/pip restano fuori di proposito (interpreti con shebang).
+func TestTokensPresetCoversGlabButNotInterpreters(t *testing.T) {
+	c, _ := Preset("home")
+	var found bool
+	for _, r := range c.Rules {
+		if r.Name != "dev-tokens" {
+			continue
+		}
+		found = true
+		has := func(list []string, v string) bool {
+			for _, x := range list {
+				if x == v {
+					return true
+				}
+			}
+			return false
+		}
+		if !has(r.Paths, ".config/glab-cli/config.yml") || !has(r.Allow, "glab") {
+			t.Errorf("dev-tokens senza glab: %+v", r)
+		}
+		for _, bad := range []string{"npm", "pip", "node", "python3"} {
+			if has(r.Allow, bad) {
+				t.Errorf("%s in allow: autorizzerebbe ogni script che usa l'interprete", bad)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("regola dev-tokens assente dal profilo home")
+	}
+}

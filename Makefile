@@ -101,6 +101,7 @@ test:
 test-scripts:
 	bash scripts/test_nm_vpn.sh
 	bash scripts/test_proton.sh
+	sudo bash scripts/test_harden.sh
 	sudo bash scripts/test_killswitch.sh
 
 # Test che richiedono root (fanotify reale del canary). In CI girano con sudo.

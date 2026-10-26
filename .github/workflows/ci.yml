@@ -67,11 +67,15 @@ jobs:
         run: |
           bash scripts/test_nm_vpn.sh
           bash scripts/test_proton.sh
+          bash scripts/test_harden.sh
       - name: Kill-switch (network namespace usa e getta, root)
         # Gira in un namespace: non tocca la rete del runner.
         run: |
           sudo apt-get install -y -q nftables iproute2
           sudo bash scripts/test_killswitch.sh
+          # harden_system.sh con ufw/systemctl/sysctl finti: da root esegue anche la parte
+          # "reale" (i comandi sono stub nel PATH, i file sono temporanei).
+          sudo bash scripts/test_harden.sh
       - name: Canary fanotify reale (root)
         # Test con fanotify vero: avvio, tocco esca, massa, kill in enforce.
         # GOCACHE separata: root non deve sporcare la cache dell'utente runner.

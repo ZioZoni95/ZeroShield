@@ -156,9 +156,12 @@ var groups = map[string]Rule{
 	// Token dei registry e dei package manager: la via piu' comune per rubare
 	// accesso ai tuoi repository e ai tuoi container.
 	"tokens": {
-		Name:  "dev-tokens",
-		Paths: []string{".git-credentials", ".docker/config.json", ".config/gh/hosts.yml", ".cargo/credentials.toml"},
-		Allow: []string{"git", "gh", "docker", "cargo"},
+		Name: "dev-tokens",
+		// glab (GitLab CLI) tiene il token in ~/.config/glab-cli/config.yml. NON si aggiungono
+		// .npmrc/.pypirc: npm e pip sono script con shebang, autorizzarli vorrebbe dire
+		// autorizzare l'interprete e ogni script che lo usa (vedi 'allow' in shield.example.yaml).
+		Paths: []string{".git-credentials", ".docker/config.json", ".config/gh/hosts.yml", ".cargo/credentials.toml", ".config/glab-cli/config.yml"},
+		Allow: []string{"git", "gh", "glab", "docker", "cargo"},
 	},
 	// Chiavi private GPG, usate per firmare i commit e decifrare.
 	"gpg": {

@@ -83,6 +83,16 @@ ProtectHome=read-only
 # /tmp e /var/tmp privati, isolati dal namespace degli altri servizi.
 PrivateTmp=yes
 
+# Hardening aggiuntivo a basso rischio: nessuna di queste tocca bpf(), fanotify, netlink o
+# i socket in /run.
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+SystemCallArchitectures=native
+
 # NOTA: manca ProtectSystem=strict. Con questa, l'intero filesystem sarebbe
 # montato in sola lettura per il processo, e /usr/local/sbin/zt-shield non
 # potrebbe essere sostituito nemmeno da root. Ha un costo: i path di mount gia'
