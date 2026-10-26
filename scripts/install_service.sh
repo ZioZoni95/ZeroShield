@@ -93,6 +93,18 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 UNIT
 
+# Canary: sotto ProtectHome=read-only le esche non si possono creare. Se il canary e'
+# abilitato nel config, il demone stesso genera il drop-in con le sole cartelle necessarie.
+DROPIN="$(/usr/local/sbin/zt-shield -config /etc/zt-shield/shield.yaml dropin 2>/dev/null || true)"
+if [ -n "$DROPIN" ]; then
+    install -d -o root -g root -m 0755 /etc/systemd/system/zt-shield.service.d
+    printf '%s\n' "$DROPIN" > /etc/systemd/system/zt-shield.service.d/canary.conf
+    chmod 0644 /etc/systemd/system/zt-shield.service.d/canary.conf
+    echo "🐤 Drop-in canary: /etc/systemd/system/zt-shield.service.d/canary.conf"
+else
+    rm -f /etc/systemd/system/zt-shield.service.d/canary.conf
+fi
+
 systemctl daemon-reload
 systemctl enable --now zt-shield
 echo "✅ Servizio attivo. Log: journalctl -u zt-shield -f"

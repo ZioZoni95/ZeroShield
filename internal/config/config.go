@@ -15,9 +15,11 @@ import (
 	"net"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -56,7 +58,11 @@ type CanaryConfig struct {
 	Names      []string `yaml:"names"`       // nomi esca (mai aperti dall'utente)
 	BurstCount int      `yaml:"burst_count"` // rename/delete oltre soglia in finestra = allarme
 	BurstSecs  int      `yaml:"burst_secs"`
-	ExcludeExe []string `yaml:"exclude_exe"` // sottostringhe exe escluse dal conteggio massa
+	ExcludeExe []string `yaml:"exclude_exe"` // sottostringhe exe escluse dal conteggio massa (mai dal tocco esca)
+	// AllowExe: percorsi ASSOLUTI esatti di binari che possono toccare le esche senza
+	// essere uccisi (indicizzatori, backup). Solo binari di root non scrivibili da
+	// altri: gli altri vengono scartati all'avvio con un avviso.
+	AllowExe []string `yaml:"allow_exe"`
 }
 
 // VpnConfig descrive il tunnel che il demone deve MONITORARE (docs/VPN_SETUP.md).
@@ -297,6 +303,52 @@ func (c *Config) AllRules() []Rule {
 
 func (c *Config) Enforce() bool { return c.Mode == "enforce" }
 
+// CanaryWritePaths: cartelle da rendere scrivibili al servizio (ReadWritePaths=) perche'
+// il canary possa creare le esche sotto ProtectHome=read-only. Per ogni cartella
+// configurata vale lei stessa se esiste, altrimenti il suo primo antenato esistente
+// (dove il demone potra' creare le directory mancanti). Vuoto se il canary e' spento.
+func (c *Config) CanaryWritePaths(home string) []string {
+	if !c.Canary.Enabled {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, d := range c.Canary.Dirs {
+		if !filepath.IsAbs(d) {
+			d = filepath.Join(home, d)
+		}
+		d = filepath.Clean(d)
+		for d != "/" {
+			if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+				break
+			}
+			d = filepath.Dir(d)
+		}
+		if d != "/" && !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SystemdDropin: contenuto del drop-in che apre al servizio le cartelle del canary.
+// Stringa vuota se non serve. Va in /etc/systemd/system/zt-shield.service.d/canary.conf.
+func (c *Config) SystemdDropin(home string) string {
+	paths := c.CanaryWritePaths(home)
+	if len(paths) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("# Generato da `zt-shield dropin`: apre al canary le sole cartelle delle esche.\n")
+	b.WriteString("[Service]\n")
+	for _, p := range paths {
+		fmt.Fprintf(&b, "ReadWritePaths=%s\n", p)
+	}
+	return b.String()
+}
+
 // Validate: fallisce presto e con un messaggio utile, invece di fallire piu' tardi
 // dentro il kernel con un errore di permesso non spiegabile.
 func (c *Config) Validate() error {
@@ -323,6 +375,27 @@ func (c *Config) Validate() error {
 		}
 		if c.Canary.BurstSecs <= 0 {
 			c.Canary.BurstSecs = 10
+		}
+		// Un nome con "/" o ".." porterebbe l'esca fuori dalla cartella scelta.
+		for _, n := range c.Canary.Names {
+			if n == "" || n == "." || n == ".." || strings.ContainsAny(n, "/\\\x00") {
+				return fmt.Errorf("canary.names: %q non valido (solo nome file, niente / o ..)", n)
+			}
+		}
+		for _, d := range c.Canary.Dirs {
+			if d == "" || strings.ContainsRune(d, 0) {
+				return fmt.Errorf("canary.dirs: voce vuota o non valida")
+			}
+			for _, part := range strings.Split(filepath.ToSlash(d), "/") {
+				if part == ".." {
+					return fmt.Errorf("canary.dirs: %q contiene '..'", d)
+				}
+			}
+		}
+		for _, e := range c.Canary.AllowExe {
+			if !filepath.IsAbs(e) || filepath.Clean(e) != e || strings.ContainsAny(e, "*?[") {
+				return fmt.Errorf("canary.allow_exe: %q deve essere un percorso assoluto pulito, senza glob", e)
+			}
 		}
 	}
 	if c.Vpn.Enabled {

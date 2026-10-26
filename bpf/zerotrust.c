@@ -27,11 +27,12 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
-// EtherType IPv4 (+ VLAN taggate, scartate prima solo perche' non parsate).
-// Il resto (ARP, IPv6, PPPoE) esce dal confronto: coperto da resolved/UFW, non da XDP.
+// EtherType IPv4 e IPv6, anche dietro uno o due tag VLAN (802.1Q / QinQ 802.1ad).
+// Il resto (ARP, PPPoE) esce dal confronto: coperto da resolved/UFW, non da XDP.
 #define ETH_P_IP 0x0800
+#define ETH_P_IPV6 0x86DD
 #define ETH_P_8021Q 0x8100 // VLAN singola
-#define ETH_P_8021AD 0x88A8 // QinQ (solo outer tag scartato, poi si rivaluta)
+#define ETH_P_8021AD 0x88A8 // QinQ: tag esterno S-VLAN, poi (di solito) un 802.1Q interno
 
 // FMODE_READ per struct file->f_mode: se un open e' write-only (creazione chiave,
 // truncate log, backup in scrittura) non contiene dati da esfiltrare in lettura.
@@ -180,6 +181,33 @@ static __always_inline void count_drop(__u32 saddr, int reason) {
     }
 }
 
+// Drop del poisoning su IPv6: solo un totale. Il radar delle UI e' IPv4 (chiave a 4
+// byte); un contatore aggregato dice comunque che sta succedendo, senza cambiare il
+// formato di xdp_stats. Valore u64 incrementato in modo atomico.
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} xdp_v6_drops SEC(".maps");
+
+static __always_inline void count_v6_drop(void) {
+    __u32 k = 0;
+    __u64 *v = bpf_map_lookup_elem(&xdp_v6_drops, &k);
+    if (v)
+        __sync_fetch_and_add(v, 1);
+}
+
+// Porte di poisoning: LLMNR (5355), mDNS (5353), NBT-NS (137), NetBIOS-DGM (138).
+// Condiviso da IPv4 e IPv6. sport E dport: la risposta avvelenata viaggia con
+// sport=5355 e dport effimera.
+static __always_inline int is_poison_port(__u16 sport, __u16 dport) {
+    return sport == 5355 || dport == 5355 ||
+           sport == 5353 || dport == 5353 ||
+           sport == 137 || dport == 137 ||
+           sport == 138 || dport == 138;
+}
+
 // ---------------------------------------------------------------------------
 // Eventi verso userspace
 // ---------------------------------------------------------------------------
@@ -238,23 +266,48 @@ int xdp_shield(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
 
     // Header Ethernet: 14 byte (mac dst, mac src, ethertype).
-    // VLAN: un tag 802.1Q aggiunge 4 byte. Senza unwrap tutto il traffico
-    // su LAN taggate (aziendale tipica) passava senza alcun controllo.
-    // Si gestisce un solo livello: QinQ doppio-tag resta PASS (raro su workstation).
+    // VLAN: ogni tag 802.1Q/802.1ad aggiunge 4 byte. Senza unwrap tutto il traffico
+    // su LAN taggate (aziendale tipica) passava senza alcun controllo. Si scartano fino
+    // a DUE tag (QinQ): un attaccante che incapsula il poisoning in un doppio tag non
+    // aggira il filtro. Piu' di due tag restano PASS (non esiste su una workstation).
     struct ethhdr *eth = data;
     if ((void *)(eth + 1) > data_end)
         return XDP_PASS; // pacchetto troncato: lascialo allo stack
     __u16 proto = bpf_ntohs(eth->h_proto);
     void *nh = (void *)(eth + 1);
-    if (proto == ETH_P_8021Q || proto == ETH_P_8021AD) {
+#pragma unroll
+    for (int i = 0; i < 2; i++) {
+        if (proto != ETH_P_8021Q && proto != ETH_P_8021AD)
+            break;
         struct vlan_hdr *vh = nh;
         if ((void *)(vh + 1) > data_end)
             return XDP_PASS;
         proto = bpf_ntohs(vh->h_vlan_encapsulated_proto);
         nh = (void *)(vh + 1);
     }
+
+    // IPv6: stessi protocolli di poisoning (mDNS ff02::fb, LLMNR ff02::1:3, Responder
+    // risponde anche su v6). Solo UDP come next-header diretto: con extension header
+    // (rari su multicast locale) si lascia passare. Niente blocco subnet su v6.
+    if (proto == ETH_P_IPV6) {
+        if (!setting(SETTING_POISON, 1))
+            return XDP_PASS;
+        struct ipv6hdr *ip6 = nh;
+        if ((void *)(ip6 + 1) > data_end)
+            return XDP_PASS;
+        if (ip6->nexthdr != IPPROTO_UDP)
+            return XDP_PASS;
+        struct udphdr *udp6 = (void *)(ip6 + 1);
+        if ((void *)(udp6 + 1) > data_end)
+            return XDP_PASS;
+        if (is_poison_port(bpf_ntohs(udp6->source), bpf_ntohs(udp6->dest))) {
+            count_v6_drop();
+            return XDP_DROP;
+        }
+        return XDP_PASS;
+    }
     if (proto != ETH_P_IP)
-        return XDP_PASS; // ARP/IPv6/PPPoE: niente da fare qui
+        return XDP_PASS; // ARP/PPPoE: niente da fare qui
 
     // Header IP: variabile (20 + opzioni). Pacchetti troncati o malformi
     // passano oltre e li gestira' il kernel.
@@ -282,10 +335,7 @@ int xdp_shield(struct xdp_md *ctx) {
                     // FIX: si controllano SIA sport SIA dport. La risposta avvelenata
                     // di Responder/Inveigh viaggia con sport=5355 e dport effimera:
                     // guardare solo dport intercettava le query altrui, non l'attacco.
-                    if (sport == 5355 || dport == 5355 ||
-                        sport == 5353 || dport == 5353 ||
-                        sport == 137 || dport == 137 ||
-                        sport == 138 || dport == 138) {
+                    if (is_poison_port(sport, dport)) {
                         // Radar eBPF: conta il drop per IP sorgente prima di scartare.
                         // saddr copiato grezzo: la chiave resta in network order.
                         __u32 src;

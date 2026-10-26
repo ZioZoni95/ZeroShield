@@ -241,3 +241,61 @@ func TestExampleConfigLoads(t *testing.T) {
 		t.Error("stanza canary dell'esempio non letta")
 	}
 }
+
+func TestCanaryPathsAndNamesValidation(t *testing.T) {
+	bad := []struct {
+		name  string
+		apply func(c *Config)
+	}{
+		{"nome con slash", func(c *Config) { c.Canary.Names = []string{"../evil"} }},
+		{"nome ..", func(c *Config) { c.Canary.Names = []string{".."} }},
+		{"nome con sottocartella", func(c *Config) { c.Canary.Names = []string{"a/b"} }},
+		{"dir con ..", func(c *Config) { c.Canary.Dirs = []string{"Documents/../../etc"} }},
+		{"dir vuota", func(c *Config) { c.Canary.Dirs = []string{""} }},
+		{"allow_exe relativo", func(c *Config) { c.Canary.AllowExe = []string{"rsync"} }},
+		{"allow_exe non pulito", func(c *Config) { c.Canary.AllowExe = []string{"/usr/bin/../bin/rsync"} }},
+		{"allow_exe con glob", func(c *Config) { c.Canary.AllowExe = []string{"/usr/bin/*"} }},
+	}
+	for _, tc := range bad {
+		c, _ := Preset("home")
+		c.Canary.Enabled = true
+		tc.apply(c)
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: accettato", tc.name)
+		}
+	}
+	c, _ := Preset("home")
+	c.Canary.Enabled = true
+	c.Canary.Dirs = []string{"Documents", "/srv/share"}
+	c.Canary.AllowExe = []string{"/usr/bin/rsync"}
+	if err := c.Validate(); err != nil {
+		t.Errorf("configurazione legittima rifiutata: %v", err)
+	}
+}
+
+func TestCanaryWritePathsAndDropin(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "Documents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := Preset("home")
+	if c.SystemdDropin(home) != "" {
+		t.Error("canary spento: nessun drop-in")
+	}
+	c.Canary.Enabled = true
+	c.Canary.Dirs = []string{"Documents", "Nuova/Sotto", "Documents"}
+	got := c.CanaryWritePaths(home)
+	want := []string{filepath.Join(home, "Documents"), home}
+	if len(got) != 2 || got[0] != want[0] && got[1] != want[0] {
+		t.Fatalf("percorsi %v, attesi (in qualche ordine) %v", got, want)
+	}
+	d := c.SystemdDropin(home)
+	for _, w := range want {
+		if !strings.Contains(d, "ReadWritePaths="+w+"\n") {
+			t.Errorf("drop-in senza %s:\n%s", w, d)
+		}
+	}
+	if !strings.HasPrefix(d, "# Generato") || !strings.Contains(d, "[Service]\n") {
+		t.Errorf("drop-in malformato:\n%s", d)
+	}
+}
