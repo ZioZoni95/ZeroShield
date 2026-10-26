@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -68,6 +69,7 @@ type Detector struct {
 	window     time.Duration
 	exclude    []string
 	canaries   map[string]bool
+	allowExe   map[string]bool // exe (percorso esatto) che puo' toccare le esche
 
 	mu       sync.Mutex
 	hits     map[int][]time.Time
@@ -89,6 +91,19 @@ func NewDetector(burstCount int, burstSecs int, exclude []string, canaries []str
 	}
 }
 
+// SetAllowExe: percorsi esatti di binari fidati che possono aprire le esche senza
+// scatenare allarme o kill (indicizzatori, backup). Confronto esatto su /proc/<pid>/exe:
+// niente sottostringhe, un nome simile in una cartella scrivibile non passa.
+// Chiamarlo prima di Start dei loop (non e' sincronizzato).
+func (d *Detector) SetAllowExe(paths []string) {
+	d.allowExe = map[string]bool{}
+	for _, p := range paths {
+		if p != "" {
+			d.allowExe[filepath.Clean(p)] = true
+		}
+	}
+}
+
 func (d *Detector) excluded(exe string) bool {
 	for _, e := range d.exclude {
 		if e != "" && strings.Contains(exe, e) {
@@ -105,6 +120,9 @@ func (d *Detector) Record(pid int, exe, path string, kind Kind, enforce bool, no
 		return VerdictIgnore // mai pid 1/init: fail-safe contro kill catastrofici
 	}
 	if d.canaries[filepath.Clean(path)] {
+		if exe != "" && d.allowExe[exe] {
+			return VerdictIgnore
+		}
 		if enforce {
 			return VerdictKill
 		}
@@ -139,30 +157,71 @@ func (d *Detector) Record(pid int, exe, path string, kind Kind, enforce bool, no
 	return VerdictIgnore
 }
 
+// Owner: utente a cui assegnare cartelle ed esche create dal demone. Il demone gira
+// come root: senza chown una ~/Documents mancante nascerebbe di root e l'utente non
+// potrebbe piu' scriverci. nil = nessun chown (test, esecuzione non root).
+type Owner struct{ UID, GID int }
+
+// mkdirAllOwned come os.MkdirAll, ma assegna all'owner SOLO le directory che crea:
+// quelle gia' esistenti restano com'erano.
+func mkdirAllOwned(dir string, perm os.FileMode, o *Owner) error {
+	if fi, err := os.Stat(dir); err == nil {
+		if !fi.IsDir() {
+			return fmt.Errorf("%s non e' una directory", dir)
+		}
+		return nil
+	}
+	if parent := filepath.Dir(dir); parent != dir {
+		if err := mkdirAllOwned(parent, perm, o); err != nil {
+			return err
+		}
+	}
+	if err := os.Mkdir(dir, perm); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if o != nil {
+		return os.Lchown(dir, o.UID, o.GID)
+	}
+	return nil
+}
+
 // DeployCanaries crea dir ed esche mancanti (4KB casuali, 0644 come file normali).
 // Mai sovrascritte: un'esca esistente potrebbe essere un tuo file vero.
-func DeployCanaries(home string, dirs, names []string) ([]string, error) {
+// Le esche si scrivono con O_EXCL|O_NOFOLLOW: se qualcuno ha piazzato un symlink con
+// il nome di un'esca, il demone root non lo segue (niente scrittura su file altrui).
+func DeployCanaries(home string, dirs, names []string, owner *Owner) ([]string, error) {
 	var out []string
 	for _, dir := range dirs {
 		d := dir
 		if !filepath.IsAbs(d) {
 			d = filepath.Join(home, d)
 		}
-		if err := os.MkdirAll(d, 0o755); err != nil {
+		if err := mkdirAllOwned(d, 0o755, owner); err != nil {
 			return out, fmt.Errorf("canary mkdir %s: %w", d, err)
 		}
 		for _, n := range names {
 			p := filepath.Join(d, n)
 			out = append(out, p)
-			if _, err := os.Stat(p); err == nil {
+			if _, err := os.Lstat(p); err == nil {
 				continue
 			}
 			buf := make([]byte, 4096)
 			if _, err := rand.Read(buf); err != nil {
 				return out, err
 			}
-			if err := os.WriteFile(p, buf, 0o644); err != nil {
+			f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0o644)
+			if err != nil {
 				return out, fmt.Errorf("canary write %s: %w", p, err)
+			}
+			_, werr := f.Write(buf)
+			if werr == nil && owner != nil {
+				werr = f.Chown(owner.UID, owner.GID)
+			}
+			if cerr := f.Close(); werr == nil {
+				werr = cerr
+			}
+			if werr != nil {
+				return out, fmt.Errorf("canary write %s: %w", p, werr)
 			}
 			log.Printf("🐤 esca creata: %s (non aprirla mai: ogni tocco e' allarme)", p)
 		}
@@ -195,12 +254,71 @@ type Watcher struct {
 	closeOnce    sync.Once
 }
 
-// Start arma dir (eventi figli) ed esche (open/write/close). enforce decide kill/alert.
+// Options di Start. Owner e' l'utente protetto (nil = nessun chown).
+type Options struct {
+	Home       string
+	Dirs       []string
+	Names      []string
+	ExcludeExe []string // sottostringhe: solo conteggio massa
+	AllowExe   []string // percorsi esatti: possono toccare le esche (filtrati da TrustedExe)
+	BurstCount int
+	BurstSecs  int
+	Enforce    bool
+	Owner      *Owner
+}
+
+// TrustedExe tiene solo i binari che un attaccante utente non puo' impersonare o
+// sostituire: percorso assoluto, file regolare, proprietario root, non scrivibile da
+// gruppo/altri, e ogni directory del percorso con la stessa proprieta'. Gli scartati
+// tornano in rejected con il motivo, per il log.
+func TrustedExe(paths []string) (ok []string, rejected map[string]string) {
+	rejected = map[string]string{}
+	for _, p := range paths {
+		if reason := untrustedReason(p); reason != "" {
+			rejected[p] = reason
+			continue
+		}
+		ok = append(ok, p)
+	}
+	return ok, rejected
+}
+
+func untrustedReason(p string) string {
+	if !filepath.IsAbs(p) {
+		return "percorso non assoluto"
+	}
+	for cur := p; ; cur = filepath.Dir(cur) {
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return err.Error()
+		}
+		if cur == p && !fi.Mode().IsRegular() {
+			return "non e' un file regolare (symlink?)"
+		}
+		st, ok := fi.Sys().(*syscall.Stat_t)
+		if !ok || st.Uid != 0 {
+			return cur + " non e' di root"
+		}
+		if fi.Mode().Perm()&0o022 != 0 {
+			return cur + " scrivibile da gruppo/altri"
+		}
+		if cur == "/" || filepath.Dir(cur) == cur {
+			return ""
+		}
+	}
+}
+
+// Start arma dir (eventi figli) ed esche (open/write/close). Enforce decide kill/alert.
 // onHit chiamato per ogni Alert/Kill: log + IPC nel demone.
-func Start(home string, dirs, names []string, exclude []string, burstCount, burstSecs int, enforce bool, onHit func(Hit)) (*Watcher, error) {
-	paths, err := DeployCanaries(home, dirs, names)
+func Start(o Options, onHit func(Hit)) (*Watcher, error) {
+	home, dirs, names, enforce := o.Home, o.Dirs, o.Names, o.Enforce
+	paths, err := DeployCanaries(home, dirs, names, o.Owner)
 	if err != nil {
 		return nil, err
+	}
+	allow, rejected := TrustedExe(o.AllowExe)
+	for p, why := range rejected {
+		log.Printf("⚠️ canary.allow_exe %q scartato: %s", p, why)
 	}
 	baits, err := unix.FanotifyInit(unix.FAN_CLASS_NOTIF|unix.FAN_CLOEXEC|unix.FAN_NONBLOCK, unix.O_RDONLY|unix.O_LARGEFILE)
 	if err != nil {
@@ -217,8 +335,9 @@ func Start(home string, dirs, names []string, exclude []string, burstCount, burs
 		unix.Close(dfd)
 		return nil, fmt.Errorf("pipe: %w", err)
 	}
-	w := &Watcher{baits: baits, dirs: dfd, det: NewDetector(burstCount, burstSecs, exclude, paths),
+	w := &Watcher{baits: baits, dirs: dfd, det: NewDetector(o.BurstCount, o.BurstSecs, o.ExcludeExe, paths),
 		stopR: pipe[0], stopW: pipe[1]}
+	w.det.SetAllowExe(allow)
 	// Dir: conta massa sui figli. OPEN escluso qui (troppo rumore: ogni ls).
 	for _, dir := range dirs {
 		d := dir

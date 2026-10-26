@@ -39,7 +39,17 @@ rescan_seconds: 30
 #   names: [".canary-accounts.xlsx", ".canary-wallet.dat", ".canary-backup.zip"]
 #   burst_count: 50
 #   burst_secs: 10
-#   exclude_exe: ["restic", "cc1", "rsync"]
+#   exclude_exe: ["restic", "cc1", "rsync"]   # sottostringhe: solo conteggio massa
+#   # Binari che possono APRIRE le esche senza essere uccisi (indicizzatori, backup).
+#   # Percorsi assoluti esatti; solo binari di root non scrivibili da altri, gli altri
+#   # vengono scartati all'avvio con un avviso.
+#   allow_exe: ["/usr/libexec/tracker-miner-fs-3", "/usr/bin/rsync"]
+
+# Sotto systemd la home e' in sola lettura: dopo aver abilitato il canary genera il
+# drop-in che apre le sole cartelle delle esche (lo fa gia' install_service.sh):
+#   zt-shield -config /etc/zt-shield/shield.yaml dropin | \
+#     sudo install -D -m0644 /dev/stdin /etc/systemd/system/zt-shield.service.d/canary.conf
+#   sudo systemctl daemon-reload && sudo systemctl restart zt-shield
 
 # Blocca anche la scrittura (O_WRONLY) per regola. Default false: O_TRUNC,
 # truncate, unlink e rename passano comunque dalla whitelist. Con true ogni

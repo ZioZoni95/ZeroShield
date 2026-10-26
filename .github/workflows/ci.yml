@@ -67,11 +67,15 @@ jobs:
         run: |
           bash scripts/test_nm_vpn.sh
           bash scripts/test_proton.sh
+          bash scripts/test_harden.sh
       - name: Kill-switch (network namespace usa e getta, root)
         # Gira in un namespace: non tocca la rete del runner.
         run: |
           sudo apt-get install -y -q nftables iproute2
           sudo bash scripts/test_killswitch.sh
+          # harden_system.sh con ufw/systemctl/sysctl finti: da root esegue anche la parte
+          # "reale" (i comandi sono stub nel PATH, i file sono temporanei).
+          sudo bash scripts/test_harden.sh
       - name: Canary fanotify reale (root)
         # Test con fanotify vero: avvio, tocco esca, massa, kill in enforce.
         # GOCACHE separata: root non deve sporcare la cache dell'utente runner.
@@ -119,6 +123,10 @@ jobs:
           sudo ./bin/zt-probe -xdp-lo | tee probe.txt
           { echo '### zt-probe (kernel del runner)'; echo '```'; cat probe.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           grep -E '^(✅|⚠️|❌)' probe.txt | while IFS= read -r l; do echo "::notice title=zt-probe::$l"; done
+      - name: Parser XDP + loader (BPF_PROG_TEST_RUN, root)
+        # Pacchetti sintetici contro il vero xdp_shield: VLAN singola/doppia/tripla,
+        # IPv4 e IPv6, troncati. Senza privilegi i test si saltano da soli.
+        run: sudo -E env "PATH=$PATH" GOCACHE=/tmp/gocache-root go test -count=1 -v ./bpf
       - name: Pacchetto .deb (zeroshield)
         run: |
           make package BPFTOOL="$BPFTOOL"
@@ -166,8 +174,12 @@ jobs:
         run: |
           go vet -tags webkit2_41 .
           go build -tags webkit2_41 -o /dev/null .
+      - name: Toolchain eBPF (il pacchetto GUI contiene anche il demone)
+        run: |
+          sudo apt-get install -y -q clang llvm libbpf-dev linux-tools-generic
+          echo "BPFTOOL=$(ls /usr/lib/linux-tools/*/bpftool | head -1)" >> "$GITHUB_ENV"
       - name: Pacchetto .deb (zeroshield-gui)
-        run: make package-gui
+        run: make package-gui BPFTOOL="$BPFTOOL"
       - uses: actions/upload-artifact@v4
         with:
           name: zeroshield-gui-deb

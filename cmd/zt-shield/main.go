@@ -22,7 +22,9 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -34,7 +36,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 
@@ -113,6 +114,15 @@ Opzioni:
 		return
 	}
 
+	// Il demone root non si fa spostare i socket dall'ambiente (sudo -E, unit con
+	// Environment= sbagliato): ZT_SOCKET/ZT_CONTROL servono solo a mock, TUI e test.
+	if os.Geteuid() == 0 {
+		if ipc.SocketPath != ipc.DefaultSocketPath || priv.SocketPath != priv.DefaultSocketPath {
+			log.Printf("⚠️ ZT_SOCKET/ZT_CONTROL ignorati: il demone root usa i percorsi fissi in /run/zt-shield")
+		}
+		ipc.SocketPath, priv.SocketPath = ipc.DefaultSocketPath, priv.DefaultSocketPath
+	}
+
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		log.Fatalf("Configurazione: %v", err)
@@ -122,6 +132,14 @@ Opzioni:
 		log.Fatal(err)
 	}
 	home := acct.HomeDir
+
+	// `zt-shield dropin`: stampa il drop-in systemd che permette al canary di creare le
+	// esche sotto ProtectHome=read-only. Uso (root):
+	//   zt-shield dropin | sudo install -D -m0644 /dev/stdin /etc/systemd/system/zt-shield.service.d/canary.conf
+	if flag.NArg() >= 1 && flag.Arg(0) == "dropin" {
+		fmt.Print(cfg.SystemdDropin(home))
+		return
+	}
 	log.Printf("⚙️ Profilo: %s | modalità: %s | home: %s", cfg.Profile, cfg.Mode, home)
 
 	// Su kernel < 5.11 il caricamento delle mappe e' limitato a RLIMIT_MEMLOCK.
@@ -133,8 +151,8 @@ Opzioni:
 
 	// Carica i programmi e le mappe in un colpo solo. Se fallisce qui non e' stato
 	// agganciato nulla: e' l'unico punto in cui un errore e' recuperabile.
-	var objs bpf.ShieldObjects
-	if err := bpf.LoadShieldObjects(&objs, nil); err != nil {
+	objs, err := bpf.Load()
+	if err != nil {
 		log.Fatalf("Errore caricamento programmi eBPF: %v", err)
 	}
 	defer objs.Close()
@@ -148,8 +166,25 @@ Opzioni:
 	// l'utente crede di essere protetto. Per questo Attach() fa restituire l'errore
 	// e main lo trasforma in uscita fatale invece di proseguire.
 	mgr := lsm.New(objs.ProtectedFiles, objs.AllowedExes,
-		[]*ebpf.Program{objs.ZtFileOpen, objs.ZtFileUnlink, objs.ZtFileRename, objs.ZtPathTruncate},
+		objs.LSMPrograms(),
 		home, cfg.AllRules())
+
+	// Richieste di rescan (da `ctl rescan`, dalla UI e da inotify). Capienza 1: una
+	// richiesta in coda basta, le altre si fondono.
+	rescanReq := make(chan struct{}, 1)
+	// inotify sulle directory dei segreti: un segreto riscritto via rename cambia inode e
+	// resterebbe libero fino al rescan periodico. Non fatale: senza inotify resta il timer.
+	if iw, err := lsm.NewWatcher(func() {
+		select {
+		case rescanReq <- struct{}{}:
+		default:
+		}
+	}); err != nil {
+		log.Printf("⚠️ inotify non attivo, solo rescan ogni %ds: %v", cfg.RescanSeconds, err)
+	} else {
+		mgr.SetWatcher(iw)
+		defer iw.Close()
+	}
 
 	// Popola le mappe PRIMA di agganciare l'hook: cosi' al primo open() dal sistema
 	// i file sono gia' protetti, senza una finestra in cui sono liberi.
@@ -183,6 +218,7 @@ Opzioni:
 	}
 	tracker := map[[4]byte]*seen{}
 	var topSrc []ipc.SourceStat
+	var lastV6Drops uint64
 	refreshRadar := func() {
 		stats := xdp.ReadStats(objs.XdpStats)
 		// FIX: il tracker cresceva senza limite (IP sorgente spoofati su mDNS
@@ -219,6 +255,11 @@ Opzioni:
 		sort.Slice(topSrc, func(i, j int) bool { return topSrc[i].Total > topSrc[j].Total })
 		if len(topSrc) > 12 {
 			topSrc = topSrc[:12]
+		}
+		// IPv6: il radar e' IPv4, qui c'e' solo il totale. Un log per rescan se cresce.
+		if n := xdp.ReadV6Drops(objs.XdpV6Drops); n > lastV6Drops {
+			log.Printf("📡 poisoning IPv6 scartato da XDP: +%d (totale %d)", n-lastV6Drops, n)
+			lastV6Drops = n
 		}
 	}
 	// --- XDP: non fatale --------------------------------------------------------------
@@ -289,7 +330,6 @@ Opzioni:
 	// systemd riavvia, invece di un demone che si dichiara vivo ma non lavora.
 	var lastRescan atomic.Int64
 	lastRescan.Store(time.Now().UnixNano())
-	rescanReq := make(chan struct{}, 1)
 	// Il tunnel puo' cadere tra un rescan e l'altro: con la VPN configurata lo stato
 	// si rilegge ogni 5 s (non ogni rescan_seconds) e si ripubblica solo se cambia.
 	// Stessa goroutine del rescan: nessuno stato condiviso da proteggere.
@@ -393,35 +433,49 @@ Opzioni:
 	// Disabilitato di default (canary.enabled). Non fatale: senza CAP_SYS_ADMIN
 	// il watcher non parte ma LSM/XDP restano attivi. Vedi docs/CANARY.md.
 	if cfg.Canary.Enabled {
-		w, err := canary.Start(home, cfg.Canary.Dirs, cfg.Canary.Names,
-			cfg.Canary.ExcludeExe, cfg.Canary.BurstCount, cfg.Canary.BurstSecs,
-			cfg.Enforce(), func(hit canary.Hit) {
-				// exe e path sono scelti dal processo osservato: niente ANSI grezzo.
-				hit.Exe, hit.Path = ipc.SafeText(hit.Exe), ipc.SafeText(hit.Path)
-				icon := "🐤 [CANARY-ALERT]"
-				if hit.Verdict == canary.VerdictKill {
-					if hit.Killed {
-						icon = "🐤 [CANARY-KILL]"
-					} else if hit.KillErr != nil {
-						icon = "🐤 [CANARY-KILL-FALLITO]"
-					}
+		copts := canary.Options{
+			Home: home, Dirs: cfg.Canary.Dirs, Names: cfg.Canary.Names,
+			ExcludeExe: cfg.Canary.ExcludeExe, AllowExe: cfg.Canary.AllowExe,
+			BurstCount: cfg.Canary.BurstCount, BurstSecs: cfg.Canary.BurstSecs,
+			Enforce: cfg.Enforce(),
+		}
+		if cu, e1 := strconv.Atoi(acct.Uid); e1 == nil {
+			if cg, e2 := strconv.Atoi(acct.Gid); e2 == nil {
+				copts.Owner = &canary.Owner{UID: cu, GID: cg}
+			}
+		}
+		w, err := canary.Start(copts, func(hit canary.Hit) {
+			// exe e path sono scelti dal processo osservato: niente ANSI grezzo.
+			hit.Exe, hit.Path = ipc.SafeText(hit.Exe), ipc.SafeText(hit.Path)
+			icon := "🐤 [CANARY-ALERT]"
+			if hit.Verdict == canary.VerdictKill {
+				if hit.Killed {
+					icon = "🐤 [CANARY-KILL]"
+				} else if hit.KillErr != nil {
+					icon = "🐤 [CANARY-KILL-FALLITO]"
 				}
-				log.Printf("%s pid=%d exe=%s kind=%s path=%s motivo=%s", icon,
-					hit.PID, hit.Exe, hit.Kind, hit.Path, hit.Reason)
-				if srv == nil {
-					return
-				}
-				action := "alert"
-				if hit.Verdict == canary.VerdictKill && hit.Killed {
-					action = "killed"
-				}
-				srv.PublishCanary(ipc.CanaryAlert{
-					Action: action, PID: hit.PID, Exe: hit.Exe, Path: hit.Path,
-					Kind: string(hit.Kind), Reason: hit.Reason,
-				})
+			}
+			log.Printf("%s pid=%d exe=%s kind=%s path=%s motivo=%s", icon,
+				hit.PID, hit.Exe, hit.Kind, hit.Path, hit.Reason)
+			if srv == nil {
+				return
+			}
+			action := "alert"
+			if hit.Verdict == canary.VerdictKill && hit.Killed {
+				action = "killed"
+			}
+			srv.PublishCanary(ipc.CanaryAlert{
+				Action: action, PID: hit.PID, Exe: hit.Exe, Path: hit.Path,
+				Kind: string(hit.Kind), Reason: hit.Reason,
 			})
+		})
 		if err != nil {
 			log.Printf("⚠️ canary non attivo: %v", err)
+			if errors.Is(err, syscall.EROFS) || errors.Is(err, syscall.EACCES) {
+				log.Printf("   sotto systemd la home e' in sola lettura: genera il drop-in con\n"+
+					"   zt-shield -config %s dropin | sudo install -D -m0644 /dev/stdin /etc/systemd/system/zt-shield.service.d/canary.conf\n"+
+					"   poi: sudo systemctl daemon-reload && sudo systemctl restart zt-shield", cmp.Or(*cfgPath, config.DefaultPath))
+			}
 		} else {
 			defer w.Close()
 			log.Println("🐤 Watcher canary attivo.")

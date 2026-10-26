@@ -16,7 +16,7 @@ description: |
   ZeroShield completo con interfaccia desktop: demone eBPF, TUI, GUI,
   servizio systemd, script e documentazione in un solo pacchetto.
 vendor: ZioZoni95
-homepage: https://github.com/ZioZoni95/personal_zeroT
+homepage: https://github.com/ZioZoni95/ZeroShield
 license: MIT
 depends:
   - systemd
