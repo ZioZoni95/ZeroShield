@@ -2,6 +2,24 @@
 
 Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
+## [Non rilasciato]
+
+### Aggiunte
+- `canary.allow_exe`, sottocomando `zt-shield dropin`, watcher inotify sulle directory dei segreti.
+- XDP: doppio tag VLAN e poisoning IPv6. Hook opzionale `lsm/file_truncate` (kernel ≥ 6.2).
+- `harden_system.sh --dry-run` e `scripts/test_harden.sh`.
+- Test del parser XDP con pacchetti sintetici (`bpf/xdp_prog_test.go`).
+
+### Cambiati
+- Selezione dei file protetti con tetto per regola e priorità ai file nominati.
+- Canary: cartelle ed esche di proprietà dell'utente protetto, scritte con `O_EXCL|O_NOFOLLOW`.
+- Il demone root ignora `ZT_SOCKET` e `ZT_CONTROL`.
+- Unit systemd con sandboxing aggiuntivo a basso rischio.
+
+### Corretti
+- `harden_system.sh` abortiva se il profilo UFW `OpenSSH` non esisteva.
+- `setup_fido2.sh` con `sudo` configurava l'utente root.
+
 ## [0.0.3] — 2026-10-06
 
 ### Aggiunte

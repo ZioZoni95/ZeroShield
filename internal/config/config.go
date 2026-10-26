@@ -182,12 +182,20 @@ var groups = map[string]Rule{
 			"snap/firefox/common/.mozilla/firefox/*/cookies.sqlite",
 			"snap/firefox/common/.mozilla/firefox/*/key4.db",
 			"snap/firefox/common/.mozilla/firefox/*/logins.json",
+			// Chromium da snap: i dati stanno sotto snap/chromium/common.
+			"snap/chromium/common/chromium/*/Cookies", "snap/chromium/common/chromium/*/Network/Cookies", "snap/chromium/common/chromium/*/Login Data",
+			// Brave (pacchetto .deb ufficiale).
+			".config/BraveSoftware/Brave-Browser/*/Cookies", ".config/BraveSoftware/Brave-Browser/*/Network/Cookies", ".config/BraveSoftware/Brave-Browser/*/Login Data",
+			// NON coperto: Flatpak. Il binario visto dal kernel e' quello dentro
+			// /var/lib/flatpak/app/<id>/current/active/files; senza verificarlo in audit su una
+			// macchina con Flatpak, proteggere i dati rischia di chiudere fuori il browser.
 		},
 		// Percorsi ASSOLUTI per i browser: sono pacchetti di sistema, non nell'home.
 		Allow: []string{
 			"/opt/google/chrome/chrome", "/usr/lib/chromium/chromium", "/usr/lib/chromium-browser/chromium-browser",
 			"/usr/lib/firefox/firefox", "/usr/lib/firefox-esr/firefox-esr",
 			"/snap/firefox/current/usr/lib/firefox/firefox", "/snap/chromium/current/usr/lib/chromium-browser/chrome",
+			"/opt/brave.com/brave/brave",
 		},
 	},
 }

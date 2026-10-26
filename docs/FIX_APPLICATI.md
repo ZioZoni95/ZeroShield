@@ -291,3 +291,39 @@ non procedono senza una directory temporanea valida. Il pacchetto GUI da solo no
 **Documentazione e pacchetto** — `FEATURE_PLAN`, `FEATURE_STUDY`, `ROADMAP`,
 `PUNTI_APERTI`, `VPN_SETUP`, `shield.example.yaml` e README allineati al codice (lo stack VPN
 è dichiarato "non collaudato su rete reale"); `.deb` con script VPN, `zt-mockd` e `VPN_SETUP.md`.
+
+## Hardening a tappe (2026-10-26)
+
+Ogni voce ha un test; dove il kernel o la macchina non lo permettono è scritto.
+
+- **Canary.** Cartelle/esche create dal demone assegnate all'utente protetto (prima: di root se
+  `~/Documents` mancava). Esche con `O_EXCL|O_NOFOLLOW` (un symlink col nome di un'esca non fa
+  scrivere il demone root su file altrui). `canary.allow_exe`: percorsi esatti, solo binari di root
+  non scrivibili da altri; `exclude_exe` resta una sottostringa solo per la massa. Validazione di
+  `names` (niente `/` o `..`) e `dirs` (niente `..`). `zt-shield dropin` genera i `ReadWritePaths`
+  per `ProtectHome=read-only`.
+- **Demone root e ambiente.** `ZT_SOCKET` / `ZT_CONTROL` ignorati se euid 0 (prima il commento lo
+  prometteva e il codice no).
+- **XDP.** Unwrap fino a due tag VLAN (il commento prometteva il doppio tag, il codice ne faceva
+  uno: poisoning in QinQ passava). Poisoning IPv6 droppato (UDP come next-header diretto), con un
+  contatore aggregato. 20 casi con pacchetti sintetici via `BPF_PROG_TEST_RUN` su kernel reale
+  (`bpf/xdp_prog_test.go`, in CI come root).
+- **Mappe LSM.** Selezione deterministica: file nominati per primi, file camminati al massimo
+  4096 per regola, mai oltre 16384; i `Put` non falliscono più a caso con `E2BIG`. Avvisi
+  deduplicati (prima uno a ogni rescan).
+- **Finestra di rescan.** Watcher inotify (`internal/lsm/watch.go`) sulle directory dei segreti:
+  rename-in-place → rescan in ~0,5 s, con debounce.
+- **`ftruncate` (kernel ≥ 6.2).** Hook `lsm/file_truncate` opzionale (`bpf/load.go`): escluso se il
+  BTF del kernel non ha `bpf_lsm_file_truncate`; se solo lui non si carica, il demone parte
+  comunque. ⚠️ Mai caricato su un kernel con BPF LSM.
+- **`harden_system.sh`.** `--dry-run` (diff reali su copie temporanee, comandi stampati);
+  `ufw allow OpenSSH` (abortiva tutto se il profilo non esisteva) sostituito dalle porte su cui
+  sshd ascolta davvero. `scripts/test_harden.sh`: 21 controlli con comandi finti.
+- **`setup_fido2.sh`.** Rifiuta `sudo` (configurava root); tolto il suggerimento `-O verify=-1`,
+  che non è un'opzione valida.
+- **Unit systemd.** `LockPersonality`, `RestrictRealtime`, `RestrictSUIDSGID`,
+  `ProtectKernelModules`, `ProtectControlGroups`, `ProtectClock`, `SystemCallArchitectures=native`
+  (validate con `systemd-analyze`; **non** avviate con il demone). `ProtectSystem=strict` e il
+  limite alle capability restano da provare in VM.
+- **Preset.** `dev-tokens` copre `glab` (`~/.config/glab-cli/config.yml`); `browsers` copre Brave e
+  i dati di Chromium snap. Flatpak resta fuori di proposito (percorso del binario da verificare).

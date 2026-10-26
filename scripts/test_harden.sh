@@ -54,7 +54,7 @@ check "esce 0 senza root" '[ $rc -eq 0 ]'
 check "non modifica resolved.conf" '[ "$(cat "$T/resolved.conf")" = "$before" ]'
 check "non crea il file sysctl" '[ ! -e "$T/sysctl.conf" ]'
 # Solo interrogazioni di sola lettura (ss per le porte di sshd, systemctl is-enabled).
-check "non esegue nessun comando che modifica" '! grep -vE "^(ss -|systemctl is-enabled)" "$T/calls"'
+check "non esegue nessun comando che modifica" '! grep -vE "^(ss -|systemctl is-enabled)" "$T/calls" 2>/dev/null'
 check "stampa i comandi come [dry-run]" 'echo "$out" | grep -q "\[dry-run\] ufw --force enable"'
 check "mostra il diff di resolved.conf" 'echo "$out" | grep -q "^+LLMNR=no" && echo "$out" | grep -q "^+DNSOverTLS=opportunistic"'
 check "mostra il nuovo contenuto sysctl" 'echo "$out" | grep -q "net.ipv4.conf.all.accept_redirects = 0"'
@@ -70,9 +70,9 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "  ⏭️  non root: sezione saltata (si esegue con sudo in CI)"
 else
     check "esce 0" '[ $rc -eq 0 ]'
-    check "non invoca mai 'ufw allow OpenSSH'" '! grep -q "OpenSSH" "$T/calls"'
-    check "senza sshd non apre nessuna porta in ingresso" '! grep -q "ufw allow" "$T/calls"'
-    check "abilita ufw con deny incoming" 'grep -q "ufw default deny incoming" "$T/calls" && grep -q "ufw --force enable" "$T/calls"'
+    check "non invoca mai 'ufw allow OpenSSH'" '! grep -q "OpenSSH" "$T/calls" 2>/dev/null'
+    check "senza sshd non apre nessuna porta in ingresso" '! grep -q "ufw allow" "$T/calls" 2>/dev/null'
+    check "abilita ufw con deny incoming" 'grep -q "ufw default deny incoming" "$T/calls" && grep -q "ufw --force enable" "$T/calls" 2>/dev/null'
     check "scrive LLMNR=no e MulticastDNS=no" 'grep -q "^LLMNR=no" "$T/resolved.conf" && grep -q "^MulticastDNS=no" "$T/resolved.conf"'
     check "paranoid forza DNSOverTLS=yes" 'grep -q "^DNSOverTLS=yes" "$T/resolved.conf"'
     check "backup di resolved.conf creato una volta" '[ -f "$T/resolved.conf.zt-backup" ]'

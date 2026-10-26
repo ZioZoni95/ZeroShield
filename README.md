@@ -39,7 +39,8 @@ Difende segreti e rete del portatile da Wi-Fi ostili, dipendenze avvelenate e la
 | Pacchetti `.deb` | ✅ costruiti, installati qui e **pubblicati** | installazione, reinstallazione, rimozione (`make package`); [release v0.0.1](https://github.com/ZioZoni95/personal_zeroT/releases) (pre-release ⚠️ ALPHA) |
 | Kill-switch VPN (`vpn_killswitch.sh`) | 🟡 **provato in un network namespace** | 54 controlli (`scripts/test_killswitch.sh`, previsto nel workflow CI): mai su una rete reale, mai con un tunnel vero |
 | Auto-VPN (`nm_vpn.sh`), helper Proton | 🟡 **provati con comandi finti** | `scripts/test_nm_vpn.sh`, `scripts/test_proton.sh`: mai con NetworkManager vero né con ProtonVPN |
-| Script (`harden_system.sh`, `setup_fido2.sh`) | ⚠️ mai eseguiti | solo `shellcheck` / `bash -n` |
+| `harden_system.sh` | 🟡 **provato con comandi finti** | `scripts/test_harden.sh` (21 controlli: dry-run, idempotenza, porta sshd): mai su un sistema vero |
+| `setup_fido2.sh` | ⚠️ mai eseguito | solo `shellcheck` / `bash -n` |
 
 ---
 
@@ -199,7 +200,8 @@ ZeroShield/
 ### 2. Secret & Data Layer (eBPF LSM)
 * **Regole per gruppo di segreti:** ogni regola associa file (percorsi, glob, directory ricorsive) ai soli binari autorizzati.
 * **Identità del binario, non del nome:** la whitelist confronta dev+inode dell'eseguibile (`mm->exe_file`). Rinominare un binario in `ssh` non basta.
-* **Chiave dev+inode:** sopravvive a rename; il rescan (default 30s) copre file nuovi, binari aggiornati da apt e rimuove voci obsolete.
+* **Chiave dev+inode:** sopravvive a rename; il rescan (default 30s) copre file nuovi, binari aggiornati da apt e rimuove voci obsolete. Un watcher **inotify** sulle directory dei segreti lancia un rescan entro ~0,5 s quando compare, sparisce o viene rinominato un file (un segreto riscritto via rename cambia inode e non resta libero fino al prossimo giro).
+* **Mappe a prova di diluvio:** i file *nominati* dalle regole hanno la precedenza; quelli scoperti camminando dentro una directory sono al massimo 4096 per regola. Un processo che riempie `~/.mozilla` di file finti non può spingere fuori le chiavi vere (il log dice quanti file sono rimasti scoperti).
 * **Modalità `audit` / `enforce`:** `audit` logga senza bloccare, per adottare lo scudo senza rompere i flussi di lavoro.
 * **Audit in tempo reale:** ogni evento riporta regola, PID, `comm` ed `exe` del processo (utile per decidere cosa autorizzare); formato `text` o `json`.
 * **Fail-closed:** se l'hook LSM non si aggancia, il demone si ferma invece di fingersi attivo.
@@ -323,6 +325,7 @@ make probe
 sudo SHIELD_USER=$USER ./bin/zt-shield
 
 # 4. Hardening di sistema per il tuo scenario
+bash scripts/harden_system.sh home --dry-run   # PRIMA: mostra diff e comandi, non modifica nulla
 sudo bash scripts/harden_system.sh home        # oppure: corporate | public-wifi | paranoid
 
 # 5. Identità hardware (opzionale ma consigliato)
@@ -371,11 +374,11 @@ Strutturali — non si risolvono con patch, solo si mitigano:
 
 Operativi — da sapere prima di `enforce`:
 
-* **Hook attivi:** `file_open`, `unlink`, `rename`, `truncate`. Write-only passa (chiavi e backup funzionano); `O_TRUNC`/`truncate(2)` passano dalla whitelist, `ftruncate` su kernel ≥ 6.2 resta scoperto. Per segreti immutabili: `deny_write`.
-* **XDP:** solo IPv4, un tag VLAN, niente IPv6 (coperto da `systemd-resolved`). `interface` accetta liste; UP scoperte nel log.
+* **Hook attivi:** `file_open`, `unlink`, `rename`, `path_truncate` e, dai kernel ≥ 6.2, `file_truncate` (`ftruncate` su fd aperto; caricato solo se il kernel lo ha, e se il suo caricamento fallisce il demone parte comunque e lo dice). Write-only passa (chiavi e backup funzionano); `O_TRUNC`/`truncate(2)` passano dalla whitelist. Per segreti immutabili: `deny_write`. ⚠️ `file_truncate` è compilato ma **mai caricato su un kernel con BPF LSM**.
+* **XDP:** IPv4 e IPv6, fino a **due** tag VLAN (QinQ). Su IPv6 droppa lo stesso poisoning (mDNS/LLMNR/NBT-NS) solo se UDP è il next-header diretto (con extension header passa) e il radar non lo mostra: il demone logga un totale. DHCPv6 non è toccato. `interface` accetta liste; UP scoperte nel log. Il parser è provato con pacchetti sintetici su un kernel reale (`make test-root`).
 * **`block_subnets` scarta anche le risposte:** mai gateway/DNS dentro; `/<8` rifiutati.
 * **Servizio fermo = zero protezione** (no pinning). FIDO2 software = segreto su disco.
-* **Canary:** kill dopo il tocco, non ferma in-place che salta esche; sotto systemd servono `ReadWritePaths` ([`docs/CANARY.md`](docs/CANARY.md)).
+* **Canary:** kill dopo il tocco, non ferma in-place che salta esche. Le esche nascono di proprietà dell'utente protetto (non di root). Indicizzatori e backup che le aprono si autorizzano con `canary.allow_exe` (percorsi esatti, solo binari di root). Sotto systemd serve il drop-in `ReadWritePaths`: lo genera `zt-shield dropin` (e `install_service.sh`) ([`docs/CANARY.md`](docs/CANARY.md)).
 * **VPN:** il demone **monitora** (tunnel, kill-switch nft, handshake) ma non applica niente: il kill-switch lo applica `scripts/vpn_killswitch.sh`, a mano. Mai provato su una rete reale né con un tunnel vero: prima in VM con snapshot ([`docs/VPN_SETUP.md`](docs/VPN_SETUP.md)). Il BSSID si clona con un access point falso: l'auto-VPN lo usa solo per **non** alzare il tunnel e non lo spegne mai da solo (salvo `AUTO_DOWN=1`).
 * **Socket IPC dell'utente protetto (0600):** stato ed eventi contengono PID, exe e percorsi dei processi di tutti, quindi li leggono solo root e l'utente indicato in `user:`. Un secondo utente sulla stessa macchina non vede la GUI/TUI (errore "permission denied").
 * **Browser Flatpak/custom** in `extra_rules`, verifica in `audit` prima di `enforce`.

@@ -44,7 +44,8 @@ canary:
   names: [".canary-accounts.xlsx", ".canary-wallet.dat", ".canary-backup.zip"]
   burst_count: 50           # soglia allarme di massa...
   burst_secs: 10            # ...in questa finestra
-  exclude_exe: ["restic", "rsync", "cc1"]   # esclusi SOLO dall'allarme di massa
+  exclude_exe: ["restic", "rsync", "cc1"]   # sottostringhe, escluse SOLO dall'allarme di massa
+  allow_exe: ["/usr/libexec/tracker-miner-fs-3"]   # percorsi esatti: possono aprire le esche
 ```
 
 Se `dirs`/`names`/soglie mancano, valgono i default mostrati sopra.
@@ -53,17 +54,23 @@ Nomi con il punto iniziale: i file manager li nascondono, quindi tu non li apri 
 ### 3.2 Servizio systemd (obbligatorio)
 
 La unit monta la home in sola lettura (`ProtectHome=read-only`), ma le esche vanno
-create proprio lì. Senza questo override il canary non parte (log
-`⚠️ canary non attivo: canary write ...: read-only file system`):
+create proprio lì. Senza un drop-in il canary non parte (log
+`⚠️ canary non attivo: ... read-only file system`, con il comando da eseguire). Il demone
+sa generarlo dal tuo config:
 
 ```bash
-sudo systemctl edit zt-shield
-# nell'editor:
-[Service]
-ReadWritePaths=/home/<utente>/Documents
+zt-shield -config /etc/zt-shield/shield.yaml dropin | \
+  sudo install -D -m0644 /dev/stdin /etc/systemd/system/zt-shield.service.d/canary.conf
+sudo systemctl daemon-reload && sudo systemctl restart zt-shield
 ```
 
-Una riga `ReadWritePaths=` per ogni cartella in `dirs`.
+Per ogni cartella in `dirs` apre in scrittura la cartella stessa se esiste, altrimenti il
+suo primo antenato esistente (dove il demone potrà crearla). `scripts/install_service.sh`
+lo fa da solo. Rilancialo se cambi `dirs`.
+
+Le cartelle e le esche create dal demone (che gira come root) vengono assegnate
+all'utente di `user:`; quelle già esistenti non vengono toccate. Le esche si scrivono con
+`O_EXCL|O_NOFOLLOW`: un symlink piazzato con il nome di un'esca non viene seguito.
 
 ### 3.3 Avvio e verifica
 
@@ -104,11 +111,14 @@ processo padre nel journal, controlla i file modificati di recente, ripristina d
 1. Lascia `mode: audit` per una settimana di lavoro normale.
 2. `journalctl -u zt-shield | grep CANARY` ogni giorno.
 3. Per ogni `exe` legittimo:
-   - **tocca un'esca** (backup, sync cloud, antivirus, indicizzatore): escludi la
+   - **tocca un'esca** (backup, sync cloud, antivirus, indicizzatore): meglio escludere la
      cartella delle esche dal suo percorso. Esempi: `restic backup --exclude '.canary-*'`,
-     `rsync --exclude='.canary-*'`, Déjà Dup → "Cartelle da ignorare".
-     `exclude_exe` **non** basta: protegge solo dall'allarme di massa, il tocco
-     esca resta un kill in enforce.
+     `rsync --exclude='.canary-*'`, Déjà Dup → "Cartelle da ignorare". Se non si può,
+     aggiungi il suo **percorso esatto** a `allow_exe` (es. `/usr/bin/rsync`): confronto
+     esatto su `/proc/<pid>/exe`, e vale solo per binari di root non scrivibili da altri
+     (gli altri sono scartati all'avvio con un avviso). `exclude_exe` **non** basta:
+     protegge solo dall'allarme di massa, perché è una sottostringa e quindi aggirabile con
+     un nome simile in una cartella scrivibile.
    - **supera la soglia di massa** (compilazioni, `git checkout`, estrazione archivi):
      aggiungi una sottostringa del suo path a `exclude_exe`, oppure togli quella
      cartella da `dirs`.
