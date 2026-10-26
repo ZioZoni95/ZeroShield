@@ -11,6 +11,8 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 - Test del parser XDP con pacchetti sintetici (`bpf/xdp_prog_test.go`).
 
 ### Cambiati
+- README riscritto da zero e allineato alla repo: stato verificato per componente, contenuto e
+  indipendenza di ogni release, configurazione, test e CI.
 - Selezione dei file protetti con tetto per regola e priorità ai file nominati.
 - Canary: cartelle ed esche di proprietà dell'utente protetto, scritte con `O_EXCL|O_NOFOLLOW`.
 - Il demone root ignora `ZT_SOCKET` e `ZT_CONTROL`.
