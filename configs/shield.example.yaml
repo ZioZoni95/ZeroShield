@@ -44,7 +44,7 @@ rescan_seconds: 30
 #   # Percorsi assoluti esatti; solo binari di root non scrivibili da altri, gli altri
 #   # vengono scartati all'avvio con un avviso.
 #   allow_exe: ["/usr/libexec/tracker-miner-fs-3", "/usr/bin/rsync"]
-#
+
 # Sotto systemd la home e' in sola lettura: dopo aver abilitato il canary genera il
 # drop-in che apre le sole cartelle delle esche (lo fa gia' install_service.sh):
 #   zt-shield -config /etc/zt-shield/shield.yaml dropin | \
