@@ -174,8 +174,12 @@ jobs:
         run: |
           go vet -tags webkit2_41 .
           go build -tags webkit2_41 -o /dev/null .
+      - name: Toolchain eBPF (il pacchetto GUI contiene anche il demone)
+        run: |
+          sudo apt-get install -y -q clang llvm libbpf-dev linux-tools-generic
+          echo "BPFTOOL=$(ls /usr/lib/linux-tools/*/bpftool | head -1)" >> "$GITHUB_ENV"
       - name: Pacchetto .deb (zeroshield-gui)
-        run: make package-gui
+        run: make package-gui BPFTOOL="$BPFTOOL"
       - uses: actions/upload-artifact@v4
         with:
           name: zeroshield-gui-deb

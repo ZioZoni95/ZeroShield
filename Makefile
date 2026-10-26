@@ -87,7 +87,10 @@ package: build build-probe build-mock
 	mkdir -p dist
 	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm.yaml --packager deb --target dist/
 
-package-gui: gui-bin
+# Il pacchetto GUI e' completo (contiene anche demone, TUI, probe e mock): dipende da tutto
+# cio' che costruisce `package`, non solo dalla GUI. Senza, `make package-gui` da solo falliva
+# con "./bin/zt-shield: file does not exist".
+package-gui: build build-probe build-mock gui-bin
 	mkdir -p dist
 	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm-gui.yaml --packager deb --target dist/
 
