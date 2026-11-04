@@ -96,6 +96,7 @@ check "se enable fallisce esce con errore e spiega la causa (bpf) e il journal" 
 check "...ma il config e' stato comunque aggiornato" 'grep -qx "user: erin" "$T/d/shield.yaml"'
 fresh
 rm "$T/d/zt-shield.service"
+# shellcheck disable=SC2034  # out/rc sono letti da check() via eval
 out="$(run frank home)"; rc=$?
 check "senza unit del pacchetto rimanda a install_service.sh e non tocca il config" '[ "$rc" -ne 0 ] && echo "$out" | grep -q install_service.sh && grep -q "^user: \"\"" "$T/d/shield.yaml"'
 
