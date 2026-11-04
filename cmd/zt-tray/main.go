@@ -35,6 +35,10 @@ var version = "dev"
 const pollEvery = 3 * time.Second
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
+		fmt.Println("zt-tray", version)
+		return
+	}
 	// Una sola icona per sessione: l'autostart e un avvio a mano non devono
 	// produrne due.
 	if unlock, ok := singleInstance(); !ok {
