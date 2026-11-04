@@ -308,3 +308,38 @@ table.compact td { padding: 7px 11px; }
 .bar i { display: block; height: 100%; background: #b8860b; }
 .bar i.subnet { background: var(--red); }
 tr.hl td { background: var(--accent-soft); }
+
+/* --- Radar: esiti, legenda a sezioni --- */
+.cls { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 10px; white-space: nowrap; }
+.cls-noise { background: rgba(127,127,127,.18); color: var(--dim); }
+.cls-attention { background: var(--amber-soft); color: var(--amber); white-space: normal; }
+.cls-blocked { background: var(--red-soft); color: var(--red); }
+.cls-known { background: var(--green-soft); color: var(--green); }
+.why { display: block; font-size: 12px; color: var(--dim); margin-top: 3px; max-width: 260px; }
+.bar i.noise { background: #787886; }
+.bar i.attention { background: #e08a00; }
+.bar i.blocked { background: var(--red); }
+.bar i.known { background: var(--green); }
+tr[data-class="attention"] td { background: var(--amber-soft); }
+#radar-legend h5 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+#radar-legend p { margin: 0 0 6px; line-height: 1.45; }
+#radar-legend .keys { list-style: none; padding: 0; margin: 0 0 6px; }
+#radar-legend .keys li { margin-bottom: 5px; }
+.dotkey { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+#radar-legend { max-width: 330px; }
+#radar-verify { max-width: 760px; }
+
+/* --- Guida: schede, punti di controllo, domande frequenti --- */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 16px; }
+.checklist .check { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.checklist .check:last-child { border-bottom: 0; }
+.check.caution { color: var(--amber); }
+.check.off { color: var(--dim); }
+.checklist .check b { color: var(--text); }
+.checklist .check .sub { margin: 0; display: inline; }
+.faq details { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; }
+.faq summary { font-weight: 600; color: var(--text); font-size: 14px; margin: 0; }
+.faq details[open] summary { margin-bottom: 8px; }
+.faq p { margin: 0 0 4px; line-height: 1.5; color: var(--text); }
+kbd { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; }
+.kv-k .linklike { font-size: 14px; font-weight: 600; text-decoration: none; }

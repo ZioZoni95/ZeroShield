@@ -14,6 +14,13 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
   pulsanti «copia» sui comandi della Guida; scorciatoie da tastiera 1-7; dialogo di conferma che
   spiega le conseguenze (stop servizio, passaggio a enforce).
 
+- GUI, Radar: ogni sorgente è classificata in *rumore probabile*, *da verificare*, *bloccata* o *nota*
+  (tasso sostenuto, volume, rete diversa dalle altre, subnet bloccate da te), con il motivo, i comandi
+  copiabili per verificarla (`ip neigh`, `tcpdump`) e «segna come noto». La classificazione è una stima:
+  il kernel non distingue richieste normali da risposte avvelenate. Legenda «Come leggerlo» riscritta.
+- GUI, Guida a schede (Per iniziare, Le schermate, Glossario, Problemi comuni), con punti di controllo
+  dal vivo (demone, hook LSM, XDP, modalità, VPN).
+
 ### Cambiati
 - **Un solo pacchetto `.deb`**, `zeroshield`, con demone, TUI e GUI. Sostituisce `zeroshield-gui`
   (`Replaces`/`Conflicts`); GTK e WebKit sono `Recommends` (server: `--no-install-recommends`).

@@ -81,8 +81,12 @@ finestra di rescan, preset `glab`.
   coperte) per mostrarlo in Rete e Configurazione.
 - [ ] **GUI, audit → enforce**: dagli eventi in audit manca l'azione «autorizza questo exe»
   (frammento di config da copiare). È il passaggio che porta davvero a enforce.
-- [ ] **Radar, protocollo**: la mappa del kernel conta solo `poison` per IP, senza distinguere
-  LLMNR, mDNS e NetBIOS. Il radar non può dire quale protocollo ha causato i drop.
+- [ ] **Radar, richieste contro risposte**: la mappa del kernel conta solo `poison` per IP. XDP scarta
+  sia le richieste degli altri host (porta di destinazione 5355/5353/137/138, sottofondo normale) sia le
+  risposte avvelenate (porta di origine 5355), senza distinguerle né dire il protocollo. Oggi la GUI
+  classifica con euristiche dichiarate (tasso, volume, rete). Per un verdetto vero servono due contatori
+  separati (richieste/risposte) e il protocollo, cioè una modifica a `bpf/zerotrust.c`, alla mappa e a
+  `ipc.SourceStat`, da collaudare in VM.
 - [ ] **Journal, rumore**: i warning «regola X: binario Y non risolto» escono a ogni rescan (ogni
   30 s) e coprono i messaggi utili. Basta avvisare una volta per binario.
 - [ ] **Falso positivo in audit**: il prompt `oh-my-posh` legge i file della regola `cloud-creds`
