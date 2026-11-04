@@ -72,6 +72,22 @@ finestra di rescan, preset `glab`.
   verificare in audit su una macchina con Flatpak.
 - [ ] **Browser snap/apt aggiornati**: dopo un aggiornamento l'inode del binario cambia e il
   browser resta fuori whitelist fino al rescan (inotify osserva i segreti, non i binari).
+- [ ] **GUI, configurazione editabile**: oggi la tab mostra un riepilogo e il file, ma si modifica
+  solo `mode`. Un editor a campi (interfaccia, subnet, canary, VPN) con validazione e anteprima
+  della differenza richiede scritture sul canale privilegiato (`internal/priv` + polkit): da fare
+  con il collaudo in VM, non prima.
+- [ ] **GUI/IPC, interfacce non coperte**: il demone scrive nel journal «interfaccia X UP ma NON
+  coperta da XDP», la GUI no. Serve un campo nuovo in `ipc.Status` (elenco interfacce UP e se
+  coperte) per mostrarlo in Rete e Configurazione.
+- [ ] **GUI, audit → enforce**: dagli eventi in audit manca l'azione «autorizza questo exe»
+  (frammento di config da copiare). È il passaggio che porta davvero a enforce.
+- [ ] **Radar, protocollo**: la mappa del kernel conta solo `poison` per IP, senza distinguere
+  LLMNR, mDNS e NetBIOS. Il radar non può dire quale protocollo ha causato i drop.
+- [ ] **Journal, rumore**: i warning «regola X: binario Y non risolto» escono a ogni rescan (ogni
+  30 s) e coprono i messaggi utili. Basta avvisare una volta per binario.
+- [ ] **Falso positivo in audit**: il prompt `oh-my-posh` legge i file della regola `cloud-creds`
+  (compare come `[AUDIT]` a ogni prompt). In enforce verrebbe bloccato a ogni comando: capire se
+  va nei binari consentiti del preset o se il prompt va configurato per non leggerli.
 - [ ] **VPN: il demone non applica il kill-switch.** Resta una scelta (il demone è di sola
   misura): applicarlo in automatico può spegnere la rete della macchina, e non è mai stato
   provato su una rete vera. Se lo vuoi, serve un'azione sul canale di controllo con
