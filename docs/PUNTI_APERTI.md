@@ -1,6 +1,6 @@
 # Punti aperti — ZeroShield
 
-Aggiornato: 2026-10-05. Storico delle correzioni in [`FIX_APPLICATI.md`](FIX_APPLICATI.md),
+Aggiornato: 2026-10-26. Storico delle correzioni in [`FIX_APPLICATI.md`](FIX_APPLICATI.md),
 esiti dei test reali in [`TEST_SANDBOX.md`](TEST_SANDBOX.md),
 piano feature unificato in [`ROADMAP.md`](ROADMAP.md).
 
@@ -18,10 +18,12 @@ VPN è provato solo in un network namespace e con comandi finti.
 | Hook LSM (`file_open`, `unlink`, `rename`, `truncate`) | 🟡 verifier ok sul runner GitHub, mai agganciati |
 | TUI / GUI / mock / IPC | ✅ GUI vera avviata sotto Xvfb contro il mock + frontend in un browser (21 controlli); socket provato con utenti reali |
 | Demone `zt-shield` end-to-end | ⚠️ mai avviato (non parte senza BPF LSM): il collegamento IPC/VPN/netstat è compilato e analizzato, non eseguito |
-| Pacchetti `.deb` | ✅ costruiti, installati e rimossi qui · ❌ nessuna release pubblicata (workflow mai eseguito) · il pacchetto GUI da solo non si installa |
+| Pacchetti `.deb` | ✅ costruiti, installati e rimossi · release v0.0.1–v0.0.3 pubblicate (pre-release) · il pacchetto GUI da solo non si installa |
 | Kill-switch VPN | 🟡 provato in un network namespace (54 controlli); mai su rete reale |
 | Auto-VPN + helper Proton | 🟡 provati con comandi finti; mai con NetworkManager o Proton veri |
-| Script di sistema (`harden_system.sh`, `setup_fido2.sh`) | ⚠️ mai eseguiti (solo shellcheck) |
+| `harden_system.sh` | 🟡 `--dry-run` + 21 controlli con comandi finti; mai su un sistema vero |
+| `setup_fido2.sh` | ⚠️ mai eseguito (solo shellcheck) |
+| Hook `lsm/file_truncate` (≥ 6.2), inotify sulle dir protette | 🟡 compilati e testati dove possibile (inotify sì); l'hook mai caricato su un kernel con BPF LSM |
 
 ## Origine e scopo
 
@@ -42,50 +44,46 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
   [`TESTING_LAB.md`](TESTING_LAB.md) in `enforce` (è l'unico pezzo mai visto funzionare).
 - [ ] **Avviare il demone end-to-end** in una VM con `bpf` attivo: è l'unico modo di eseguire
   insieme IPC (socket 0600 dell'utente protetto), stato VPN ogni 5 s e porte in ascolto.
-- [ ] **Primo tag `v0.x.0`** per provare il workflow di release (pre-release con i due `.deb` e i
-  checksum). Mai eseguito.
 - [ ] **VPN in VM con snapshot**, con un tunnel vero: kill-switch (tunnel killato → `tcpdump`
   muto 60 s), `portal`, auto-VPN con NetworkManager, helper Proton. Procedura in
   [`VPN_SETUP.md`](VPN_SETUP.md).
 - [ ] **Socket IPC con GUI e TUI vere** da due utenti diversi (il controllo è già provato con
   un client minimale; manca la prova end-to-end con le interfacce).
 - [ ] **Watchdog systemd** stabile oltre 2 minuti (`systemctl status zt-shield`).
-- [ ] **Percorsi dei browser** in `audit` (deb/snap/flatpak) prima di `public-wifi` in enforce.
-- [ ] **Script** `harden_system.sh` e `setup_fido2.sh` in VM con snapshot.
+- [ ] **Percorsi dei browser** in `audit` (deb/snap; Flatpak non è coperto) prima di `public-wifi` in enforce.
+- [ ] **`zt-probe` su un kernel con BPF LSM**: deve accettare anche `zt_file_truncate` (nuovo, mai caricato).
+- [ ] **Unit systemd**: provare `ProtectSystem=strict` e `CapabilityBoundingSet` in VM (le direttive a basso rischio aggiunte sono validate solo con `systemd-analyze`).
+- [ ] **Script** `harden_system.sh` (prima con `--dry-run`) e `setup_fido2.sh` in VM con snapshot.
 - [ ] **Test furto-token** in VM isolata: infostealer simulato, reverse shell host-only.
 - [ ] **Pentest LAN** da macchina esterna ([`TESTING.md`](TESTING.md), Test 5).
 
 ## Da fare — codice
 
-- [ ] **Canary sotto systemd**: la unit ha `ProtectHome=read-only`, le esche non si
-  possono creare. Oggi va aggiunto `ReadWritePaths=` a mano (`systemctl edit`);
-  meglio generarlo dal config o creare le esche fuori dal servizio.
-- [ ] **Canary creato da root**: `MkdirAll` crea `~/Documents` di root se manca,
-  esche di root. Fare `chown` all'utente protetto.
-- [ ] **Canary e indicizzatori**: tracker/baloo/deja-dup/rsync aprono le esche →
-  `SIGKILL` in enforce. `exclude_exe` vale solo per la massa.
-- [ ] **`ZT_SOCKET` rispettato anche dal demone root**: ignorarlo se euid 0.
-- [ ] **QinQ**: il commento in `zerotrust.c` promette lo unwrap del doppio tag,
-  il codice ne gestisce uno. Allineare.
-- [ ] **`ftruncate` su kernel ≥ 6.2** non coperto (hook `lsm/file_truncate`,
-  da caricare opzionale per non rompere i kernel vecchi).
-- [ ] **Saturazione mappe da utente**: molti file in una dir protetta esauriscono
-  `maxFilesPerPath`/16384 voci, le chiavi vere possono restare fuori. Serve un
-  tetto per regola e priorità ai pattern di file.
-- [ ] **Finestra di rescan**: un segreto riscritto via rename (nuovo inode) è
-  scoperto fino al rescan successivo (30 s). Valutare inotify sulle dir protette.
-- [ ] **Preset token dev** (GitLab `~/.config/gitlab/*`, `glab`) in `shield.example.yaml`.
-- [ ] **VPN: il demone non applica il kill-switch.** È una scelta (il demone resta di sola
-  misura), ma se la vuoi automatica serve un comando con autenticazione, che oggi il socket
-  di sola lettura non ha.
+Chiusi il 2026-10-26 (dettagli in [`FIX_APPLICATI.md`](FIX_APPLICATI.md)): canary sotto systemd
+(`zt-shield dropin`), canary `chown` e `allow_exe`, `ZT_SOCKET` ignorato dal demone root, QinQ a
+doppio tag, IPv6 in XDP, `ftruncate` ≥ 6.2, tetto per regola sulle mappe, inotify contro la
+finestra di rescan, preset `glab`.
+
+- [ ] **IPv6 nel radar**: XDP droppa il poisoning v6 ma il radar delle UI è IPv4 (chiave a 4
+  byte); per v6 c'è solo un totale nel log. Richiede una seconda mappa e un campo nuovo in IPC.
+- [ ] **IPv6 con extension header**: il poisoning dietro extension header passa (si guarda solo
+  il next-header diretto).
+- [ ] **Flatpak** nel preset `browsers`: serve il percorso del binario visto dal kernel, da
+  verificare in audit su una macchina con Flatpak.
+- [ ] **Browser snap/apt aggiornati**: dopo un aggiornamento l'inode del binario cambia e il
+  browser resta fuori whitelist fino al rescan (inotify osserva i segreti, non i binari).
+- [ ] **VPN: il demone non applica il kill-switch.** Resta una scelta (il demone è di sola
+  misura): applicarlo in automatico può spegnere la rete della macchina, e non è mai stato
+  provato su una rete vera. Se lo vuoi, serve un'azione sul canale di controllo con
+  autenticazione polkit; non si fa prima del collaudo in VM.
 
 ## Decisioni aperte
 
-- [ ] `block_subnets` scarta anche le risposte; con UFW `deny incoming` vale poco. Tenerlo?
-- [ ] Profilo di default `home` in `audit`: ok, o meglio `enforce`?
-- [ ] DoT `yes` nel profilo `paranoid` rompe i captive portal: accettabile?
-- [ ] Release: restare `prerelease` finché gli hook LSM non sono collaudati in enforce?
-- [ ] `nm_vpn.sh`: tenere `AUTO_DOWN` o toglierlo del tutto (il BSSID si clona)?
+- [ ] `block_subnets` scarta anche le risposte; con UFW `deny incoming` vale poco. Tenerlo? *Raccomandazione: tenerlo, spento di default (già così) e documentato.*
+- [ ] Profilo di default `home` in `audit`: ok, o meglio `enforce`? *Raccomandazione: `audit` finché gli hook LSM non sono visti funzionare in VM.*
+- [ ] DoT `yes` nel profilo `paranoid` rompe i captive portal: accettabile? *Raccomandazione: sì, per `paranoid`; `public-wifi` resta `opportunistic`.*
+- [ ] Release: restare `prerelease` finché gli hook LSM non sono collaudati in enforce? *Raccomandazione: sì.*
+- [ ] `nm_vpn.sh`: tenere `AUTO_DOWN` o toglierlo del tutto (il BSSID si clona)? *Raccomandazione: toglierlo; oggi è già spento di default.*
 
 ## Estensioni possibili
 

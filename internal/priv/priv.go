@@ -20,14 +20,18 @@ import (
 	"sync"
 )
 
-// SocketPath del canale di controllo. Override ZT_CONTROL per test senza root.
+// DefaultSocketPath del canale di controllo.
+const DefaultSocketPath = "/run/zt-shield/control.sock"
+
+// SocketPath: DefaultSocketPath, oppure ZT_CONTROL per test senza root. Il demone
+// root lo ignora (vedi cmd/zt-shield), come per ZT_SOCKET.
 var SocketPath = socketPath()
 
 func socketPath() string {
 	if p := os.Getenv("ZT_CONTROL"); p != "" {
 		return p
 	}
-	return "/run/zt-shield/control.sock"
+	return DefaultSocketPath
 }
 
 // Request dal client, Response al client.

@@ -43,12 +43,12 @@ reale; i 4 programmi LSM passano il verifier (kernel dei runner GitHub).
   (`BPF_PROG_GET_NEXT_ID`), allarme su ID sconosciuti (i nostri sono noti).
 - [ ] **Check lockdown integrity** (sempre IronWorm): `check_prereqs.sh` e
   `zt-probe` riportano modo lockdown. Solo report.
-- [ ] Canary sotto systemd: `ReadWritePaths` generati o esche fuori servizio.
-- [ ] Canary `chown` utente, `exclude_exe` anche per trip (indicizzatori/backup).
-- [ ] `ZT_SOCKET` ignorato se euid 0; preset token GitLab/`glab` in example.
-- [ ] Finestra rescan: inotify sulle dir protette o rescan adattivo.
-- [ ] Tetto per regola contro saturazione mappe (priorità ai pattern).
-- [ ] `ftruncate` ≥6.2 (hook opzionale), commento QinQ allineato al codice.
+- [x] Canary sotto systemd: `zt-shield dropin` genera i `ReadWritePaths`; `install_service.sh` lo applica.
+- [x] Canary `chown` utente; `allow_exe` (percorsi esatti, solo root) per indicizzatori/backup.
+- [x] `ZT_SOCKET`/`ZT_CONTROL` ignorati dal demone root; preset token `glab`.
+- [x] Finestra rescan: inotify sulle dir protette (rescan entro ~0,5 s, debounce 3 s).
+- [x] Tetto per regola contro saturazione mappe (4096 file camminati per regola, file nominati con priorità).
+- [x] `ftruncate` ≥6.2 (hook opzionale, 🟡 mai caricato su kernel con BPF LSM); QinQ a doppio tag implementato.
 - [x] Socket IPC di proprietà dell'utente protetto (0600) e testo dei processi sanificato in un
   punto solo (`ipc.SafeText`).
 
@@ -59,7 +59,7 @@ reale; i 4 programmi LSM passano il verifier (kernel dei runner GitHub).
   `kernel.unprivileged_bpf_disabled`, CFI della CPU/kernel (`ibt`, `user_shstk`,
   `CONFIG_CFI_CLANG`), e **`kernel.io_uring_disabled=2`** (kernel ≥ 6.6, da verificare sul
   tuo): chiude con una riga di sysctl il bypass `io_uring` documentato nei limiti.
-- [ ] IPv6 + QinQ in XDP. Il verifier si controlla già in CI con `zt-probe`.
+- [x] IPv6 + QinQ in XDP (poisoning UDP diretto; radar solo IPv4, per IPv6 un totale). Provato con pacchetti sintetici.
 - [ ] Hook `ptrace` anti-memory-scrape. **Valore medio** con `yama.ptrace_scope≥1` (default
   Ubuntu): prima il controllo in `doctor`, l'hook dopo.
 - [ ] btrfs `st_dev`↔`s_dev`, SIGHUP reload, hardening unit completo.

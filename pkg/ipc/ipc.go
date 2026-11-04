@@ -22,16 +22,20 @@ import (
 	"time"
 )
 
-// SocketPath: percorso fisso del demone vero (/run, serve root per crearlo).
-// Override per test locali senza root: ZT_SOCKET=/tmp/zt-shield.sock
-// (usato da mockd e TUI; il demone root ignora l'override e resta su /run).
+// DefaultSocketPath: percorso fisso del demone vero (/run, serve root per crearlo).
+const DefaultSocketPath = "/run/zt-shield/api.sock"
+
+// SocketPath: DefaultSocketPath, oppure l'override per test locali senza root
+// ZT_SOCKET=/tmp/zt-shield.sock (usato da mockd, TUI e GUI). Il demone root NON lo
+// rispetta: cmd/zt-shield rimette DefaultSocketPath se euid 0, cosi' un ambiente
+// ereditato (sudo -E) non sposta il socket di un processo privilegiato.
 var SocketPath = socketPath()
 
 func socketPath() string {
 	if p := os.Getenv("ZT_SOCKET"); p != "" {
 		return p
 	}
-	return "/run/zt-shield/api.sock"
+	return DefaultSocketPath
 }
 
 // RuleSummary: una regola in forma leggibile per le UI (niente inode qui).

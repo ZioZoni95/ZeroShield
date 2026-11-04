@@ -83,6 +83,16 @@ ProtectHome=read-only
 # /tmp e /var/tmp privati, isolati dal namespace degli altri servizi.
 PrivateTmp=yes
 
+# Hardening aggiuntivo a basso rischio: nessuna di queste tocca bpf(), fanotify, netlink o
+# i socket in /run.
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+SystemCallArchitectures=native
+
 # NOTA: manca ProtectSystem=strict. Con questa, l'intero filesystem sarebbe
 # montato in sola lettura per il processo, e /usr/local/sbin/zt-shield non
 # potrebbe essere sostituito nemmeno da root. Ha un costo: i path di mount gia'
@@ -92,6 +102,18 @@ PrivateTmp=yes
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+# Canary: sotto ProtectHome=read-only le esche non si possono creare. Se il canary e'
+# abilitato nel config, il demone stesso genera il drop-in con le sole cartelle necessarie.
+DROPIN="$(/usr/local/sbin/zt-shield -config /etc/zt-shield/shield.yaml dropin 2>/dev/null || true)"
+if [ -n "$DROPIN" ]; then
+    install -d -o root -g root -m 0755 /etc/systemd/system/zt-shield.service.d
+    printf '%s\n' "$DROPIN" > /etc/systemd/system/zt-shield.service.d/canary.conf
+    chmod 0644 /etc/systemd/system/zt-shield.service.d/canary.conf
+    echo "🐤 Drop-in canary: /etc/systemd/system/zt-shield.service.d/canary.conf"
+else
+    rm -f /etc/systemd/system/zt-shield.service.d/canary.conf
+fi
 
 systemctl daemon-reload
 systemctl enable --now zt-shield

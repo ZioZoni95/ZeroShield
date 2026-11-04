@@ -25,6 +25,15 @@ NoNewPrivileges=yes
 #   ReadWritePaths=/home/<utente>/Documents
 ProtectHome=read-only
 PrivateTmp=yes
+# Hardening aggiuntivo a basso rischio: nessuna di queste tocca bpf(), fanotify, netlink o
+# i socket in /run. (ProtectSystem=strict e CapabilityBoundingSet restano da provare in VM.)
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

@@ -23,7 +23,7 @@ func TestStartRoot(t *testing.T) {
 	}
 	home := t.TempDir()
 	hits := make(chan Hit, 16)
-	w, err := Start(home, []string{"Documents"}, []string{".canary-test.dat"}, nil, 50, 10, false, func(h Hit) { hits <- h })
+	w, err := Start(Options{Home: home, Dirs: []string{"Documents"}, Names: []string{".canary-test.dat"}, BurstCount: 50, BurstSecs: 10}, func(h Hit) { hits <- h })
 	if err != nil {
 		t.Fatalf("canary non parte: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestEnforceKillRoot(t *testing.T) {
 	}
 	home := t.TempDir()
 	hits := make(chan Hit, 16)
-	w, err := Start(home, []string{"Documents"}, []string{".canary-kill.dat"}, nil, 50, 10, true, func(h Hit) { hits <- h })
+	w, err := Start(Options{Home: home, Dirs: []string{"Documents"}, Names: []string{".canary-kill.dat"}, BurstCount: 50, BurstSecs: 10, Enforce: true}, func(h Hit) { hits <- h })
 	if err != nil {
 		t.Fatalf("canary non parte: %v", err)
 	}

@@ -169,6 +169,16 @@ func ReadStats(m *ebpf.Map) []SourceStat {
 	return out
 }
 
+// ReadV6Drops: totale dei pacchetti di poisoning IPv6 scartati (contatore aggregato,
+// il radar per-IP e' solo IPv4). 0 se la mappa non si legge.
+func ReadV6Drops(m *ebpf.Map) uint64 {
+	var n uint64
+	if err := m.Lookup(uint32(0), &n); err != nil {
+		return 0
+	}
+	return n
+}
+
 // IPString rende "192.168.1.5" dai 4 byte network order.
 func IPString(ip [4]byte) string {
 	return net.IPv4(ip[0], ip[1], ip[2], ip[3]).String()

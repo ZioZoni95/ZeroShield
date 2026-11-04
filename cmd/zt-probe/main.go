@@ -55,6 +55,11 @@ func main() {
 
 	failed, unverified := 0, 0
 	for _, n := range names {
+		// Hook opzionale (kernel >= 6.2): senza il simbolo nel BTF non e' un difetto.
+		if n == bpf.ProgZtFileTruncate && !bpf.KernelHasLSMHook("file_truncate") {
+			fmt.Printf("ℹ️ %-18s LSM: opzionale, il kernel non ha security_file_truncate (< 6.2): non caricato dal demone\n", n)
+			continue
+		}
 		s := spec.Copy()
 		for k := range s.Programs {
 			if k != n {
