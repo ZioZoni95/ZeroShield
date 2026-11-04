@@ -78,6 +78,7 @@ check "senza a-capo finale la riga aggiunta non si attacca alla precedente" 'gre
 
 echo "== input rifiutati"
 fresh
+# shellcheck disable=SC2034  # usata dentro le stringhe valutate da check()
 before="$(cat "$T/d/shield.yaml")"
 for bad in 'root' 'Alice' 'a b' 'x;rm -rf /' '$(id)' '../x' ''; do
     run "$bad" home > /dev/null; rc=$?
@@ -89,6 +90,7 @@ check "dopo i rifiuti il config e' identico e systemctl non e' stato chiamato" '
 
 echo "== servizio che non parte, unit mancante"
 fresh
+# shellcheck disable=SC2034  # out/rc sono letti da check() via eval
 out="$(FAKE_FAIL=1 run erin home)"; rc=$?
 check "se enable fallisce esce con errore e spiega la causa (bpf) e il journal" '[ "$rc" -ne 0 ] && echo "$out" | grep -q "bpf" && echo "$out" | grep -q "journalctl"'
 check "...ma il config e' stato comunque aggiornato" 'grep -qx "user: erin" "$T/d/shield.yaml"'
