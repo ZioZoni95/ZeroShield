@@ -15,6 +15,11 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
   spiega le conseguenze (stop servizio, passaggio a enforce).
 
 ### Cambiati
+- **Un solo pacchetto `.deb`**, `zeroshield`, con demone, TUI e GUI. Sostituisce `zeroshield-gui`
+  (`Replaces`/`Conflicts`); GTK e WebKit sono `Recommends` (server: `--no-install-recommends`).
+  **Migrazione:** chi ha `zeroshield-gui` installa il nuovo `zeroshield_*.deb` e apt lo sostituisce;
+  la config in `/etc/zt-shield/shield.yaml` non viene toccata. `make package-gui` non esiste più.
+- La CI costruisce e verifica il `.deb` unico nel job GUI (contiene demone, TUI e GUI).
 - README riscritto da zero e allineato alla repo: stato verificato per componente, contenuto e
   indipendenza di ogni release, configurazione, test e CI.
 - Selezione dei file protetti con tetto per regola e priorità ai file nominati.

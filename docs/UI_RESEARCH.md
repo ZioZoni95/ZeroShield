@@ -1,7 +1,7 @@
 # UI_RESEARCH — interfaccia per zt-shield
 
 > **Stato (2026-10-02):** ricerca conclusa e implementata. TUI `cmd/zt-tui`
-> (Bubble Tea), GUI `zt-gui` (Wails + WebKitGTK, pacchetto `zeroshield-gui`),
+> (Bubble Tea), GUI `zt-gui` (Wails + WebKitGTK, pacchetto unico `zeroshield`),
 > mock `cmd/zt-mockd`, IPC `pkg/ipc` con testo sanificato (`ipc.SafeText`).
 > Il resto del documento è la ricerca originale che ha portato a queste scelte.
 

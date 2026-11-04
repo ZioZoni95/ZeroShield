@@ -6,7 +6,7 @@
 # incorporato nel binario Go, quindi `go build` da solo produce un eseguibile
 # che non contiene i programmi kernel.
 
-.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui gui-bin test test-root test-scripts lint check package package-gui clean
+.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui gui-bin test test-root test-scripts lint check package clean
 
 # Versione nei binari e nei pacchetti: dal tag git (v0.1.0 -> 0.1.0), altrimenti
 # 0.0.0~dev+<commit> (il ~ ordina le dev prima di qualsiasi release in dpkg).
@@ -81,18 +81,12 @@ gui-bin:
 	cd zt-gui/frontend && npm ci && npm run build
 	cd zt-gui && go build -tags desktop,production,webkit2_41 -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o ../bin/zt-gui .
 
-# Pacchetti .deb in dist/ (nfpm). Il demone include gli stub eBPF, quindi serve
-# la toolchain di `make build`. Installazione: sudo apt install ./dist/zeroshield_*.deb
-package: build build-probe build-mock
+# Pacchetto .deb UNICO in dist/ (nfpm): demone, TUI, GUI, probe, mock, script. Serve la
+# toolchain di `make build` piu' quella della GUI (Node, libgtk-3-dev, libwebkit2gtk-4.1-dev).
+# Installazione: sudo apt install ./dist/zeroshield_*.deb
+package: build build-probe build-mock gui-bin
 	mkdir -p dist
 	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm.yaml --packager deb --target dist/
-
-# Il pacchetto GUI e' completo (contiene anche demone, TUI, probe e mock): dipende da tutto
-# cio' che costruisce `package`, non solo dalla GUI. Senza, `make package-gui` da solo falliva
-# con "./bin/zt-shield: file does not exist".
-package-gui: build build-probe build-mock gui-bin
-	mkdir -p dist
-	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm-gui.yaml --packager deb --target dist/
 
 # Test: solo i pacchetti con logica testabile, quindi config.
 # Nessun test richiede root o eBPF: per quello c'è TESTING.md.

@@ -125,7 +125,7 @@ hook `ptrace`, egress, AV). Il controllo di postura CFI (CPU, kernel, binari) è
   binario), mock.
 - Qualità: CI con test `-race`, test degli script (namespace e comandi finti), test GUI nel
   browser, `zt-probe` e test root su kernel del runner, govulncheck, gosec, Dependabot, Go 1.26.8.
-- Distribuzione: pacchetti `zeroshield` e `zeroshield-gui` (`make package`), con script VPN e
+- Distribuzione: pacchetto unico `zeroshield` con demone, TUI e GUI (`make package`; fino a v0.0.3 erano due), con script VPN e
   `zt-mockd`; workflow di pre-release sui tag `v*` (mai eseguito). La GUI dipende dal demone: i
   due file vanno installati insieme (da una release scaricata a mano, il solo pacchetto GUI non si
   installa).

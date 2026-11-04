@@ -127,17 +127,11 @@ jobs:
         # Pacchetti sintetici contro il vero xdp_shield: VLAN singola/doppia/tripla,
         # IPv4 e IPv6, troncati. Senza privilegi i test si saltano da soli.
         run: sudo -E env "PATH=$PATH" GOCACHE=/tmp/gocache-root go test -count=1 -v ./bpf
-      - name: Pacchetto .deb (zeroshield)
-        run: |
-          make package BPFTOOL="$BPFTOOL"
-          dpkg-deb -I dist/zeroshield_*.deb
-          dpkg-deb -c dist/zeroshield_*.deb
+      # Il .deb e' unico e contiene anche la GUI: si costruisce nel job "GUI", che ha Node e GTK.
       - uses: actions/upload-artifact@v4
         with:
           name: zt-shield-linux-amd64
-          path: |
-            bin/
-            dist/
+          path: bin/
 
   gui:
     name: GUI (Vite + Wails Go)
@@ -174,15 +168,24 @@ jobs:
         run: |
           go vet -tags webkit2_41 .
           go build -tags webkit2_41 -o /dev/null .
-      - name: Toolchain eBPF (il pacchetto GUI contiene anche il demone)
+      - name: Toolchain eBPF (il pacchetto unico contiene anche il demone)
         run: |
           sudo apt-get install -y -q clang llvm libbpf-dev linux-tools-generic
           echo "BPFTOOL=$(ls /usr/lib/linux-tools/*/bpftool | head -1)" >> "$GITHUB_ENV"
-      - name: Pacchetto .deb (zeroshield-gui)
-        run: make package-gui BPFTOOL="$BPFTOOL"
+      - name: Pacchetto .deb unico (zeroshield)
+        run: |
+          make package BPFTOOL="$BPFTOOL"
+          dpkg-deb -I dist/zeroshield_*.deb
+          dpkg-deb -c dist/zeroshield_*.deb
+          # Deve contenere demone, TUI e GUI, e sostituire il vecchio pacchetto a parte.
+          for f in /usr/sbin/zt-shield /usr/bin/zt-tui /usr/bin/zt-gui /usr/share/applications/zeroshield.desktop; do
+            dpkg-deb -c dist/zeroshield_*.deb | grep -q " \.$f\$" || { echo "manca $f nel .deb"; exit 1; }
+          done
+          dpkg-deb -f dist/zeroshield_*.deb Replaces | grep -q zeroshield-gui
+          dpkg-deb -f dist/zeroshield_*.deb Recommends | grep -q libwebkit2gtk-4.1-0
       - uses: actions/upload-artifact@v4
         with:
-          name: zeroshield-gui-deb
+          name: zeroshield-deb
           path: dist/
       - name: govulncheck (GUI)
         working-directory: zt-gui
