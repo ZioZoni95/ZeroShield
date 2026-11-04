@@ -195,7 +195,7 @@ code { font-family: var(--mono); background: rgba(127,127,127,.18);
     padding: 1px 6px; border-radius: 6px; font-size: 13px; }
 
 /* --- Onboarding primo avvio --- */
-#onboard {
+#onboard, #dlg {
     position: fixed; inset: 0; z-index: 100;
     background: rgba(0,0,0,.45); display: flex;
     align-items: center; justify-content: center; padding: 20px;
@@ -245,3 +245,66 @@ details summary { cursor: pointer; color: var(--dim); font-size: 13px; margin-to
 .check.ok { color: var(--green); }
 .check.ko { color: var(--red); }
 .check i { color: var(--dim); }
+
+/* --- Sezioni e pannelli (Stato, Configurazione, Rete) --- */
+.sec { margin: 22px 0 8px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--dim); }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 2px 16px; margin-bottom: 8px; }
+.kv { display: grid; grid-template-columns: 170px 1fr; gap: 3px 16px; padding: 12px 0;
+    border-bottom: 1px solid var(--border); align-items: center; }
+.kv:last-child { border-bottom: 0; }
+.kv-k { font-weight: 600; }
+.kv-v { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.kv-h { grid-column: 2; color: var(--dim); font-size: 12.5px; }
+@media (max-width: 640px) { .kv { grid-template-columns: 1fr; } .kv-h { grid-column: 1; } }
+
+/* Verdetto: rosso = difesa spenta, ambra = parziale, verde = tutto attivo. */
+.verdict { border-radius: 14px; padding: 14px 18px; margin: 0 0 4px; background: var(--panel);
+    border: 1px solid var(--border); border-left-width: 4px; }
+.verdict-t { font-size: 17px; font-weight: 700; }
+.verdict ul { margin: 8px 0 0; padding-left: 20px; color: var(--dim); font-size: 13px; }
+.verdict li { margin-bottom: 3px; }
+.verdict.ok { border-left-color: var(--green); }
+.verdict.ok .verdict-t { color: var(--green); }
+.verdict.warn { border-left-color: var(--amber); background: var(--amber-soft); }
+.verdict.warn .verdict-t { color: var(--amber); }
+.verdict.bad { border-left-color: var(--red); background: var(--red-soft); }
+.verdict.bad .verdict-t { color: var(--red); }
+
+/* Interruttore a due stati (audit | enforce): ambra e rosso come nel badge in alto. */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seg-b { border: 0; background: var(--panel); color: var(--text); padding: 7px 14px;
+    font-size: 13px; cursor: pointer; }
+.seg-b + .seg-b { border-left: 1px solid var(--border); }
+.seg-b:hover { background: var(--hover); }
+.seg-b.on { background: var(--amber-soft); color: var(--amber); font-weight: 700; }
+.seg-b.on.enf { background: var(--red-soft); color: var(--red); }
+.chip.danger { border-color: var(--red); color: var(--red); }
+.chip.danger:hover { background: var(--red-soft); }
+#dlg .chip.danger { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+
+/* Comandi con pulsante copia, file di config ripiegabile. */
+.code-row { display: flex; align-items: center; gap: 8px; }
+.code-row code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 6px 10px; }
+.copy { border: 1px solid var(--border); background: var(--panel); color: var(--dim); border-radius: 8px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+.copy:hover { color: var(--text); background: var(--hover); }
+.rule.neutral { border-left-color: var(--border); }
+.rule h3 .pill { font-weight: 500; }
+pre { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    font-family: var(--mono); font-size: 12.5px; overflow-x: auto; margin: 8px 0; }
+details.file { margin-top: 14px; }
+details.file summary, details.src summary { color: var(--text); font-weight: 600; font-size: 14px; }
+details.src summary { margin: 20px 0 10px; font-size: 16px; }
+.file-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
+.file-bar .sub { margin: 0; }
+
+/* Radar: elenco compatto con barra proporzionale ai drop. */
+table.compact { margin-top: 14px; }
+table.compact td { padding: 7px 11px; }
+.bar { display: inline-block; vertical-align: middle; width: 90px; height: 6px; margin-left: 8px;
+    background: rgba(127,127,127,.2); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: #b8860b; }
+.bar i.subnet { background: var(--red); }
+tr.hl td { background: var(--accent-soft); }

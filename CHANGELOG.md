@@ -9,6 +9,10 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 - XDP: doppio tag VLAN e poisoning IPv6. Hook opzionale `lsm/file_truncate` (kernel ≥ 6.2).
 - `harden_system.sh --dry-run` e `scripts/test_harden.sh`.
 - Test del parser XDP con pacchetti sintetici (`bpf/xdp_prog_test.go`).
+- GUI: verdetto «Protezione attiva / parziale / non attiva» in cima a Stato; tab Configurazione a
+  sezioni (protezione, rete) con file ripiegato e copiabile; vista Eventi raggruppabile per exe;
+  pulsanti «copia» sui comandi della Guida; scorciatoie da tastiera 1-7; dialogo di conferma che
+  spiega le conseguenze (stop servizio, passaggio a enforce).
 
 ### Cambiati
 - README riscritto da zero e allineato alla repo: stato verificato per componente, contenuto e
@@ -17,6 +21,17 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 - Canary: cartelle ed esche di proprietà dell'utente protetto, scritte con `O_EXCL|O_NOFOLLOW`.
 - Il demone root ignora `ZT_SOCKET` e `ZT_CONTROL`.
 - Unit systemd con sandboxing aggiuntivo a basso rischio.
+- GUI: menu riordinato (Monitoraggio, Protezione, Sistema) con numeri progressivi; una icona per
+  pagina; radar con tabella compatta ordinata invece di una scheda per IP; orari in ora locale
+  (prima UTC, un'ora indietro rispetto al journal); «Regola più attiva» conta anche gli accessi in
+  audit; cambio audit/enforce con etichetta esplicita sulla direzione.
+
+### Corretti
+- GUI: «dati fermi da <epoch>s» all'apertura, perché il primo `GetStatus` non registrava l'istante
+  di arrivo dello stato.
+- GUI: la tab Configurazione, con lettura lenta del file, poteva sovrascrivere la tab aperta dopo.
+- GUI: la Configurazione non segnalava che il file e il demone in esecuzione avessero modalità
+  diverse (modifica non ancora applicata).
 
 ### Corretti
 - `harden_system.sh` abortiva se il profilo UFW `OpenSSH` non esisteva.

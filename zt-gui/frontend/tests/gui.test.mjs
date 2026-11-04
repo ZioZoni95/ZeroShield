@@ -54,7 +54,7 @@ async function launchBrowser() {
   return chromium.launch({ args });
 }
 const browser = await launchBrowser();
-const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+const page = await browser.newPage({ viewport: { width: 1100, height: 760 }, timezoneId: 'Europe/Rome' });
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 
@@ -65,7 +65,12 @@ await page.addInitScript((status) => {
     GetStatus: async () => window.__status,
     SocketPath: async () => '/tmp/z.sock',
     Version: async () => '9.9.9-test',
+    ServiceState: async () => 'active',
+    ConfigMode: async () => window.__cfgMode,
+    ConfigText: async () => { await new Promise(r => setTimeout(r, window.__cfgDelay || 0)); return 'profile: home\nuser: tester\n'; },
+    SetConfigMode: async (m) => { window.__setModeCalls.push(m); },
   } } };
+  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = [];
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
     EventsOff: () => {},
@@ -164,6 +169,107 @@ const guide = await page.textContent('#content');
 check('Guida: percorso da pacchetto .deb', guide.includes('Da pacchetto .deb') && guide.includes('sudoedit /etc/zt-shield/shield.yaml') && guide.includes('zt-probe'));
 check('Guida: da sorgente usa cp -n (non sovrascrive)', guide.includes('cp -n configs/shield.example.yaml'));
 check('Guida: nessun cp che sovrascrive la config', !/sudo cp configs\/shield\.example\.yaml/.test(guide));
+
+
+// --- Correzioni UX (2026-11-04): menu, tastiera, ora locale, configurazione, eventi, guida.
+await page.click('#sidebar button[data-view="status"]');
+const nav = await page.evaluate(() => [...document.querySelectorAll('#sidebar button')].map(b => b.dataset.view + ':' + b.querySelector('kbd').textContent));
+check('menu: ordine e numeri coerenti (1..7 in sequenza)', nav.join(',') === 'status:1,events:2,radar:3,rules:4,net:5,config:6,guide:7', nav.join(','));
+
+await page.evaluate(() => document.activeElement && document.activeElement.blur());
+await page.keyboard.press('4');
+check('tastiera: il tasto 4 apre Regole', (await page.textContent('#view-title')) === 'Regole');
+await page.keyboard.press('6');
+check('tastiera: il tasto 6 apre Configurazione', (await page.textContent('#view-title')) === 'Configurazione');
+await page.keyboard.press('2');
+await page.waitForSelector('#ev-q');
+await page.focus('#ev-q');
+await page.keyboard.type('3');
+check('tastiera: digitare un numero nella ricerca NON cambia tab', (await page.textContent('#view-title')) === 'Eventi' && (await page.inputValue('#ev-q')) === '3');
+await page.fill('#ev-q', '');
+
+// ora locale: 10:00:00Z in Europe/Rome (CET/CEST) non deve comparire come 10:00
+await page.evaluate(() => window.__emit('shield:event', { time: '2026-11-04T10:00:00Z', action: 'audit', pid: 5, comm: 'tz', exe: '/usr/bin/tz', rule: 'tzcheck', inode: 9 }));
+await page.fill('#ev-q', 'tzcheck');
+await page.waitForTimeout(100);
+const tzRow = await page.textContent('#ev-body table');
+check('eventi: orario in ora locale, non UTC', tzRow.includes('11:00:00') && !tzRow.includes('10:00:00'), tzRow.replace(/\s+/g, ' ').slice(0, 80));
+await page.fill('#ev-q', '');
+
+// footer: appena aperta la GUI non deve dire "dati fermi" (lastStatusAt dal primo GetStatus)
+const conn = await page.textContent('#conn');
+check('footer: nessun "dati fermi" dopo il primo stato', conn.includes('aggiornato') && !conn.includes('dati fermi'), conn.trim());
+
+// raggruppa: stessi (tipo, regola, exe) = una riga con contatore
+await page.evaluate(() => { for (let i = 0; i < 6; i++) window.__emit('shield:event', { time: '2026-11-04T10:01:0' + i + 'Z', action: 'audit', pid: 900 + i, comm: 'prompt', exe: '/usr/bin/prompt', rule: 'grp', inode: 1 }); });
+await page.fill('#ev-q', 'grp');
+await page.waitForTimeout(100);
+const flatRows = await page.evaluate(() => document.querySelectorAll('#ev-body table tr').length);
+await page.click('#ev-group');
+await page.waitForTimeout(100);
+const grpTxt = await page.textContent('#ev-body table');
+const grpRows = await page.evaluate(() => document.querySelectorAll('#ev-body table tr').length);
+check('eventi: "raggruppa" unisce le righe uguali e mostra ×6', flatRows === 7 && grpRows === 2 && grpTxt.includes('×6'), `piatta=${flatRows} raggruppata=${grpRows}`);
+await page.click('#ev-group'); await page.fill('#ev-q', '');
+
+// Configurazione: riepilogo, avviso di disallineamento file/demone, dialogo di conferma
+await page.evaluate(() => { window.__cfgMode = 'enforce'; });
+await page.click('#sidebar button[data-view="config"]');
+await page.waitForSelector('#m-audit');
+const cfgTxt = await page.textContent('#content');
+check('config: avviso "il file dice enforce ma il demone gira in audit"', /file dice\s*enforce/.test(cfgTxt) && /girando in\s*audit/.test(cfgTxt));
+check('config: elenca interfacce XDP, poisoning e VPN', cfgTxt.includes('Interfacce con XDP') && cfgTxt.includes('Drop poisoning') && cfgTxt.includes('VPN'));
+check('config: il file e ripiegato e copiabile', await page.evaluate(() => !!document.querySelector('details.file') && !!document.querySelector('details.file [data-copy]')));
+await page.click('#m-enforce');
+await page.waitForSelector('#dlg');
+const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
+check('conferma enforce: focus su Annulla (Invio non passa a enforce per errore)', focused === 'dlg-no', focused);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(80);
+check('conferma enforce: Esc annulla senza chiamare SetConfigMode', (await page.evaluate(() => document.getElementById('dlg') === null && window.__setModeCalls.length === 0)));
+await page.click('#m-enforce');
+await page.waitForSelector('#dlg');
+await page.click('#dlg-ok');
+await page.waitForTimeout(150);
+check('conferma enforce: OK chiama SetConfigMode("enforce")', (await page.evaluate(() => window.__setModeCalls.join(','))) === 'enforce');
+await page.evaluate(() => { window.__cfgMode = 'audit'; });
+
+// race: lettura config lenta + cambio tab subito dopo non deve sovrascrivere la pagina nuova
+await page.evaluate(() => { window.__cfgDelay = 250; });
+await page.click('#sidebar button[data-view="config"]');
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForTimeout(500);
+check('config: una lettura lenta non copre la tab aperta dopo', (await page.textContent('#view-title')) === 'Regole' && !(await page.textContent('#content')).includes('Riepilogo'));
+await page.evaluate(() => { window.__cfgDelay = 0; });
+
+// Stato: verdetto e controlli separati, regola piu attiva anche in audit
+await page.click('#sidebar button[data-view="status"]');
+await page.waitForTimeout(100);
+const stTxt = await page.textContent('#content');
+check('stato: verdetto "Protezione parziale" in audit', stTxt.includes('Protezione parziale') && stTxt.includes('audit'));
+check('stato: "Regola più attiva" non resta vuota in audit', !/Regola più attiva\s*—/.test(stTxt), stTxt.replace(/\s+/g, ' ').match(/Regola più attiva[^A-Z]{0,30}/)?.[0]);
+check('stato: sezione Controlli con Ferma e cambio modalità esplicito', stTxt.includes('Controlli') && stTxt.includes('Ferma') && /passa a enforce/.test(stTxt));
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { hook_lsm: false })));
+await page.waitForTimeout(80);
+check('stato: hook LSM spento = "Protezione non attiva"', (await page.textContent('#content')).includes('Protezione non attiva'));
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { hook_lsm: true })));
+
+// Radar: tabella compatta ordinata, niente schede
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { top_sources: [
+  { ip: '10.0.0.1', poison: 1, subnet: 0, total: 1, last_seen: '2026-11-04T10:00:00Z' },
+  { ip: '10.0.0.2', poison: 9, subnet: 0, total: 9, last_seen: '2026-11-04T10:00:00Z' },
+  { ip: '10.0.0.3', poison: 4, subnet: 0, total: 4, last_seen: '2026-11-04T10:00:00Z' } ] })));
+await page.click('#sidebar button[data-view="radar"]');
+await page.waitForTimeout(150);
+const radar = await page.evaluate(() => ({ rows: [...document.querySelectorAll('#radar-list tr[data-ip]')].map(r => r.dataset.ip), cards: document.querySelectorAll('#radar-list .rule').length, sub: document.querySelector('#content .sub').textContent }));
+check('radar: tabella ordinata per drop, senza schede', radar.rows.join(',') === '10.0.0.2,10.0.0.3,10.0.0.1' && radar.cards === 0, radar.rows.join(','));
+check('radar: riassume le reti (3 sorgenti in 1 rete 10.0.0.0/24)', radar.sub.includes('3 sorgenti in 1 rete (10.0.0.0/24)'), radar.sub);
+
+// Guida: pulsanti copia e "Da sorgente" ripiegato
+await page.click('#sidebar button[data-view="guide"]');
+await page.waitForTimeout(80);
+const gd = await page.evaluate(() => ({ copy: document.querySelectorAll('#content .code-row [data-copy]').length, srcOpen: document.querySelector('details.src').open }));
+check('guida: ogni comando ha il pulsante copia, "da sorgente" chiuso', gd.copy >= 10 && gd.srcOpen === false, JSON.stringify(gd));
 
 if (shots) {
   fs.mkdirSync(shots, { recursive: true });
