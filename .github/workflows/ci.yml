@@ -80,7 +80,7 @@ jobs:
         # Test con fanotify vero: avvio, tocco esca, massa, kill in enforce.
         # GOCACHE separata: root non deve sporcare la cache dell'utente runner.
         run: sudo -E env "PATH=$PATH" GOCACHE=/tmp/gocache-root go test -count=1 -run Root -v ./internal/canary
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -132,7 +132,7 @@ jobs:
           make package BPFTOOL="$BPFTOOL"
           dpkg-deb -I dist/zeroshield_*.deb
           dpkg-deb -c dist/zeroshield_*.deb
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zt-shield-linux-amd64
           path: |
@@ -180,7 +180,7 @@ jobs:
           echo "BPFTOOL=$(ls /usr/lib/linux-tools/*/bpftool | head -1)" >> "$GITHUB_ENV"
       - name: Pacchetto .deb (zeroshield-gui)
         run: make package-gui BPFTOOL="$BPFTOOL"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zeroshield-gui-deb
           path: dist/
