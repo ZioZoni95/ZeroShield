@@ -59,7 +59,7 @@ Ultima release pubblicata: **v0.0.3** (pre-release). `main` contiene più della 
 | Config, IPC, audit, whitelist, inotify, `netstat` | ✅ test unitari | `go test -race`, fuzz sul config, CI |
 | TUI, GUI, mock | ✅ testati | test unitari e `--dump` (TUI); test della GUI nel browser contro un demone simulato |
 | Pacchetto `.deb` | ✅ costruito, installato e rimosso | CI e prove locali |
-| Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete o un sistema veri |
+| Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh`, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
 | `setup_fido2.sh`, unit systemd | ⚠️ solo sintassi | `shellcheck`, `systemd-analyze verify` |
 
 **In pratica:** puoi guardare le interfacce con dati finti e provare XDP e canary su un kernel vero.
@@ -69,16 +69,24 @@ Ultima release pubblicata: **v0.0.3** (pre-release). `main` contiene più della 
 
 ## ⚡ Demo in 60 secondi (dati finti)
 
-Non prova la protezione (nessun kernel coinvolto): mostra le interfacce con dati inventati. Non serve root.
+Non prova la protezione (nessun kernel coinvolto): mostra le interfacce con **dati inventati**, senza root e
+senza toccare il demone vero. Il finto demone `zt-mockd` genera anche eventi e **canary finti** a intervalli
+regolari: non sono allarmi veri.
 
 ```bash
+# con il pacchetto installato
+ZT_SOCKET=/tmp/z.sock zt-mockd &
+ZT_SOCKET=/tmp/z.sock zt-gui        # oppure zt-tui: una finestra collegata al finto demone
+pkill zt-mockd                      # fine
+
+# dai sorgenti
 make build-tui build-mock
 ZT_SOCKET=/tmp/z.sock ./bin/zt-mockd &
-ZT_SOCKET=/tmp/z.sock ./bin/zt-tui          # oppure: ZT_SOCKET=/tmp/z.sock ./bin/zt-gui
+ZT_SOCKET=/tmp/z.sock ./bin/zt-tui
 ```
 
-`./bin/zt-tui --dump` stampa un'anteprima senza terminale interattivo. Il mock genera anche **canary finti**
-a intervalli regolari: non sono allarmi veri.
+`./bin/zt-tui --dump` stampa un'anteprima senza terminale interattivo. La stessa demo, con i comandi da copiare,
+è nella GUI (primo avvio, demone spento e scheda *Guida*).
 
 ---
 
@@ -241,11 +249,15 @@ tag, non cumulativa. Le versioni restano `0.0.x`; la `1.0.0` arriverà solo a pr
 sha256sum -c SHA256SUMS --ignore-missing
 sudo apt install ./zeroshield_*_amd64.deb      # server senza schermo: aggiungi --no-install-recommends
 
-sudoedit /etc/zt-shield/shield.yaml            # user: <tuo-utente>   (obbligatorio)
 sudo zt-probe -xdp-lo                          # il kernel accetta i programmi?
-sudo systemctl enable --now zt-shield          # parte in audit (profilo home)
+sudo /usr/share/zeroshield/scripts/configure_service.sh $USER home   # scrive user:/profile:, parte in audit
 zt-tui                                         # oppure zt-gui
 ```
+
+`configure_service.sh` imposta `user:` e `profile:` nel config (con una copia di sicurezza, senza perdere i
+commenti), parte **sempre in audit** e avvia il servizio del pacchetto: non copia binari né scrive un'altra
+unit. Lo stesso fa il pulsante *Installa e attiva* della GUI. A mano: `sudoedit /etc/zt-shield/shield.yaml`
+(`user:` è obbligatorio) e `sudo systemctl enable --now zt-shield`.
 
 Le librerie grafiche (GTK e WebKit) sono *consigliate*: sul desktop apt le installa; senza di esse demone e
 TUI funzionano, la GUI no. Fino a v0.0.3 la GUI era un pacchetto a parte (`zeroshield-gui`): il pacchetto
@@ -278,7 +290,7 @@ sudo SHIELD_USER=$USER ./bin/zt-shield     # prova in primo piano (profilo home 
 
 bash scripts/harden_system.sh home --dry-run    # PRIMA: mostra diff e comandi
 sudo bash scripts/harden_system.sh home         # poi, in VM: corporate | public-wifi | paranoid
-sudo bash scripts/install_service.sh $USER home # servizio systemd
+sudo bash scripts/install_service.sh $USER home # servizio systemd (solo da sorgente; dal .deb c'è configure_service.sh)
 make package                                    # dist/zeroshield_<versione>_<arch>.deb (demone + TUI + GUI)
 ```
 
@@ -308,7 +320,7 @@ sanificato nel demone (`ipc.SafeText`) prima di raggiungere TUI e GUI.
 |---|---|
 | `zt-shield` | Il demone (`sudo zt-shield` o servizio). Sottocomandi: `ctl ping\|rescan`, `dropin` (drop-in systemd per il canary) |
 | `zt-tui` | Terminale con sei schede (Stato, Eventi, Regole, Rete, Radar, Config), filtro eventi, azioni (`i` installa, `s` avvia, `X` ferma, `m` mode, `R` rescan) e `--dump` |
-| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar, regole, rete e VPN, configurazione con cambio audit/enforce, guida e primo avvio. Scorciatoie `1`-`7` |
+| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, regole, rete e VPN, configurazione con cambio audit/enforce, guida a schede e primo avvio con controlli preliminari. Scorciatoie `1`-`7` |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF |
 | `zt-probe` | Collaudo del kernel: verifier per programma e, con `-xdp-lo`, XDP su loopback |
 
@@ -321,7 +333,7 @@ decisioni di design in [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md).
 
 ```bash
 make test           # Go: unitari, nessun privilegio
-make test-scripts   # script con comandi finti + kill-switch in un network namespace (sudo)
+make test-scripts   # script con comandi finti (VPN, Proton, configure_service, hardening) + kill-switch in un namespace (sudo)
 make test-root      # canary con fanotify reale + parser XDP e loader con BPF_PROG_TEST_RUN (sudo)
 make probe          # il kernel accetta i programmi eBPF? (sudo)
 make check          # prerequisiti + lint + test + build
