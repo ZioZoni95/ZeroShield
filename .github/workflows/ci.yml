@@ -67,6 +67,7 @@ jobs:
         run: |
           bash scripts/test_nm_vpn.sh
           bash scripts/test_proton.sh
+          bash scripts/test_configure.sh
           bash scripts/test_harden.sh
       - name: Kill-switch (network namespace usa e getta, root)
         # Gira in un namespace: non tocca la rete del runner.
@@ -178,7 +179,7 @@ jobs:
           dpkg-deb -I dist/zeroshield_*.deb
           dpkg-deb -c dist/zeroshield_*.deb
           # Deve contenere demone, TUI e GUI, e sostituire il vecchio pacchetto a parte.
-          for f in /usr/sbin/zt-shield /usr/bin/zt-tui /usr/bin/zt-gui /usr/share/applications/zeroshield.desktop; do
+          for f in /usr/sbin/zt-shield /usr/bin/zt-tui /usr/bin/zt-gui /usr/share/applications/zeroshield.desktop /usr/share/zeroshield/scripts/configure_service.sh; do
             dpkg-deb -c dist/zeroshield_*.deb | grep -q " \.$f\$" || { echo "manca $f nel .deb"; exit 1; }
           done
           dpkg-deb -f dist/zeroshield_*.deb Replaces | grep -q zeroshield-gui

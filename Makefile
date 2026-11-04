@@ -98,6 +98,7 @@ test:
 test-scripts:
 	bash scripts/test_nm_vpn.sh
 	bash scripts/test_proton.sh
+	bash scripts/test_configure.sh
 	sudo bash scripts/test_harden.sh
 	sudo bash scripts/test_killswitch.sh
 
