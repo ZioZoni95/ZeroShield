@@ -6,7 +6,7 @@
 # incorporato nel binario Go, quindi `go build` da solo produce un eseguibile
 # che non contiene i programmi kernel.
 
-.PHONY: all deps vmlinux generate build build-tui build-mock build-probe probe gui gui-bin test test-root test-scripts lint check package clean
+.PHONY: all deps vmlinux generate build build-tui build-tray build-mock build-probe probe gui gui-bin test test-root test-scripts lint check package clean
 
 # Versione nei binari e nei pacchetti: dal tag git (v0.1.0 -> 0.1.0), altrimenti
 # 0.0.0~dev+<commit> (il ~ ordina le dev prima di qualsiasi release in dpkg).
@@ -56,6 +56,10 @@ build: generate build-tui
 build-tui:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/zt-tui ./cmd/zt-tui
 
+# Icona nella barra di sistema: pura Go (D-Bus), nessuna libreria grafica.
+build-tray:
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/zt-tray ./cmd/zt-tray
+
 # Probe: carica ogni programma eBPF da solo e prova XDP su loopback, senza
 # avviare il demone. Primo passo su una macchina nuova (vedi docs/TEST_SANDBOX.md).
 build-probe: generate
@@ -84,7 +88,7 @@ gui-bin:
 # Pacchetto .deb UNICO in dist/ (nfpm): demone, TUI, GUI, probe, mock, script. Serve la
 # toolchain di `make build` piu' quella della GUI (Node, libgtk-3-dev, libwebkit2gtk-4.1-dev).
 # Installazione: sudo apt install ./dist/zeroshield_*.deb
-package: build build-probe build-mock gui-bin
+package: build build-tray build-probe build-mock gui-bin
 	mkdir -p dist
 	VERSION="$(VERSION)" ARCH="$(ARCH)" $(NFPM) package --config packaging/nfpm.yaml --packager deb --target dist/
 

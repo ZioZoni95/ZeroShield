@@ -5,6 +5,7 @@ go 1.26.2
 toolchain go1.26.8
 
 require (
+	fyne.io/systray v1.12.2
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/cilium/ebpf v0.22.0

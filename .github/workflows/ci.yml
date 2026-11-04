@@ -36,9 +36,9 @@ jobs:
           if [ -n "$out" ]; then echo "File non formattati:"; echo "$out"; exit 1; fi
       - name: go vet (senza stub eBPF)
         # cmd/zt-shield richiede gli stub bpf2go: lo copre il job ebpf.
-        run: go vet ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
+        run: go vet ./cmd/zt-tui ./cmd/zt-tray ./cmd/zt-mockd ./pkg/... ./internal/...
       - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./cmd/zt-tui ./cmd/zt-tray ./cmd/zt-mockd ./pkg/... ./internal/...
       - name: shellcheck
         run: shellcheck -S warning scripts/*.sh
 
@@ -55,7 +55,7 @@ jobs:
           check-latest: true
       - name: go test -race
         # Nessun test richiede root o kernel: quelli stanno in docs/TESTING.md.
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./cmd/zt-tui ./cmd/zt-mockd ./internal/... ./pkg/...
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./cmd/zt-tui ./cmd/zt-tray ./cmd/zt-mockd ./internal/... ./pkg/...
       - name: Riepilogo coverage
         run: go tool cover -func=coverage.out | tail -1 | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Fuzz smoke (config)
@@ -112,6 +112,7 @@ jobs:
         run: |
           go build -trimpath -o bin/zt-shield ./cmd/zt-shield
           go build -trimpath -o bin/zt-tui ./cmd/zt-tui
+          go build -trimpath -o bin/zt-tray ./cmd/zt-tray
           go build -trimpath -o bin/zt-mockd ./cmd/zt-mockd
           go build -trimpath -o bin/zt-probe ./cmd/zt-probe
       - name: Kernel reale (zt-probe)
@@ -179,7 +180,7 @@ jobs:
           dpkg-deb -I dist/zeroshield_*.deb
           dpkg-deb -c dist/zeroshield_*.deb
           # Deve contenere demone, TUI e GUI, e sostituire il vecchio pacchetto a parte.
-          for f in /usr/sbin/zt-shield /usr/bin/zt-tui /usr/bin/zt-gui /usr/share/applications/zeroshield.desktop /usr/share/zeroshield/scripts/configure_service.sh; do
+          for f in /usr/sbin/zt-shield /usr/bin/zt-tui /usr/bin/zt-tray /etc/xdg/autostart/zeroshield-tray.desktop /usr/bin/zt-gui /usr/share/applications/zeroshield.desktop /usr/share/zeroshield/scripts/configure_service.sh; do
             dpkg-deb -c dist/zeroshield_*.deb | grep -q " \.$f\$" || { echo "manca $f nel .deb"; exit 1; }
           done
           dpkg-deb -f dist/zeroshield_*.deb Replaces | grep -q zeroshield-gui
@@ -208,11 +209,11 @@ jobs:
           check-latest: true
       - name: govulncheck (modulo principale)
         # Bloccante: una CVE raggiungibile nelle dipendenze ferma la pipeline.
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./cmd/zt-tui ./cmd/zt-tray ./cmd/zt-mockd ./pkg/... ./internal/...
       - name: gosec (SARIF)
         # Non bloccante: ha falsi positivi noti (G115 sui layout kernel, G302 sul
         # socket 0666 voluto). I risultati vanno in Security > Code scanning.
-        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 -no-fail -exclude-generated -fmt sarif -out gosec.sarif ./cmd/zt-tui ./cmd/zt-mockd ./pkg/... ./internal/...
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 -no-fail -exclude-generated -fmt sarif -out gosec.sarif ./cmd/zt-tui ./cmd/zt-tray ./cmd/zt-mockd ./pkg/... ./internal/...
       - uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('gosec.sarif') != ''
         with:
