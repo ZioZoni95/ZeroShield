@@ -31,6 +31,10 @@ export function ServiceInstallAs(arg1:string,arg2:string):Promise<void>;
 
 export function ServiceStart():Promise<void>;
 
+export function BootEnabled():Promise<boolean>;
+
+export function SetBootEnabled(arg1:boolean):Promise<void>;
+
 export function ServiceState():Promise<string>;
 
 export function ServiceStop():Promise<void>;

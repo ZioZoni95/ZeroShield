@@ -56,6 +56,33 @@ func elevator() (string, error) {
 	return "", fmt.Errorf("pkexec assente: esegui nel terminale: sudo systemctl enable --now %s", Unit)
 }
 
+// BootEnabled dice se il demone parte da solo all'accensione (systemctl is-enabled). Non
+// serve root. "static"/"masked"/errore contano come no: l'utente non lo ha attivato.
+func BootEnabled() bool {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return false
+	}
+	out, _ := exec.Command("systemctl", "is-enabled", Unit).Output()
+	return strings.TrimSpace(string(out)) == "enabled"
+}
+
+// SetBootEnabled abilita o disabilita l'avvio all'accensione SENZA avviare o fermare il demone
+// adesso (niente --now): cambia solo cosa succede al prossimo boot. Via pkexec.
+func SetBootEnabled(on bool) error {
+	el, err := elevator()
+	if err != nil {
+		return err
+	}
+	verb := "disable"
+	if on {
+		verb = "enable"
+	}
+	if out, err := exec.Command(el, "systemctl", verb, Unit).CombinedOutput(); err != nil {
+		return fmt.Errorf("%s fallito: %s", verb, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // Start abilita+avvia il servizio (chiede auth di sistema via pkexec).
 func Start() error {
 	el, err := elevator()

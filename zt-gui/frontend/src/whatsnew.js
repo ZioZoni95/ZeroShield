@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.11': {
+        title: 'Novità della versione 0.0.11',
+        items: [
+            ['Avvio all\'accensione', 'In Configurazione c\'è un interruttore: il demone parte da solo a ogni accensione. Se avevi già configurato ZeroShield, l\'aggiornamento lo attiva da solo e riavvia il demone col programma nuovo.'],
+            ['Icona più affidabile', 'L\'icona nella barra si rinfresca ogni 30 secondi: non resta più invisibile se la barra la registra in ritardo.'],
+        ],
+        note: 'Se prima eri alla 0.0.10 non serve altro: dopo l\'aggiornamento il demone si riavvia da solo.',
+    },
     '0.0.10': {
         title: 'Novità della versione 0.0.10',
         items: [

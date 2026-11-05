@@ -6,10 +6,16 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.11] — 2026-11-05
+
+- **Avvio all'accensione**: interruttore in Configurazione (`systemctl enable/disable zt-shield` via pkexec, senza avviare/fermare adesso; spegnerlo chiede conferma).
+- Il pacchetto, se `/etc/zt-shield/shield.yaml` ha già `user:`, abilita il demone all'avvio e lo riavvia (`try-restart`) dopo l'aggiornamento. Su una prima installazione non fa nulla (senza `user:` il demone si fermerebbe).
+- Icona nella barra: reimpostata ogni 30 s anche a stato invariato (restava invisibile dopo due riavvii ravvicinati).
+- Regole → guida: in enforce anche il passo 3 «Blocca» risulta completato (prima restava «in corso») e la guida si aggiorna al cambio di modalità.
+
 ## [0.0.10] — 2026-11-05
 
 - Icona nella barra: **blu** in enforce con hook attivo (prima verde), arancione in audit. Dopo `apt install` riavvia l'icona: `systemctl --user restart zeroshield-tray`.
-- Icona nella barra: viene reimpostata ogni 30 s anche a stato invariato, così non resta invisibile se la barra la registra in ritardo (visto dopo due riavvii ravvicinati).
 
 ## [0.0.9] — 2026-11-05
 

@@ -58,6 +58,14 @@ export function ServiceStart() {
   return window['go']['main']['App']['ServiceStart']();
 }
 
+export function BootEnabled() {
+  return window['go']['main']['App']['BootEnabled']();
+}
+
+export function SetBootEnabled(arg1) {
+  return window['go']['main']['App']['SetBootEnabled'](arg1);
+}
+
 export function ServiceState() {
   return window['go']['main']['App']['ServiceState']();
 }

@@ -1,14 +1,21 @@
 #!/bin/sh
 # Copyright (c) 2026 ZioZoni95
 # SPDX-License-Identifier: MIT
-# Non abilita ne' avvia il servizio: senza `user:` nel config e senza `bpf` tra
-# gli LSM attivi il demone si fermerebbe (fail-closed). Lo fa l'amministratore.
+# Prima installazione: non abilita ne' avvia il servizio, perche' senza `user:` nel config
+# (e senza `bpf` tra gli LSM attivi) il demone si fermerebbe (fail-closed): lo fa l'utente con
+# configure_service.sh o dalla GUI. Se invece il config ha gia' `user:` (aggiornamento di un
+# sistema configurato) il demone viene abilitato all'avvio e, se gira, riavviato col binario nuovo.
 set -e
 # Solo se systemd e' l'init (non in container/chroot): niente errori spuri.
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
     # Icona di stato: abilitata per tutti gli utenti (symlink in /usr/lib/systemd/user/...wants).
     systemctl --global enable zeroshield-tray.service >/dev/null 2>&1 || true
+    # Demone: solo se l'amministratore l'ha gia' configurato (riga `user:` non commentata e non vuota).
+    if grep -Eq '^user:[[:space:]]*[^[:space:]#]' /etc/zt-shield/shield.yaml 2>/dev/null; then
+        systemctl enable zt-shield.service >/dev/null 2>&1 || true
+        systemctl try-restart zt-shield.service >/dev/null 2>&1 || true
+    fi
     # Chi ha gia' una sessione grafica aperta la ottiene subito; chi aveva la versione vecchia la
     # vede riavviata con il binario nuovo (un processo gia' in corso userebbe ancora il vecchio).
     # Best effort: niente deve far fallire l'installazione.

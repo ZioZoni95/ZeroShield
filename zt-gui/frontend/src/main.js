@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
 import {statusHtml} from './statuspage.js';
 import {createIfaceView} from './ifaces.js';
@@ -280,6 +280,8 @@ async function renderConfig() {
     if (txt === undefined) txt = '(config non leggibile da questa build)';
     let fileMode = '';
     try { fileMode = await bound(ConfigMode, ); } catch (_) {}
+    let boot = null; // null = questa build non lo sa dire
+    try { const b = await bound(BootEnabled, ); if (typeof b === 'boolean') boot = b; } catch (_) {}
     // Le due letture sono asincrone: se nel frattempo si e' cambiata tab, non
     // sovrascrivere la pagina nuova con questa.
     if (view !== 'config' || !status) return;
@@ -294,6 +296,8 @@ async function renderConfig() {
     <div class="panel">
       ${kv('Modalità', `<div class="seg" role="group" aria-label="Modalità"><button class="seg-b${running === 'audit' ? ' on' : ''}" id="m-audit">Audit · logga</button><button class="seg-b${running === 'enforce' ? ' on enf' : ''}" id="m-enforce">Enforce · blocca</button></div>`,
         'Audit registra senza negare nulla, enforce nega davvero. Il cambio riavvia il servizio.')}
+      ${boot === null ? '' : kv('Avvio all\'accensione', `<button class="chip${boot ? ' on' : ''}" id="boot-toggle" aria-pressed="${boot}">${boot ? '● Attivo' : '○ Spento'}</button>`,
+        boot ? 'Il demone parte da solo a ogni accensione. Spegnerlo lascia il PC senza protezione finché non lo avvii tu.' : 'Il demone NON parte da solo: dopo un riavvio il PC resta senza protezione. Attivalo per avviarlo a ogni accensione.')}
       ${kv('Profilo', `<b>${esc(status.profile)}</b>`, 'Sceglie le regole di base. Si cambia nel file (<span class="mono">profile:</span>).')}
       ${kv('Utente protetto', `<span class="mono">${esc(status.home)}</span>`, 'La home di cui il demone difende i segreti (<span class="mono">user:</span>).')}
       ${kv('Regole', `<b>${(status.rules || []).length}</b> gruppi · ${status.protected} file · ${status.allowed} binari`, `<button class="linklike" data-go="rules">vedi le regole →</button>`)}
@@ -311,6 +315,17 @@ async function renderConfig() {
     <details class="file"><summary>Mostra il file <span class="mono">shield.yaml</span></summary>
       <div class="file-bar"><button class="copy" data-copy="${esc(txt)}">copia contenuto</button><span class="sub">modifica con: </span><code>sudoedit /etc/zt-shield/shield.yaml</code></div>
       <pre>${esc(txt)}</pre></details>`;
+    const bt = document.getElementById('boot-toggle');
+    if (bt) bt.onclick = async () => {
+        const want = !boot;
+        if (!want && !await confirmDialog({title: 'Spegnere l\'avvio all\'accensione?', body: 'Dopo il prossimo riavvio il PC resterà <b>senza protezione</b> finché non avvii tu il demone.', ok: 'Spegni', danger: true})) return;
+        bt.textContent = '…';
+        try {
+            if (await bound(SetBootEnabled, want) === undefined) toast('Non supportato in questa build', true);
+            else toast(want ? 'Il demone partirà a ogni accensione' : 'Avvio all\'accensione spento', !want);
+        } catch (e) { toast('Non riuscito: ' + (e.message || e), true); }
+        renderConfig();
+    };
     const target = m => () => { if (!(m === running && !mismatch)) switchMode(m); };
     const ba = document.getElementById('m-audit');
     if (ba) ba.onclick = target('audit');
