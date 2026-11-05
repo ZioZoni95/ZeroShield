@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.7': {
+        title: 'Novità della versione 0.0.7',
+        items: [
+            ['Scegli le interfacce da proteggere', 'Nella scheda Rete vedi cavo, USB, Wi-Fi e VPN, quali sono filtrate e quali no, e scegli tu: anche il Wi-Fi spento ora, così è già coperto quando lo accendi.'],
+            ['Meno avvisi inutili', 'Il log non elenca più decine di interfacce di container e bridge: ti avvisa solo se una rete fisica o una VPN è accesa e non filtrata.'],
+        ],
+        note: 'La scelta delle interfacce richiede il demone nuovo: dopo l\'aggiornamento riavvia il servizio.',
+    },
     '0.0.6': {
         title: 'Novità della versione 0.0.6',
         items: [

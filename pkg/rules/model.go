@@ -121,9 +121,12 @@ type Model struct {
 	Choice  Choice       `json:"choice"`
 	Manual  bool         `json:"manual"` // scelte scritte a mano: la GUI non le modifica
 	// ManualRules: extra_rules scritte a mano: «Proteggi un mio file» resta spento (stessa chiave due volte).
-	ManualRules bool   `json:"manual_rules"`
-	GlobalMode  string `json:"global_mode"` // audit | enforce
-	Error       string `json:"error"`
+	ManualRules bool `json:"manual_rules"`
+	// ManualInterface: `interface` scritta a mano (BaseInterface ne e' il valore): la scelta dalla GUI e' spenta.
+	ManualInterface bool   `json:"manual_interface"`
+	BaseInterface   string `json:"base_interface"`
+	GlobalMode      string `json:"global_mode"` // audit | enforce
+	Error           string `json:"error"`
 }
 
 // BuildModel costruisce il modello dal testo del config. Non scrive nulla.
@@ -149,6 +152,8 @@ func BuildModel(cfgText, home string) Model {
 	}
 	m.Profile, m.GlobalMode = cfg.Profile, cfg.Mode
 	m.ManualRules = ManualExtraRules(cfgText)
+	m.ManualInterface = ManualInterface(cfgText)
+	m.BaseInterface = cfg.Interface
 	byName := map[string]config.Rule{}
 	for _, r := range cfg.AllRules() {
 		byName[r.Name] = r

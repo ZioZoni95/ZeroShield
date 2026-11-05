@@ -93,9 +93,8 @@ finestra di rescan, preset `glab`.
   Configurazione mostra un riepilogo e il file e si cambia solo `mode`. Un editor a campi (interfaccia, subnet, canary, VPN) con validazione e anteprima
   della differenza richiede scritture sul canale privilegiato (`internal/priv` + polkit): da fare
   con il collaudo in VM, non prima.
-- [ ] **GUI/IPC, interfacce non coperte**: il demone scrive nel journal «interfaccia X UP ma NON
-  coperta da XDP», la GUI no. Serve un campo nuovo in `ipc.Status` (elenco interfacce UP e se
-  coperte) per mostrarlo in Rete e Configurazione.
+- [x] ~~**GUI/IPC, interfacce non coperte**~~ — `ipc.Status.interfaces` e la scelta nella scheda Rete (0.0.7). Resta il **seguire a caldo**: se colleghi un adattatore USB o accendi il
+  Wi-Fi mentre il servizio gira, il filtro non si aggancia da solo; serve riavviare (la GUI lo segnala con «accesa ma non filtrata», ma non lo risolve).
 - [x] ~~**GUI, audit → enforce**: azione «autorizza questo exe»~~ — nella scheda Regole, «Visti da quando hai aperto la finestra» con *Autorizza*, *Rendi affidabile* e l'indicatore di prontezza per Blocca.
 - [ ] **Radar, richieste contro risposte**: la mappa del kernel conta solo `poison` per IP. XDP scarta
   sia le richieste degli altri host (porta di destinazione 5355/5353/137/138, sottofondo normale) sia le
@@ -103,7 +102,7 @@ finestra di rescan, preset `glab`.
   classifica con euristiche dichiarate (tasso, volume, rete). Per un verdetto vero servono due contatori
   separati (richieste/risposte) e il protocollo, cioè una modifica a `bpf/zerotrust.c`, alla mappa e a
   `ipc.SourceStat`, da collaudare in VM.
-- [x] ~~**Journal, rumore**: «binario Y non risolto» a ogni rescan~~ — ora escono una volta per binario all'avvio (18 righe in 15 minuti = 3 avvii, non una ogni 30 s). Restano i 15 avvisi «interfaccia X UP ma NON coperta da XDP» a ogni avvio (veth, docker, ppp0...): rumorosi su un PC con container.
+- [x] ~~**Journal, rumore**: «binario Y non risolto» a ogni rescan~~ — ora escono una volta per binario all'avvio (18 righe in 15 minuti = 3 avvii, non una ogni 30 s). Gli avvisi sulle interfacce ora sono uno per ogni rete fisica o VPN non filtrata, più una riga riassuntiva per i container (0.0.7).
 - [ ] **`configure_service.sh` da provare con un `.deb` vero in un'installazione pulita**: il pacchetto installato con `apt` funziona (servizio dalla unit
   del pacchetto, aggiornamenti 0.0.4 → 0.0.6), ma lo script con utente/profilo/dropin del canary e il fallimento se `bpf` manca non sono stati
   eseguiti su una macchina nuova, né dalla GUI con `pkexec`.

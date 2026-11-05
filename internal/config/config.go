@@ -98,6 +98,26 @@ type VpnConfig struct {
 // Vieta spazi, punto e virgola e slash: il nome finisce in comandi e regole nft.
 var ifaceNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
 
+// validateInterfaces: `interface` e' una lista csv di nomi. Un nome strano finirebbe in log e comandi, e un
+// duplicato proverebbe ad agganciare due volte lo stesso programma alla stessa interfaccia.
+func validateInterfaces(list string) error {
+	seen := map[string]bool{}
+	for _, n := range strings.Split(list, ",") {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if !ifaceNameRe.MatchString(n) {
+			return fmt.Errorf("interface: %q non e' un nome di interfaccia valido (1-15 caratteri tra lettere, cifre, _ . -)", n)
+		}
+		if seen[n] {
+			return fmt.Errorf("interface: %q compare due volte", n)
+		}
+		seen[n] = true
+	}
+	return nil
+}
+
 // validateVpn: rifiuta qui, con un messaggio chiaro, cio' che lo script rifiuterebbe
 // a meta' applicazione. Con il kill-switch un valore sbagliato significa rete morta.
 func validateVpn(v VpnConfig) error {
@@ -526,6 +546,9 @@ func (c *Config) Validate() error {
 	// Sotto i 5 secondi il rescan diventa un busy-loop di Put su mappe grandi.
 	if c.RescanSeconds < 5 {
 		return fmt.Errorf("rescan_seconds deve essere >= 5")
+	}
+	if err := validateInterfaces(c.Interface); err != nil {
+		return err
 	}
 	if c.Canary.Enabled {
 		// Default sensati se abilitato ma non dettagliato: Documents + 3 esche.

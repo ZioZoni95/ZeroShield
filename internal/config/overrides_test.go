@@ -215,3 +215,16 @@ func TestRuleModeInExtraRulesAndLimits(t *testing.T) {
 		t.Errorf("limite regole: %v", err)
 	}
 }
+
+func TestInterfaceListValidation(t *testing.T) {
+	for _, ok := range []string{"", "eth0", "enx00e04c478980,wlp1s0", " eth0 , wlan0 ", "lo"} {
+		if _, err := loadText(t, "interface: \""+ok+"\"\n"); err != nil {
+			t.Errorf("%q doveva passare: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"eth0,eth0", "eth 0", "eth0;rm", "a/b", "nome-troppo-lungo-xxxxxxxx", "eth0,$(id)"} {
+		if _, err := loadText(t, "interface: \""+bad+"\"\n"); err == nil {
+			t.Errorf("%q doveva essere rifiutato", bad)
+		}
+	}
+}

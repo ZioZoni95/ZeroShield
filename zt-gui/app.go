@@ -214,7 +214,33 @@ func (a *App) ApplyRules(c rules.Choice) error {
 	if _, err := os.Stat(svc.ConfigPath); err != nil {
 		return fmt.Errorf("config di sistema assente: installa prima il servizio")
 	}
+	// La scelta delle interfacce non e' di questa schermata: si conserva quella gia' salvata.
+	if have, perr := rules.Parse(cur); perr == nil {
+		c.Interface = have.Interface
+	}
 	next, err := rules.Apply(cur, c)
+	if err != nil {
+		return err
+	}
+	if err := rules.Validate(next); err != nil {
+		return fmt.Errorf("il demone rifiuterebbe questa configurazione: %w", err)
+	}
+	return svc.ApplyConfig(next)
+}
+
+// ApplyInterfaces salva le interfacce su cui filtrare (vuoto = automatica) e riavvia il servizio (auth di
+// sistema). Le altre scelte (regole, modalita') restano com'erano.
+func (a *App) ApplyInterfaces(names []string) error {
+	cur := svc.ReadConfig()
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	have, err := rules.Parse(cur)
+	if err != nil {
+		return err
+	}
+	have.Interface = strings.Join(names, ",")
+	next, err := rules.Apply(cur, have)
 	if err != nil {
 		return err
 	}

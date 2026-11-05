@@ -1,8 +1,9 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
 import {statusHtml} from './statuspage.js';
+import {createIfaceView} from './ifaces.js';
 import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
@@ -649,6 +650,19 @@ const rulesView = createRulesView({
 });
 function renderRules(force) { return rulesView.render(force); }
 
+// Scelta delle interfacce (stessa idea di Regole: bozza in un modulo, «Applica» scrive il config).
+const ifaceView = createIfaceView({
+    esc, api: {RulesModel, ApplyInterfaces},
+    getStatus: () => status, confirmDialog, toast,
+    repaint: () => { if (view === 'net') paintIfaces(); },
+});
+function paintIfaces() {
+    const box = document.getElementById('if-box');
+    if (!box) return;
+    box.innerHTML = ifaceView.html();
+    ifaceView.bind(box);
+}
+
 // --- Radar: spazzata canvas con scia + alone + tooltip (dati eBPF) ---
 let radarRAF = 0;
 let radarAngle = 0;
@@ -1068,10 +1082,13 @@ function renderNet() {
     ${sec('VPN')}${vpnPanel(status.vpn || {})}
     ${sec('Filtro XDP')}
     <div class="panel">
-      ${kv('Interfacce coperte', xdp.length ? xdp.map(x => `<span class="mono">${esc(x)}</span>`).join(', ') : '<span class="dot-off">nessuna: XDP spento</span>', 'Le altre interfacce attive non sono filtrate (vedi <span class="mono">interface:</span> in Configurazione).')}
+      ${kv('Interfacce coperte', xdp.length ? xdp.map(x => `<span class="mono">${esc(x)}</span>`).join(', ') : '<span class="dot-off">nessuna: XDP spento</span>', 'Le altre interfacce attive non sono filtrate: scegli quali qui sotto, in «Interfacce filtrate».')}
       ${kv('Drop poisoning', status.block_poisoning ? '<span class="dot-ok">●</span> attivo' : '<span class="dot-off">●</span> spento', 'LLMNR, mDNS, NetBIOS. Dettaglio per IP nel tab Radar.')}
       ${kv('Subnet bloccate', subs.length ? subs.map(c => `<span class="mono">${esc(c)}</span>`).join(', ') : 'nessuna', subs.length ? 'Il drop scarta anche le risposte da queste reti: mai gateway/DNS.' : 'Solo drop poisoning + UFW.')}
-    </div>` + renderListening();
+    </div>
+    <div id="if-box"></div>` + renderListening();
+    ifaceView.ensureLoaded();
+    paintIfaces();
 }
 
 // Porte in ascolto (TCP e UDP: mDNS/LLMNR sono la superficie che XDP difende).

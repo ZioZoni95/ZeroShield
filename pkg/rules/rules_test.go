@@ -258,3 +258,43 @@ func TestPreview(t *testing.T) {
 		t.Errorf("symlink seguito: %+v", r5)
 	}
 }
+
+func TestInterfaceChoice(t *testing.T) {
+	txt := "profile: home\nuser: alice\n"
+	out, err := Apply(txt, Choice{Interface: "enx00e04c478980, wlp1s0 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(out); err != nil {
+		t.Fatalf("il demone accetterebbe? %v\n%s", err, out)
+	}
+	got, _ := Parse(out)
+	if got.Interface != "enx00e04c478980,wlp1s0" {
+		t.Fatalf("normalizzata (spazi tolti): %q", got.Interface)
+	}
+	m := BuildModel(out, t.TempDir())
+	if m.Choice.Interface != "enx00e04c478980,wlp1s0" || m.ManualInterface {
+		t.Fatalf("modello: %+v", m)
+	}
+	// Automatica: la scelta vuota toglie il blocco.
+	back, _ := Apply(out, Choice{})
+	if strings.Contains(back, "interface") {
+		t.Errorf("l'automatica deve togliere la chiave:\n%s", back)
+	}
+	for _, bad := range []string{"eth 0", "a;b", "x/y", "troppolungoxxxxxxxxx", "eth0,eth0"} {
+		if _, err := Apply(txt, Choice{Interface: bad}); err == nil {
+			t.Errorf("%q doveva essere rifiutato", bad)
+		}
+	}
+	// `interface` a mano: la GUI non la sovrascrive, ma il resto resta modificabile.
+	manual := txt + "interface: \"eth0,lo\"\n"
+	if _, err := Apply(manual, Choice{Interface: "wlan0"}); !errors.Is(err, ErrManualInterface) {
+		t.Errorf("interface a mano: %v", err)
+	}
+	if _, err := Apply(manual, Choice{DisableRules: []string{"gpg-keys"}}); err != nil {
+		t.Errorf("il resto della GUI deve funzionare: %v", err)
+	}
+	if mm := BuildModel(manual, t.TempDir()); !mm.ManualInterface || mm.BaseInterface != "eth0,lo" || mm.Manual {
+		t.Errorf("modello con interface a mano: %+v", mm)
+	}
+}
