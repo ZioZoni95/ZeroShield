@@ -661,20 +661,111 @@ function hashIP(ip) {
     return ((h >>> 0) % 360) * Math.PI / 180;
 }
 
-// Guida lettura: posizione fissa per IP, distanza logaritmica dai drop,
-// colore per motivo dominante. La spazzata è solo eye-candy.
-const RADAR_GUIDE = `<div id="radar-legend"><h4>Come leggerlo</h4><ul>
-<li><b>Posizione</b> dell'IP fissa (hash): ritrovi sempre lo stesso host nello stesso punto.</li>
-<li><b>Distanza dal centro</b> = quanti drop (scala logaritmica: 1 si vede, 1000 non esplode).</li>
-<li><b>Rosso</b> = subnet bloccate, <b>ambra</b> = poisoning (LLMNR/mDNS/NetBIOS). <b>Alone</b> ∝ volume.</li>
-<li>Il kernel conta i drop per IP ma <b>non distingue il protocollo</b>.</li>
-<li><b>Spazzata blu</b> solo animazione: i dati sono kernel, non dipendono da lei.</li>
-<li>Passa il mouse sui blip: si evidenzia la riga in tabella.</li></ul></div>`;
+// --- Radar: quali sorgenti sono sottofondo di rete e quali vanno guardate ---
+//
+// XDP scarta LLMNR/mDNS/NetBIOS in ingresso e conta i drop per IP. Il contatore non sa se il
+// pacchetto era una RICHIESTA di un altro host (normale in una LAN: Windows, stampanti, Avahi)
+// o una RISPOSTA avvelenata (Responder/Inveigh). Quindi la GUI non puo' dire "attacco": dice
+// "rumore probabile" o "da verificare" con regole semplici e dichiarate, e lascia all'utente la
+// conferma (comandi per verificare, "segna come noto").
+const RADAR_BURST_PER_MIN = 20; // drop/min sostenuti da un solo IP
+const RADAR_HIGH_TOTAL = 100;   // drop cumulati da un solo IP dall'avvio del demone
+const RADAR_CLS = {
+    noise: {label: 'rumore probabile', col: '120,120,134'},
+    attention: {label: 'da verificare', col: '224,138,0'},
+    blocked: {label: 'bloccata', col: '215,0,21'},
+    known: {label: 'nota', col: '29,129,39'},
+};
+
+// Storico dei contatori per IP, per stimare il tasso. Si usa l'orario del demone (status.time),
+// non quello della GUI: cosi' la stima non dipende da quando si e' aperta la finestra.
+const radarHist = new Map(); // ip -> [{t, total}]
+function recordRadar(st) {
+    const src = (st && (st.top_sources || st.topSources)) || [];
+    const t = Date.parse(st && st.time) || Date.now();
+    src.forEach(s => {
+        const ip = s.ip || s.IP || '';
+        const total = s.total || s.Total || 0;
+        let h = radarHist.get(ip);
+        if (!h) { h = []; radarHist.set(ip, h); }
+        if (h.length && total < h[h.length - 1].total) h.length = 0; // contatori ripartiti (demone riavviato)
+        if (!h.length || t > h[h.length - 1].t) h.push({t, total});
+        while (h.length > 1 && t - h[0].t > 10 * 60000) h.shift();
+    });
+}
+// Drop al minuto osservati dalla GUI; null finche' non c'e' almeno un minuto di storico.
+function srcRate(ip) {
+    const h = radarHist.get(ip);
+    if (!h || h.length < 2) return null;
+    const dt = (h[h.length - 1].t - h[0].t) / 60000;
+    return dt < 1 ? null : Math.max(0, (h[h.length - 1].total - h[0].total) / dt);
+}
+
+// Host che l'utente ha riconosciuto: preferenza per-utente, quindi localStorage (se manca, in memoria).
+let knownMem = null;
+function knownSet() {
+    if (knownMem) return knownMem;
+    try { knownMem = new Set(JSON.parse(localStorage.getItem('zs-radar-known') || '[]')); }
+    catch (_) { knownMem = new Set(); }
+    return knownMem;
+}
+function toggleKnown(ip) {
+    const k = knownSet();
+    if (k.has(ip)) k.delete(ip); else k.add(ip);
+    try { localStorage.setItem('zs-radar-known', JSON.stringify([...k])); } catch (_) {}
+}
 
 // Rete /24 di un IPv4 (per riassumere "11 sorgenti, tutte nella stessa rete").
 function net24(ip) {
     const m = String(ip).match(/^(\d+\.\d+\.\d+)\.\d+$/);
     return m ? m[1] + '.0/24' : ip;
+}
+// Rete in cui cade la maggioranza (>= 60%) delle sorgenti: la LAN. Con meno di 3 sorgenti non si stima.
+function dominantNet(src) {
+    if (src.length < 3) return null;
+    const c = {};
+    src.forEach(s => { const n = net24(s.ip || s.IP || ''); c[n] = (c[n] || 0) + 1; });
+    const [n, k] = Object.entries(c).sort((x, y) => y[1] - x[1])[0];
+    return k / src.length >= 0.6 ? n : null;
+}
+
+function classify(s, domNet) {
+    const ip = s.ip || s.IP || '';
+    const total = s.total || s.Total || 0;
+    if (knownSet().has(ip)) return {cls: 'known', why: 'segnata da te come host noto'};
+    if ((s.subnet || s.Subnet || 0) > 0) return {cls: 'blocked', why: 'rete bloccata da una tua regola (block_subnets)'};
+    const why = [];
+    const rate = srcRate(ip);
+    if (rate !== null && rate >= RADAR_BURST_PER_MIN) why.push(`${Math.round(rate)} drop/min sostenuti`);
+    if (total >= RADAR_HIGH_TOTAL) why.push(`${total} drop in totale`);
+    if (domNet && net24(ip) !== domNet) why.push(`fuori dalla rete delle altre sorgenti (${domNet})`);
+    if (why.length) return {cls: 'attention', why: why.join(' · ')};
+    return {cls: 'noise', why: 'pochi drop, stessa rete delle altre: tipico sottofondo di una LAN'};
+}
+
+function rateText(ip) {
+    const r = srcRate(ip);
+    if (r === null) return '<span class="sub">in osservazione</span>';
+    return r < 0.5 ? '&lt;1/min' : `${r.toFixed(1)}/min`;
+}
+
+function radarLegend() {
+    const dot = c => `<span class="dotkey" style="background:rgb(${RADAR_CLS[c].col})"></span>`;
+    return `<div id="radar-legend"><h4>Come leggerlo</h4>
+    <h5>Cosa vedi</h5>
+    <p>Ogni punto è un indirizzo da cui XDP ha scartato traffico di scoperta di rete (LLMNR, mDNS, NetBIOS) <b>prima</b> che il sistema lo vedesse. Più è lontano dal centro, più pacchetti ha mandato (scala logaritmica). La posizione di un IP è sempre la stessa.</p>
+    <h5>Colori</h5>
+    <ul class="keys">
+      <li>${dot('noise')}<b>Rumore probabile</b>: pochi pacchetti, stessa rete delle altre sorgenti.</li>
+      <li>${dot('attention')}<b>Da verificare</b>: almeno ${RADAR_BURST_PER_MIN} drop/min costanti, oppure ${RADAR_HIGH_TOTAL} drop in totale, oppure una rete diversa da quella delle altre.</li>
+      <li>${dot('blocked')}<b>Bloccata</b>: rete che hai messo tu in <span class="mono">block_subnets</span>.</li>
+      <li>${dot('known')}<b>Nota</b>: host che hai segnato come riconosciuto.</li>
+    </ul>
+    <h5>Rumore o attacco?</h5>
+    <p>In una LAN host e stampanti mandano di continuo queste richieste: è sottofondo. Un attacco tipo Responder risponde alle richieste altrui e si vede come <b>una sola sorgente con molti pacchetti, in modo costante</b>, o da una rete diversa. Il contatore però <b>non distingue</b> richieste da risposte: la classificazione è una stima, non un verdetto.</p>
+    <h5>Cosa fare</h5>
+    <p>Su un punto «da verificare» usa i comandi sotto la tabella per capire chi è. Se lo riconosci, «segna come noto».</p>
+    <p class="sub" style="margin:0">Il tasso si vede dopo circa un minuto di osservazione. L'alone segue il volume; la spazzata blu è solo animazione.</p></div>`;
 }
 
 function renderRadar() {
@@ -685,12 +776,30 @@ function renderRadar() {
     const summary = src.length
         ? `${src.length} sorgenti in ${nets.size} ${nets.size === 1 ? 'rete (' + [...nets][0] + ')' : 'reti'} · droppate da XDP (dati kernel)`
         : '';
+    if (!src.length) {
+        content.innerHTML = `${h2(ICO_RADAR, 'Radar rete')}<p class="sub"></p>
+        <div class="empty"><span class="big">📡</span><b>Radar vuoto: nessun drop XDP.</b><br>Rete calma o demone appena partito. Genera poisoning in lab per vedere i blip.</div>`;
+        return;
+    }
+    const dom = dominantNet(src);
+    const classed = src.map(s => {
+        const t = s.total || s.Total || 0;
+        return Object.assign({s, ip: ipOf(s), t}, classify(s, dom));
+    });
+    const n = c => classed.filter(p => p.cls === c).length;
+    const att = n('attention');
+    const parts = [];
+    if (n('noise')) parts.push(`${n('noise')} di rumore probabile`);
+    if (n('blocked')) parts.push(`${n('blocked')} bloccate dalle tue subnet`);
+    if (n('known')) parts.push(`${n('known')} note`);
+    const title = att ? `${att} ${att === 1 ? 'sorgente da verificare' : 'sorgenti da verificare'}` : 'Nessuna sorgente da verificare';
     content.innerHTML = `${h2(ICO_RADAR, 'Radar rete')}
-    <p class="sub">${esc(summary)}</p>` +
-    (src.length
-        ? `<div id="radar-wrap"><canvas id="radar" width="360" height="360"></canvas>${RADAR_GUIDE}</div><div id="radar-list"></div>`
-        : `<div class="empty"><span class="big">📡</span><b>Radar vuoto: nessun drop XDP.</b><br>Rete calma o demone appena partito. Genera poisoning in lab per vedere i blip.</div>`);
-    if (!src.length) return;
+    <p class="sub">${esc(summary)}</p>
+    <div class="verdict ${att ? 'warn' : 'ok'}"><div class="verdict-t">${att ? '◐' : '●'} ${esc(title)}</div>
+      <ul>${parts.length ? `<li>${esc(parts.join(' · '))}</li>` : ''}
+      <li>Il kernel non distingue richieste normali da risposte avvelenate: è una stima, non un verdetto.</li></ul></div>
+    <div id="radar-wrap"><canvas id="radar" width="360" height="360"></canvas>${radarLegend()}</div>
+    <div id="radar-list"></div><div id="radar-verify"></div>`;
     const cv = document.getElementById('radar');
     const cx = cv.getContext('2d');
     // Tooltip singolo globale: renderRadar gira a ogni evento, senza questo
@@ -705,40 +814,54 @@ function renderRadar() {
     const ring = dark ? '#48484a' : '#d2d2d7';
     const sweepC = dark ? '#0a84ff' : '#0071e3';
     let max = 1;
-    src.forEach(s => { const t = (s.total || s.Total || 0); if (t > max) max = t; });
-    radarPts = src.map(s => {
-        const t = s.total || s.Total || 0;
-        const frac = Math.log10(t + 1) / Math.log10(max + 1);
+    classed.forEach(p => { if (p.t > max) max = p.t; });
+    radarPts = classed.map(p => {
+        const frac = Math.log10(p.t + 1) / Math.log10(max + 1);
         const r = 30 + 145 * frac;
-        const ia = hashIP(ipOf(s));
-        return {s, t, frac, x: 180 + r * Math.cos(ia), y: 180 + r * Math.sin(ia)};
+        const ia = hashIP(p.ip);
+        return Object.assign({frac, x: 180 + r * Math.cos(ia), y: 180 + r * Math.sin(ia)}, p);
     });
-    // Tabella compatta ordinata per drop: undici schede a tutta larghezza facevano
-    // una pagina da 1300 px per dire poche righe.
+    // Tabella compatta ordinata per drop, con esito e motivo: undici schede a tutta larghezza
+    // facevano una pagina da 1300 px per dire poche righe.
     const list = document.getElementById('radar-list');
     const sorted = [...radarPts].sort((a, b) => b.t - a.t);
-    list.innerHTML = `<table class="compact"><tr><th>IP</th><th>drop</th><th>tipo</th><th>ultimo</th></tr>` + sorted.map(p => {
-        const kind = ((p.s.subnet || p.s.Subnet || 0) >= (p.s.poison || p.s.Poison || 0)) ? 'subnet' : 'poisoning';
+    list.innerHTML = `<table class="compact"><tr><th>IP</th><th>Esito</th><th>Drop</th><th>Tasso</th><th>Ultimo</th><th></th></tr>` + sorted.map(p => {
         const w = Math.max(6, Math.round(p.t / max * 100));
-        return `<tr data-ip="${esc(ipOf(p.s))}"><td class="mono">${esc(ipOf(p.s))}</td>
-        <td><b>${p.t}</b> <span class="bar"><i class="${kind}" style="width:${w}%"></i></span></td>
-        <td>${kind}</td><td class="mono">${esc(fmtTime(p.s.last_seen || p.s.LastSeen))}</td></tr>`;
+        const known = p.cls === 'known';
+        return `<tr data-ip="${esc(p.ip)}" data-class="${p.cls}"><td class="mono">${esc(p.ip)}</td>
+        <td><span class="cls cls-${p.cls}">${RADAR_CLS[p.cls].label}</span><span class="why">${esc(p.why)}</span></td>
+        <td><b>${p.t}</b> <span class="bar"><i class="${p.cls}" style="width:${w}%"></i></span></td>
+        <td>${rateText(p.ip)}</td><td class="mono">${esc(fmtTime(p.s.last_seen || p.s.LastSeen))}</td>
+        <td>${p.cls === 'blocked' ? '' : `<button class="linklike" data-known="${esc(p.ip)}">${known ? 'togli nota' : 'segna come noto'}</button>`}</td></tr>`;
     }).join('') + '</table>';
-    const hl = ip => list.querySelectorAll('tr[data-ip]').forEach(tr => tr.classList.toggle('hl', tr.dataset.ip === ip));
+    list.querySelectorAll('[data-known]').forEach(b => {
+        b.onclick = () => { toggleKnown(b.dataset.known); render(true); };
+    });
+    // Come verificare: solo per le sorgenti da verificare (le prime tre), con comandi copiabili.
+    // L'IP viene dal demone ma si controlla comunque il formato prima di metterlo in un comando.
+    const iface = (status.xdp && status.xdp[0]) || '<interfaccia>';
+    const toCheck = sorted.filter(p => p.cls === 'attention' && /^[0-9a-f:.]+$/i.test(p.ip)).slice(0, 3);
+    document.getElementById('radar-verify').innerHTML = toCheck.length
+        ? sec('Come verificare') + `<p class="sub">Il primo comando mostra l'indirizzo hardware dell'host se è sulla tua rete (poi cerca il produttore, o confrontalo con gateway, stampanti, colleghi). Il secondo cattura i pacchetti: se vedi risposte da porta 5355 o 137 verso di te senza aver fatto una richiesta, è il segnale tipico di un attacco.</p>` +
+          toCheck.map(p => `<div class="rule neutral"><h3><span class="mono">${esc(p.ip)}</span> <span class="cls cls-attention">${esc(p.why)}</span></h3>
+          ${codeRow(`ip neigh show ${p.ip}`)}
+          <div style="margin-top:6px">${codeRow(`sudo tcpdump -ni ${iface} -c 30 'udp and host ${p.ip} and (port 5355 or port 5353 or port 137 or port 138)'`)}</div></div>`).join('')
+        : '';
     cv.onmousemove = ev => {
         const r = cv.getBoundingClientRect();
         const mx = (ev.clientX - r.left) * (360 / r.width);
         const my = (ev.clientY - r.top) * (360 / r.height);
         const hit = radarPts.find(p => (p.x - mx) ** 2 + (p.y - my) ** 2 < 18 ** 2);
+        const hl = ip => list.querySelectorAll('tr[data-ip]').forEach(tr => tr.classList.toggle('hl', tr.dataset.ip === ip));
         if (hit) {
             tip.style.display = 'block';
             tip.style.left = (ev.clientX + 12) + 'px';
             tip.style.top = (ev.clientY + 12) + 'px';
-            tip.textContent = `${ipOf(hit.s)} · ${hit.t} drop`;
-            hl(ipOf(hit.s));
+            tip.textContent = `${hit.ip} · ${hit.t} drop · ${RADAR_CLS[hit.cls].label}`;
+            hl(hit.ip);
         } else { tip.style.display = 'none'; hl(''); }
     };
-    cv.onmouseleave = () => { tip.style.display = 'none'; hl(''); };
+    cv.onmouseleave = () => { tip.style.display = 'none'; list.querySelectorAll('tr.hl').forEach(tr => tr.classList.remove('hl')); };
     // Scia: ultime 8 posizioni della spazzata, alpha decrescente.
     const trail = [];
     function frame() {
@@ -759,16 +882,15 @@ function renderRadar() {
             cx.lineWidth = 2; cx.stroke(); cx.globalAlpha = 1;
         });
         radarPts.forEach(p => {
-            const sub = (p.s.subnet || p.s.Subnet || 0) >= (p.s.poison || p.s.Poison || 0);
+            const col = RADAR_CLS[p.cls].col;
             const R = 4 + 5 * p.frac;
             const grad = cx.createRadialGradient(p.x, p.y, 1, p.x, p.y, R * 3);
-            const col = sub ? '215,0,21' : '184,134,11';
-            grad.addColorStop(0, `rgba(${col},0.55)`);
+            grad.addColorStop(0, `rgba(${col},${p.cls === 'noise' ? 0.3 : 0.55})`);
             grad.addColorStop(1, `rgba(${col},0)`);
             cx.beginPath(); cx.arc(p.x, p.y, R * 3, 0, 7);
             cx.fillStyle = grad; cx.fill();
             cx.beginPath(); cx.arc(p.x, p.y, R, 0, 7);
-            cx.fillStyle = sub ? '#d70015' : '#b8860b'; cx.fill();
+            cx.fillStyle = `rgb(${col})`; cx.fill();
             cx.beginPath(); cx.arc(p.x, p.y, R, 0, 7);
             cx.strokeStyle = '#fff'; cx.lineWidth = 1.5; cx.stroke();
         });
@@ -777,13 +899,18 @@ function renderRadar() {
     frame();
 }
 
-// Guida primo avvio: il demone vuole root, le UI no. Passo-passo con comandi
-// copiabili. Niente viene eseguito da qui: tutto resta nel tuo terminale.
+// Guida: schede brevi invece di un muro di passi. "Per iniziare" parte dallo stato reale
+// (cosa e' gia' a posto), le altre spiegano le schermate, i termini e i problemi comuni.
+// Niente viene eseguito da qui: i comandi si copiano e si lanciano nel proprio terminale.
+let guideTab = 'start';
+const GUIDE_TABS = [['start', 'Per iniziare'], ['screens', 'Le schermate'], ['terms', 'Glossario'], ['trouble', 'Problemi comuni']];
+
 function renderGuide() {
-    content.innerHTML = `${h2(ICO_HELP, 'Guida avvio')}<p class="sub">Il demone vuole root, le UI no. Segui i passi, uno alla volta.</p>
-    <p><button class="chip on" id="guide-replay">↺ Rivedi introduzione guidata</button></p>` +
-        renderGuideBody() +
-        `<p class="sub">Solo demo senza root: <code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code> + UI con stesso socket (dati finti).</p>`;
+    const tabs = `<div class="tabs" role="tablist">${GUIDE_TABS.map(([k, l]) =>
+        `<button class="chip${guideTab === k ? ' on' : ''}" role="tab" aria-selected="${guideTab === k}" data-gtab="${k}">${l}</button>`).join('')}</div>`;
+    const body = {start: guideStart, screens: guideScreens, terms: guideTerms, trouble: guideTrouble}[guideTab]();
+    content.innerHTML = `${h2(ICO_HELP, 'Guida')}<p class="sub">Cosa fa ZeroShield, come leggere le schermate e cosa fare quando qualcosa non torna.</p>${tabs}${body}`;
+    content.querySelectorAll('[data-gtab]').forEach(b => { b.onclick = () => { guideTab = b.dataset.gtab; render(true); }; });
     const rp = document.getElementById('guide-replay');
     // Replay: azzera passo e flag, mostra da capo. Per chi ha saltato troppo in fretta.
     if (rp) rp.onclick = () => {
@@ -791,6 +918,94 @@ function renderGuide() {
         obStep = 0;
         showOnboarding();
     };
+}
+
+// Punti di controllo dal vivo: cosa e' gia' a posto e cosa manca, con il link alla schermata utile.
+function guideChecklist() {
+    if (!status) {
+        return `<div class="verdict bad"><div class="verdict-t">○ Il demone non risponde</div><ul><li>Segui i passi qui sotto: il primo è installare il pacchetto e avviare il servizio.</li></ul></div>`;
+    }
+    const s = status, v = s.vpn || {};
+    const enf = s.mode === 'enforce';
+    const items = [
+        ['ok', 'Il demone risponde', 'Il servizio è attivo e il socket è leggibile.', ''],
+        [s.hook_lsm ? 'ok' : 'ko', 'Hook LSM (protezione dei file)', s.hook_lsm ? 'I file protetti sono sotto controllo.' : 'Spento: controlla che <b>bpf</b> sia tra gli LSM del kernel (vedi «Problemi comuni»).', 'status'],
+        [(s.xdp || []).length ? 'ok' : 'ko', 'Filtro XDP (rete)', (s.xdp || []).length ? `Attivo su ${esc(s.xdp.join(', '))}. Le altre interfacce non sono filtrate.` : 'Spento: nessun drop di rete.', 'net'],
+        [enf ? 'ok' : 'caution', enf ? 'Modalità enforce' : 'Modalità audit', enf ? 'Gli accessi non autorizzati vengono negati.' : 'Stai osservando: nulla viene bloccato. Passa a enforce quando in Eventi non compaiono più accessi legittimi.', 'config'],
+        [v.enabled ? 'ok' : 'off', v.enabled ? 'VPN monitorata' : 'VPN non monitorata', v.enabled ? 'Il demone osserva tunnel e kill-switch.' : 'Facoltativa: su una rete ostile, senza VPN, il traffico esce in chiaro.', 'net'],
+    ];
+    const sym = {ok: '●', caution: '◐', ko: '○', off: '–'};
+    return `<div class="panel checklist">${items.map(([st, t, h, g]) =>
+        `<div class="check ${st}"><span>${sym[st]}</span><span><b>${t}</b> <span class="sub">${h}</span>${g ? ` <button class="linklike" data-go="${g}">vedi →</button>` : ''}</span></div>`).join('')}</div>`;
+}
+
+function guideStart() {
+    return `${sec('Il tuo stato')}${guideChecklist()}
+    <p><button class="chip on" id="guide-replay">↺ Rivedi l'introduzione guidata</button></p>
+    ${renderGuideBody()}
+    <p class="sub">Solo per provare l'interfaccia, senza root: <code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code> e la GUI con lo stesso socket (dati finti).</p>`;
+}
+
+const GUIDE_SCREENS = [
+    ['status', 'Stato', 'Sono protetto?', 'Il verdetto in cima (attiva, parziale, non attiva), poi hook, XDP, contatori della sessione e i controlli per fermare il servizio o cambiare modalità.', 'Appena apri la GUI.'],
+    ['events', 'Eventi', 'Chi ha toccato i miei segreti?', 'Ogni accesso ai file protetti con regola, programma e PID. In audit sono quelli che enforce bloccherebbe. «Raggruppa» unisce le righe uguali.', 'Prima di passare a enforce.'],
+    ['radar', 'Radar', 'Chi mi disturba in rete?', 'Gli IP da cui XDP ha scartato traffico di scoperta di rete, classificati in rumore probabile, da verificare, bloccati e noti.', 'Quando vedi drop o sospetti una rete ostile.'],
+    ['rules', 'Regole', 'Cosa è protetto, e da chi?', 'I gruppi di segreti e i programmi autorizzati a leggerli, con gli accessi visti in sessione.', 'Quando un programma legittimo viene segnalato.'],
+    ['net', 'Rete', 'Cosa filtra il demone e cosa è esposto?', 'Interfacce coperte da XDP, subnet bloccate, stato della VPN e porte in ascolto.', 'Su una rete nuova.'],
+    ['config', 'Configurazione', 'Cosa sta usando il demone?', 'Riepilogo delle impostazioni, cambio audit/enforce e il file di configurazione.', 'Per cambiare modalità o controllare il file.'],
+];
+function guideScreens() {
+    return `${sec('A cosa serve ogni schermata')}<div class="panel">${GUIDE_SCREENS.map(([g, name, q, d, when]) =>
+        `<div class="kv"><div class="kv-k"><button class="linklike" data-go="${g}">${name}</button></div><div class="kv-v"><b>${q}</b></div><div class="kv-h">${d} <i>Quando: ${when}</i></div></div>`).join('')}</div>
+    <p class="sub">Scorciatoie: i tasti <kbd>1</kbd>–<kbd>7</kbd> aprono le schermate nell'ordine del menu (non funzionano mentre scrivi in un campo).</p>`;
+}
+
+const GUIDE_TERMS = [
+    ['Audit / Enforce', 'In <b>audit</b> il demone registra gli accessi ai file protetti senza negarne nessuno; in <b>enforce</b> nega (EACCES) quelli non autorizzati. Si parte sempre da audit.'],
+    ['Hook LSM', 'Il controllo nel kernel che decide se un programma può aprire, cancellare o rinominare un file protetto. Richiede che <b>bpf</b> sia tra gli LSM attivi.'],
+    ['XDP', 'Il filtro sui pacchetti di rete, prima che il sistema li veda. ZeroShield lo usa per scartare il traffico di poisoning (LLMNR, mDNS, NetBIOS) e le subnet che blocchi tu.'],
+    ['Poisoning', 'Attacco su rete locale in cui un host risponde alle richieste di scoperta dei nomi (LLMNR, mDNS, NetBIOS) fingendosi quello cercato, per rubare credenziali. Strumenti tipici: Responder, Inveigh.'],
+    ['Whitelist («autorizzati»)', 'I programmi che una regola lascia leggere i suoi file. Contano l\'identità del file (dispositivo e inode), non il nome: copiare o rinominare un binario non basta.'],
+    ['Canary', 'File esca nascosti che nessun programma legittimo apre. Chi li tocca viene ucciso in enforce (solo allarme in audit). Spento di default.'],
+    ['Rescan', 'Il riallineamento delle mappe del kernel con i file del disco. Parte da solo ogni 30 secondi e quando un file protetto cambia.'],
+    ['Profilo', 'Un insieme di regole e modalità iniziali: <span class="mono">home</span>, <span class="mono">corporate</span>, <span class="mono">public-wifi</span>, <span class="mono">paranoid</span>.'],
+    ['Fail-closed', 'Se un hook non si aggancia, il demone si ferma invece di fingersi attivo: un\'interfaccia «demone spento» è meglio di una protezione finta.'],
+    ['Kill-switch VPN', 'Regola di firewall che blocca il traffico fuori dal tunnel: se la VPN cade non esci in chiaro. Il demone lo osserva ma non lo applica.'],
+];
+function guideTerms() {
+    return `${sec('Glossario')}<div class="panel">${GUIDE_TERMS.map(([t, d]) =>
+        `<div class="kv"><div class="kv-k">${t}</div><div class="kv-v">${d}</div></div>`).join('')}</div>`;
+}
+
+const GUIDE_TROUBLE = [
+    ['La GUI dice «demone non raggiungibile» o «permission denied»',
+     'Il servizio è fermo oppure il socket è riservato a root e all\'utente indicato in <b>user:</b>. Apri la GUI con quell\'utente e controlla il servizio.',
+     ['systemctl status zt-shield', 'journalctl -u zt-shield -n 50']],
+    ['Hook LSM spento, o il servizio non parte',
+     'Il kernel deve avere <b>bpf</b> tra gli LSM attivi; senza, il demone si ferma di proposito. Se manca, aggiungilo alla riga <span class="mono">lsm=</span> di GRUB e riavvia (procedura nel README).',
+     ['cat /sys/kernel/security/lsm', 'sudo zt-probe -xdp-lo']],
+    ['In audit vedo tanti accessi dello stesso programma',
+     'È normale: un programma legittimo che legge un segreto (per esempio il prompt della shell che legge la configurazione di kubectl) compare a ogni uso. In Eventi usa «raggruppa». Prima di passare a enforce, aggiungi quel programma ai binari autorizzati della regola, altrimenti verrebbe bloccato.',
+     []],
+    ['Il radar mostra IP della mia rete',
+     'Host e stampanti mandano di continuo richieste di scoperta: di solito è sottofondo. Un punto «da verificare» merita un controllo con i comandi sotto la tabella del Radar; se riconosci l\'host, segnalo come noto. Il kernel non distingue richieste normali da risposte avvelenate.',
+     []],
+    ['XDP copre una sola interfaccia',
+     'Le altre interfacce attive (Wi-Fi, tunnel, docker) non sono filtrate. Se una è esposta a una rete non fidata, elencale nel file di configurazione (nomi di esempio) e riavvia il servizio.',
+     ['interface: "eth0,wlan0"', 'sudo systemctl restart zt-shield']],
+    ['Nel journal compare «binario non risolto»',
+     'Una regola elenca un programma che non è installato nel PATH del demone, quindi non è autorizzato. Non è un guasto: installalo o toglilo dalla regola. L\'avviso si ripete a ogni rescan (voce aperta in PUNTI_APERTI).',
+     []],
+    ['Voglio tornare da enforce ad audit',
+     'Dalla scheda Configurazione scegli «Audit», oppure imposta <span class="mono">mode: audit</span> nel file e riavvia il servizio.',
+     ['sudo systemctl restart zt-shield']],
+    ['Un browser o un programma aggiornato risulta bloccato',
+     'Dopo un aggiornamento (apt, snap) l\'inode del binario cambia e il programma resta fuori dai binari autorizzati fino al rescan successivo (entro 30 secondi).',
+     []],
+];
+function guideTrouble() {
+    return `${sec('Problemi comuni')}<div class="faq">${GUIDE_TROUBLE.map(([q, a, cmds]) =>
+        `<details><summary>${q}</summary><p>${a}</p>${cmds.map(c => `<div style="margin-top:6px">${codeRow(c)}</div>`).join('')}</details>`).join('')}</div>`;
 }
 
 // Chi usa questa GUI l'ha quasi sempre installata dal pacchetto .deb (che tira dentro
@@ -879,6 +1094,7 @@ function renderListening() {
 async function boot() {
     try {
         status = await GetStatus();
+        recordRadar(status);
         lastStatusAt = Date.now(); // senza questo "dati fermi da <epoch>s" fino al primo push
     } catch (e) {
         offlineMsg = String(e && e.message || e);
@@ -992,7 +1208,7 @@ function showOnboarding() {
     };
 }
 
-EventsOn('shield:status', st => { status = st; statusSeq++; lastStatusAt = Date.now(); offlineMsg = ''; requestRender(); });
+EventsOn('shield:status', st => { status = st; recordRadar(st); statusSeq++; lastStatusAt = Date.now(); offlineMsg = ''; requestRender(); });
 EventsOn('shield:status-error', msg => { if (!status) { offlineMsg = msg; requestRender(); } });
 EventsOn('shield:event', ev => {
     events.push(ev);

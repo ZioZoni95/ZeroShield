@@ -271,6 +271,66 @@ await page.waitForTimeout(80);
 const gd = await page.evaluate(() => ({ copy: document.querySelectorAll('#content .code-row [data-copy]').length, srcOpen: document.querySelector('details.src').open }));
 check('guida: ogni comando ha il pulsante copia, "da sorgente" chiuso', gd.copy >= 10 && gd.srcOpen === false, JSON.stringify(gd));
 
+
+// --- Radar: rumore o da verificare, tasso, host noti, legenda (2026-11-04)
+const radarSt = (sources, time) => Object.assign({}, window.__status, { time, top_sources: sources });
+const quiet = (n, c, ts = '2026-11-04T10:00:00Z') => ({ ip: '10.0.0.' + n, poison: c, subnet: 0, total: c, last_seen: ts });
+await page.click('#sidebar button[data-view="radar"]');
+await page.evaluate((st) => window.__emit('shield:status', st), { ...(await page.evaluate(() => window.__status)), time: '2026-11-04T10:00:00Z',
+  top_sources: [quiet(1, 3), quiet(2, 2), quiet(3, 1), quiet(4, 120), { ip: '172.16.9.9', poison: 4, subnet: 0, total: 4, last_seen: '2026-11-04T10:00:00Z' }, { ip: '10.0.0.7', poison: 0, subnet: 9, total: 9, last_seen: '2026-11-04T10:00:00Z' }] });
+await page.waitForTimeout(150);
+const cls = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#radar-list tr[data-ip]')].map(r => [r.dataset.ip, r.dataset.class])));
+check('radar: pochi drop nella rete comune = rumore probabile', cls['10.0.0.1'] === 'noise' && cls['10.0.0.2'] === 'noise', JSON.stringify(cls));
+check('radar: tanti drop da un solo IP = da verificare', cls['10.0.0.4'] === 'attention');
+check('radar: IP fuori dalla rete delle altre = da verificare', cls['172.16.9.9'] === 'attention');
+check('radar: subnet bloccata dall utente = bloccata', cls['10.0.0.7'] === 'blocked');
+const banner = await page.textContent('#content .verdict');
+check('radar: banner conta le sorgenti da verificare e dichiara il limite', banner.includes('2 sorgenti da verificare') && banner.includes('non distingue'), banner.replace(/\s+/g, ' ').slice(0, 90));
+const verify = await page.textContent('#radar-verify');
+check('radar: per le sorgenti da verificare ci sono i comandi (ip neigh, tcpdump) copiabili', verify.includes('ip neigh show 10.0.0.4') && verify.includes('tcpdump') && (await page.locator('#radar-verify [data-copy]').count()) >= 4);
+
+// tasso: stesso IP, due stati a 2 minuti di distanza (orario del demone) -> 60 drop in 2 min = 30/min => da verificare
+await page.evaluate(() => window.__emit('shield:status', window.__rs = { ...window.__status, time: '2026-11-04T10:02:00Z', top_sources: [
+  { ip: '10.0.0.1', poison: 63, subnet: 0, total: 63, last_seen: '2026-11-04T10:02:00Z' }, { ip: '10.0.0.2', poison: 2, subnet: 0, total: 2, last_seen: '2026-11-04T10:00:00Z' }, { ip: '10.0.0.3', poison: 1, subnet: 0, total: 1, last_seen: '2026-11-04T10:00:00Z' }] }));
+await page.waitForTimeout(150);
+const rated = await page.evaluate(() => { const r = document.querySelector('#radar-list tr[data-ip="10.0.0.1"]'); return { cls: r.dataset.class, why: r.textContent }; });
+check('radar: il tasso sostenuto (30 drop/min) rende un IP da verificare', rated.cls === 'attention' && /30 drop\/min/.test(rated.why), rated.why.replace(/\s+/g, ' ').slice(0, 100));
+
+// segna come noto: passa a "nota", sopravvive al ridisegno
+await page.click('#radar-list tr[data-ip="10.0.0.1"] [data-known]');
+await page.waitForTimeout(100);
+await page.evaluate(() => window.__emit('shield:status', { ...window.__rs, time: '2026-11-04T10:02:30Z' }));
+await page.waitForTimeout(100);
+check('radar: "segna come noto" -> nota, e resta dopo un nuovo stato', (await page.getAttribute('#radar-list tr[data-ip="10.0.0.1"]', 'data-class')) === 'known');
+await page.click('#radar-list tr[data-ip="10.0.0.1"] [data-known]');
+await page.waitForTimeout(100);
+check('radar: "togli nota" lo riporta alla classificazione', (await page.getAttribute('#radar-list tr[data-ip="10.0.0.1"]', 'data-class')) === 'attention');
+
+const legend = await page.textContent('#radar-legend');
+check('radar: legenda a sezioni (cosa vedi, colori, rumore o attacco, cosa fare) e ammette il limite', ['Cosa vedi', 'Colori', 'Rumore o attacco?', 'Cosa fare', 'non distingue'].every(t => legend.includes(t)));
+
+// Guida: schede, punti di controllo dal vivo, problemi comuni
+await page.click('#sidebar button[data-view="guide"]');
+await page.waitForTimeout(100);
+const gTabs = await page.evaluate(() => [...document.querySelectorAll('[data-gtab]')].map(b => b.dataset.gtab).join(','));
+check('guida: quattro schede (iniziare, schermate, glossario, problemi)', gTabs === 'start,screens,terms,trouble', gTabs);
+const chk = await page.textContent('#content .checklist');
+check('guida: punti di controllo dal vivo (demone, LSM, XDP, modalita)', ['Il demone risponde', 'Hook LSM', 'Filtro XDP', 'Modalità audit'].every(t => chk.includes(t)), chk.replace(/\s+/g, ' ').slice(0, 80));
+await page.evaluate(() => window.__emit('shield:status', { ...window.__status, hook_lsm: false }));
+await page.waitForTimeout(100);
+check('guida: hook LSM spento si vede nei punti di controllo', (await page.locator('.checklist .check.ko').count()) === 1);
+await page.evaluate(() => window.__emit('shield:status', { ...window.__status, hook_lsm: true }));
+await page.click('[data-gtab="screens"]');
+const scr = await page.textContent('#content');
+check('guida: scheda schermate spiega ogni tab e le scorciatoie', ['Sono protetto?', 'Chi mi disturba in rete?', 'Cosa è protetto', '1', '7'].every(t => scr.includes(t)));
+await page.click('[data-gtab="terms"]');
+const trm = await page.textContent('#content');
+check('guida: glossario con audit/enforce, XDP, poisoning, canary', ['Audit / Enforce', 'XDP', 'Poisoning', 'Canary', 'Fail-closed'].every(t => trm.includes(t)));
+await page.click('[data-gtab="trouble"]');
+const tb = await page.evaluate(() => ({ n: document.querySelectorAll('.faq details').length, copy: document.querySelectorAll('.faq [data-copy]').length, txt: document.querySelector('.faq').textContent }));
+check('guida: problemi comuni con comandi copiabili (permission denied, bpf, interfacce)', tb.n >= 6 && tb.copy >= 5 && tb.txt.includes('permission denied') && tb.txt.includes('bpf') && tb.txt.includes('interface:'), `domande=${tb.n} copia=${tb.copy}`);
+await page.click('[data-gtab="start"]');
+
 if (shots) {
   fs.mkdirSync(shots, { recursive: true });
   for (const v of ['status', 'events', 'net', 'guide']) {
