@@ -180,7 +180,7 @@ jobs:
           dpkg-deb -I dist/zeroshield_*.deb
           dpkg-deb -c dist/zeroshield_*.deb
           # Deve contenere demone, TUI e GUI, e sostituire il vecchio pacchetto a parte.
-          for f in /usr/sbin/zt-shield /usr/bin/zt-tui /usr/bin/zt-tray /etc/xdg/autostart/zeroshield-tray.desktop /usr/bin/zt-gui /usr/share/applications/zeroshield.desktop /usr/share/zeroshield/scripts/configure_service.sh; do
+          for f in /usr/sbin/zt-shield /usr/bin/zt-tui /usr/bin/zt-tray /usr/lib/systemd/user/zeroshield-tray.service /usr/bin/zt-gui /usr/share/applications/zeroshield.desktop /usr/share/zeroshield/scripts/configure_service.sh; do
             dpkg-deb -c dist/zeroshield_*.deb | grep -q " \.$f\$" || { echo "manca $f nel .deb"; exit 1; }
           done
           dpkg-deb -f dist/zeroshield_*.deb Replaces | grep -q zeroshield-gui

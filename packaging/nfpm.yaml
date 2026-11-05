@@ -51,12 +51,13 @@ contents:
   - src: bin/zt-mockd
     dst: /usr/bin/zt-mockd
     file_info: { mode: 0755 }
-  # Icona nella barra di sistema + avvio automatico alla login (senza privilegi).
+  # Icona nella barra di sistema: servizio utente systemd (avvio con la sessione, riavvio dopo
+  # un aggiornamento). Abilitato per tutti da postinstall con `systemctl --global enable`.
   - src: bin/zt-tray
     dst: /usr/bin/zt-tray
     file_info: { mode: 0755 }
-  - src: packaging/zeroshield-tray.desktop
-    dst: /etc/xdg/autostart/zeroshield-tray.desktop
+  - src: packaging/zeroshield-tray.service
+    dst: /usr/lib/systemd/user/zeroshield-tray.service
     file_info: { mode: 0644 }
   # GUI desktop (Wails + WebKitGTK).
   - src: bin/zt-gui
