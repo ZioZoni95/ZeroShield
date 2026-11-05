@@ -4,7 +4,7 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
-_Nulla per ora._
+- **Release**: la pagina di ogni tag mostra le «Novità» prese dalla sezione del `CHANGELOG.md` per quella versione (prima era un testo fisso, fermo alla 0.0.9). Nessuna modifica al prodotto.
 
 ## [0.0.13] — 2026-11-05
 
