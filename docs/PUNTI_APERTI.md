@@ -93,8 +93,8 @@ finestra di rescan, preset `glab`.
   Configurazione mostra un riepilogo e il file e si cambia solo `mode`. Un editor a campi (interfaccia, subnet, canary, VPN) con validazione e anteprima
   della differenza richiede scritture sul canale privilegiato (`internal/priv` + polkit): da fare
   con il collaudo in VM, non prima.
-- [x] ~~**GUI/IPC, interfacce non coperte**~~ — `ipc.Status.interfaces` e la scelta nella scheda Rete (0.0.7). Resta il **seguire a caldo**: se colleghi un adattatore USB o accendi il
-  Wi-Fi mentre il servizio gira, il filtro non si aggancia da solo; serve riavviare (la GUI lo segnala con «accesa ma non filtrata», ma non lo risolve).
+- [x] ~~**GUI/IPC, interfacce non coperte**~~ — `ipc.Status.interfaces` e la scelta nella scheda Rete (0.0.7). Il **seguire a caldo** è in 0.0.8 (ogni 2 secondi, `internal/xdp/manager.go`): provato con interfacce finte, **non** con un adattatore vero collegato mentre il demone gira come root (da fare sul PC: collegare/scollegare l'USB e guardare il journal).
+  Limite: il controllo è a intervalli di 2 secondi (non su eventi netlink), quindi dopo il collegamento c'è una finestra di un paio di secondi senza filtro.
 - [x] ~~**GUI, audit → enforce**: azione «autorizza questo exe»~~ — nella scheda Regole, «Visti da quando hai aperto la finestra» con *Autorizza*, *Rendi affidabile* e l'indicatore di prontezza per Blocca.
 - [ ] **Radar, richieste contro risposte**: la mappa del kernel conta solo `poison` per IP. XDP scarta
   sia le richieste degli altri host (porta di destinazione 5355/5353/137/138, sottofondo normale) sia le

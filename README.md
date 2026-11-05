@@ -259,7 +259,7 @@ sconosciute sono **rifiutate** (un refuso non passa in silenzio). Il pacchetto i
 | `profile` | `home` | `home` · `corporate` · `public-wifi` · `paranoid` |
 | `user` | — | **Obbligatoria come servizio**: utente la cui home si protegge (sotto systemd non esiste `SUDO_USER`) |
 | `mode` | dal profilo | `audit` (logga) · `enforce` (nega) |
-| `interface` | rotta di default | interfacce XDP, lista separata da virgole. **Le altre interfacce attive non sono filtrate**: si sceglie dalla GUI, scheda Rete (cavo, USB, Wi-Fi, VPN) |
+| `interface` | automatica | interfacce XDP, lista separata da virgole. Vuoto = **tutte le fisiche accese (cavo, USB, Wi-Fi) + la rotta predefinita, seguite a caldo** (adattatore collegato dopo l'avvio compreso). Con una lista si filtrano solo quelle nominate, appena compaiono. Si sceglie dalla GUI, scheda Rete |
 | `block_poisoning` | `true` | drop LLMNR/mDNS/NBT-NS in ingresso |
 | `block_subnets` | — | CIDR IPv4 da scartare in XDP |
 | `rules` / `extra_rules` | dal profilo | `name`, `paths` (relativi alla home o assoluti, glob, directory ricorsive), `allow` (nomi o percorsi assoluti, mai vuota), `deny_write`, `mode` (`audit`/`enforce`, vuoto = modalità globale). Massimo 255 regole |

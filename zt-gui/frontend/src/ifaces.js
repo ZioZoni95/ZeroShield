@@ -78,16 +78,21 @@ export function createIfaceView(d) {
         const locked = !!model.manual_interface || draft.auto;
         const phys = all.filter(i => PHYSICAL.includes(i.kind)), other = all.filter(i => !PHYSICAL.includes(i.kind));
         const uncovered = phys.filter(i => i.up && !covered().has(i.name));
-        const warn = uncovered.length ? `<div class="rl-ready warn"><b>${uncovered.map(i => esc(i.name)).join(', ')}</b> ${uncovered.length === 1 ? 'è accesa ma non è filtrata' : 'sono accese ma non filtrate'}: una rete ostile su ${uncovered.length === 1 ? 'questa interfaccia' : 'queste interfacce'} non verrebbe fermata.</div>` : '';
+        const warn = uncovered.length ? `<div class="rl-ready warn"><b>${uncovered.map(i => esc(i.name)).join(', ')}</b> ${uncovered.length === 1 ? 'è accesa ma non è filtrata' : 'sono accese ma non filtrate'}: una rete ostile su ${uncovered.length === 1 ? 'questa interfaccia' : 'queste interfacce'} non verrebbe fermata.${draft.auto ? ' In modalità automatica succede solo per pochi secondi dopo averla accesa.' : ''}</div>` : '';
         const manual = model.manual_interface
             ? `<div class="rl-help">Nel config c’è già <span class="rl-mono">interface: ${esc(model.base_interface)}</span> scritta a mano, quindi da qui puoi solo guardare. Per sceglierle dalla GUI togli quella riga da <span class="rl-mono">/etc/zt-shield/shield.yaml</span>.</div>` : '';
         const mode = model.manual_interface ? '' : `<div class="if-mode">
-          <label><input type="radio" name="if-mode" value="auto" ${draft.auto ? 'checked' : ''}> <b>Automatica</b> <span class="rl-d">— solo la rete che stai usando quando il servizio parte (oggi: ${esc([...covered()].join(', ') || 'nessuna')})</span></label>
-          <label><input type="radio" name="if-mode" value="manual" ${draft.auto ? '' : 'checked'}> <b>Scelgo io</b> <span class="rl-d">— le fisiche (cavo, USB, Wi-Fi) sono consigliate, anche se spente ora</span></label></div>`;
+          <label><input type="radio" name="if-mode" value="auto" ${draft.auto ? 'checked' : ''}> <b>Automatica</b> <span class="rl-d">— tutte le reti fisiche accese (cavo, USB, Wi-Fi) e quella in uso, anche quelle che colleghi o accendi dopo, senza riavviare (oggi: ${esc([...covered()].join(', ') || 'nessuna')})</span></label>
+          <label><input type="radio" name="if-mode" value="manual" ${draft.auto ? '' : 'checked'}> <b>Scelgo io</b> <span class="rl-d">— solo quelle che spunti, agganciate appena compaiono (anche un adattatore USB che colleghi dopo). Le fisiche sono consigliate</span></label></div>`;
+        // Nomi scelti ma che adesso non esistono (adattatore USB scollegato): restano in elenco e si agganciano quando compaiono.
+        const known = new Set(all.map(i => i.name));
+        const absent = (draft.auto ? [] : [...draft.sel]).filter(n => !known.has(n))
+            .map(n => `<div class="rl-tool"><label class="if-l"><input type="checkbox" data-if="${esc(n)}" checked ${locked ? 'disabled' : ''}><span><b class="mono">${esc(n)}</b> <span class="rl-d">non collegata ora</span></span></label>
+              <div class="rl-ta"><span class="rl-b none">si aggancia quando compare</span></div></div>`).join('');
         return `<h3 class="sec">Interfacce filtrate</h3>
           <p class="rl-d">Il filtro scarta le richieste di rete sospette (LLMNR, mDNS, NetBIOS) solo sulle interfacce selezionate. Cavo, USB e Wi-Fi sono quelle dove può arrivare una rete ostile.</p>
           ${warn}${manual}${mode}
-          ${phys.map(i => row(i, locked)).join('') || '<div class="rl-empty">Nessuna interfaccia fisica trovata.</div>'}
+          ${phys.map(i => row(i, locked)).join('') || '<div class="rl-empty">Nessuna interfaccia fisica trovata.</div>'}${absent}
           ${other.length ? `<details class="rl-det" id="if-virt" ${showVirtual ? 'open' : ''}><summary>Mostra anche le interfacce virtuali (${other.length}: VPN, container, loopback)</summary>${other.map(i => row(i, locked)).join('')}</details>` : ''}
           <div id="if-barwrap">${bar()}</div>`;
     }

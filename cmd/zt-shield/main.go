@@ -294,21 +294,32 @@ Opzioni:
 	// non e' filtrata, ma non ha senso morire per questo.
 	// Multi-interfaccia: `interface` accetta csv ("wlan0,eth0"); un attach fallito
 	// non blocca gli altri e le UP scoperte vengono segnalate nel log.
-	xlinks, xifaces := xdp.AttachAll(objs.XdpShield, cfg.Interface)
-	for _, xl := range xlinks {
-		defer xl.Close()
-	}
-	var xdpNames []string
-	for _, fi := range xifaces {
-		xdpNames = append(xdpNames, fi.Name)
-	}
-	if len(xifaces) == 0 {
-		log.Printf("⚠️ XDP non attivo su alcuna interfaccia")
+	// Il filtro di rete segue le interfacce anche dopo l'avvio (adattatore USB collegato, Wi-Fi acceso): xm.Sync()
+	// gira ogni pochi secondi nella goroutine del rescan. Vedi internal/xdp/manager.go.
+	xm := xdp.NewManager(objs.XdpShield, cfg.Interface)
+	defer xm.Close()
+	xm.Sync()
+	if len(xm.Names()) == 0 {
+		log.Printf("⚠️ XDP non attivo su alcuna interfaccia (si riprova ogni pochi secondi)")
 	} else {
-		log.Printf("🔥 XDP attivo su %v (poisoning drop: %v)", xdpNames, cfg.BlockPoisoning)
-		n := xdp.BlockSubnets(objs.InfectedSubnets, cfg.BlockSubnets)
-		log.Printf("🚫 Subnet bloccate: %d/%d", n, len(cfg.BlockSubnets))
+		mode := "automatica: tutte le interfacce fisiche accese + la rotta predefinita"
+		if !xm.Auto() {
+			mode = "scelta nel config"
+		}
+		log.Printf("🔥 XDP attivo su %v (%s; poisoning drop: %v)", xm.Names(), mode, cfg.BlockPoisoning)
 	}
+	n := xdp.BlockSubnets(objs.InfectedSubnets, cfg.BlockSubnets)
+	log.Printf("🚫 Subnet bloccate: %d/%d", n, len(cfg.BlockSubnets))
+	warnedUncovered := map[string]bool{}
+	warnUncovered := func() {
+		for _, name := range xm.Uncovered() {
+			if !warnedUncovered[name] {
+				warnedUncovered[name] = true
+				log.Printf("⚠️ interfaccia %s accesa ma NON filtrata (filtrate: %s): una rete ostile qui non verrebbe fermata. Scegli le interfacce dalla GUI, scheda Rete", name, strings.Join(xm.Names(), ","))
+			}
+		}
+	}
+	warnUncovered()
 
 	// --- IPC per le UI ----------------------------------------------------------------
 	// Socket Unix sola-lettura per TUI/GUI (stato + stream eventi). Non fatale:
@@ -343,11 +354,11 @@ Opzioni:
 		listening, listeningTotal := listeningSnapshot()
 		var ifs []ipc.IfaceInfo
 		for _, i := range netif.List(netif.Sys, netif.Up) {
-			ifs = append(ifs, ipc.IfaceInfo{Name: i.Name, Kind: i.Kind, Up: i.Up, Covered: slices.Contains(xdpNames, i.Name)})
+			ifs = append(ifs, ipc.IfaceInfo{Name: i.Name, Kind: i.Kind, Up: i.Up, Covered: slices.Contains(xm.Names(), i.Name)})
 		}
 		srv.UpdateStatus(ipc.Status{
 			Profile: cfg.Profile, Mode: cfg.Mode, Home: home,
-			HookLSM: true, XDP: xdpNames,
+			HookLSM: true, XDP: xm.Names(),
 			Protected: p, Allowed: a,
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
 			Vpn: curVpn, TopSources: topSrc,
@@ -372,9 +383,24 @@ Opzioni:
 		defer vt.Stop()
 		vpnC = vt.C
 	}
+	// Interfacce: ogni 2 secondi si controlla se ne e' comparsa o sparita una. Costa una lettura di /sys e del routing.
+	ifaceTick := time.NewTicker(2 * time.Second)
+	defer ifaceTick.Stop()
 	go func() {
 		for {
 			select {
+			case <-ifaceTick.C:
+				added, removed := xm.Sync()
+				if len(added)+len(removed) > 0 {
+					if len(added) > 0 {
+						log.Printf("🔌 filtro XDP agganciato a %v (ora: %v)", added, xm.Names())
+					}
+					if len(removed) > 0 {
+						log.Printf("🔌 interfaccia %v scomparsa: filtro rilasciato (ora: %v)", removed, xm.Names())
+					}
+					warnUncovered()
+					publishStatus()
+				}
 			case <-ticker.C:
 				p, a = mgr.Sync()
 				log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
