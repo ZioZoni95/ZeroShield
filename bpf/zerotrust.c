@@ -378,13 +378,14 @@ int xdp_shield(struct xdp_md *ctx) {
     // -- Drop dei protocolli di poisoning -------------------------------------------------
     // LLMNR (5355), mDNS (5353), NBT-NS (137), NetBIOS-DGM (138).
     if (ip->protocol == IPPROTO_UDP && setting(SETTING_POISON, 1)) {
-        // Frammenti non-primi: non contengono l'header UDP all'offset calcolato.
-        // Leggere sport/dport li' significa leggere payload casuale -> falso drop
-        // o mancato drop. Si salta il check L4 (resta il check subnet su saddr).
-        // frag_off e' in network order: maschera 0x3FFF = offset+MF, 0x2000 = MF.
-        // Si usa bpf_ntohs prima della maschera per confronto corretto.
+        // Solo i frammenti NON primi (offset > 0) non contengono l'header UDP: li' sport/dport
+        // sarebbero payload a caso (falso drop o mancato drop), quindi si salta il check L4.
+        // Il PRIMO frammento (offset 0, anche con MF=1) ha l'header UDP e va ispezionato:
+        // una risposta di poisoning frammentata di proposito altrimenti passerebbe (ZS-001).
+        // frag_off in network order: 0x4000 DF, 0x2000 MF, 0x1FFF offset. Si maschera SOLO
+        // l'offset (0x1FFF); la maschera 0x3FFF, usata prima, includeva MF e saltava il primo frammento.
         __u16 frag = bpf_ntohs(ip->frag_off);
-        if ((frag & 0x3FFF) == 0) {
+        if ((frag & 0x1FFF) == 0) {
             __u32 ihl = ip->ihl * 4; // IHL e' espresso in word da 32 bit
             if (ihl >= sizeof(*ip)) { // header senza opzioni o piu': non puo' andare in underflow
                 struct udphdr *udp = (void *)ip + ihl;

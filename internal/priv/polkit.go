@@ -34,6 +34,29 @@ func authorize(uid uint32, pid uint32) error {
 	return nil
 }
 
+// checkAuthorizationArgs costruisce i 5 argomenti di
+// org.freedesktop.PolicyKit1.Authority.CheckAuthorization((sa{sv}) subject, s action_id,
+// a{ss} details, u flags, s cancellation_id). Prima si passavano 7 argomenti (due mappe vuote
+// in piu') e un subject con details a{ss} invece di a{sv}: la chiamata falliva sempre (ZS-004,
+// revisione del codice 2026-11-05). Per un subject unix-process polkit vuole pid (u) e
+// start-time (t) come varianti: start-time evita che un pid riciclato erediti l'autorizzazione.
+func checkAuthorizationArgs(pid uint32, start uint64) []interface{} {
+	type subject struct {
+		Kind    string
+		Details map[string]dbus.Variant
+	}
+	return []interface{}{
+		subject{Kind: "unix-process", Details: map[string]dbus.Variant{
+			"pid":        dbus.MakeVariant(pid),
+			"start-time": dbus.MakeVariant(start),
+		}},
+		ActionID,
+		map[string]string{},
+		uint32(1), // AllowUserInteraction: mostra il dialogo di sistema
+		"",
+	}
+}
+
 func polkitCheck(pid uint32) (bool, error) {
 	conn, err := dbus.ConnectSystemBus()
 	if err != nil {
@@ -51,20 +74,7 @@ func polkitCheck(pid uint32) (bool, error) {
 		Details    map[string]string
 	}
 	call := obj.Call("org.freedesktop.PolicyKit1.Authority.CheckAuthorization", 0,
-		map[string]dbus.Variant{},
-		map[string]dbus.Variant{
-			"system-bus-name": dbus.MakeVariant(""),
-		},
-		// subject unix-process: dbus accetta anche via pid diretto qui sotto
-		// usando la forma struct(kind, details).
-		struct {
-			Kind    string
-			Details map[string]string
-		}{Kind: "unix-process", Details: map[string]string{
-			"pid":        strconv.FormatUint(uint64(pid), 10),
-			"start-time": strconv.FormatUint(start, 10),
-		}},
-		ActionID, map[string]string{}, uint32(1), "")
+		checkAuthorizationArgs(pid, start)...)
 	if call.Err != nil {
 		return false, call.Err
 	}
