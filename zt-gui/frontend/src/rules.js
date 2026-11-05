@@ -180,6 +180,12 @@ export function createRulesView(d) {
             badge = '<span class="rl-b ok">✓ autorizzato</span>';
             const mine = rules.filter(g => draft.allow[g.name] && draft.allow[g.name].has(t.alt || t.path));
             if (mine.length) act = `<button class="rl-btn ghost" data-undo="${esc(t.id)}">Togli</button>`;
+            // Autorizzata la copia protetta, ma il terminale lancia ancora l'altra: ZeroShield
+            // continuerebbe a bloccarla (visto con oh-my-posh e k9s). Lo si dice subito.
+            if (t.alt && t.path && t.alt !== t.path) {
+                badge = '<span class="rl-b warn">✓ autorizzato · lancia la copia protetta</span>';
+                extra = `<div class="rl-help"><b>Attenzione:</b> l’autorizzazione vale per <span class="rl-mono">${esc(t.alt)}</span>, ma il tuo terminale lancia <span class="rl-mono">${esc(t.path)}</span>, che verrebbe comunque bloccato. Lancia il percorso protetto, oppure aggiungi in <span class="rl-mono">~/.bashrc</span>: <span class="rl-mono">alias ${esc(t.name || t.id)}=${esc(t.alt)}</span></div>`;
+            }
         } else if (!rules.length) { badge = '<span class="rl-b none">le sue regole sono spente</span>'; }
         else if (t.ok) {
             badge = '<span class="rl-b ready">pronto</span>';

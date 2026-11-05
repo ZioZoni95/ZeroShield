@@ -508,6 +508,18 @@ check('regole: programmi trovati in cima, non installati ripiegati', (await page
 check('regole: k9s e oh-my-posh spiegano perche serve un passo in piu', (await page.locator('[data-trust]').count()) === 2 && rlTxt.includes('una cartella che puoi modificare tu'));
 check('regole: helm risulta gia autorizzato per cloud ma non per i token', rlTxt.includes('Helm'));
 
+// Autorizzata la copia protetta ma il terminale lancia l'altra: la GUI lo dice (visto con oh-my-posh)
+await page.evaluate(() => { const t = window.__rm.tools.find(x => x.id === 'oh-my-posh'); window.__saveT = JSON.stringify(t); t.alt = '/usr/local/bin/oh-my-posh'; t.ok = false; window.__saveG = JSON.stringify(window.__rm.groups); window.__rm.groups.find(g => g.name === 'cloud-creds').allow.push('/usr/local/bin/oh-my-posh'); });
+await page.click('#sidebar button[data-view="status"]');
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForSelector('.rl-tool');
+const shadowTxt = await page.locator('.rl-tool', { hasText: 'oh-my-posh' }).textContent();
+check('regole: autorizzato ma lanci un altro percorso, la GUI avvisa e propone l\'alias', shadowTxt.includes('lancia la copia protetta') && shadowTxt.includes('alias oh-my-posh=/usr/local/bin/oh-my-posh'), await page.locator('.rl-tool', { hasText: 'oh-my-posh' }).first().innerHTML());
+await page.evaluate(() => { const i = window.__rm.tools.findIndex(x => x.id === 'oh-my-posh'); window.__rm.tools[i] = JSON.parse(window.__saveT); window.__rm.groups = JSON.parse(window.__saveG); });
+await page.click('#sidebar button[data-view="status"]');
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForSelector('.rl-tool');
+
 // Autorizzare k3d crea una bozza e la barra con il conteggio
 await page.click('[data-auth="k3d"]');
 check('regole: autorizzare mette una modifica in bozza', (await page.textContent('.rl-bar')).includes('1 modifica'));

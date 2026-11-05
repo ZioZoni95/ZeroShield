@@ -5,6 +5,17 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.12': {
+        title: 'Novità della versione 0.0.12',
+        items: [
+            ['Filtro di rete più difficile da aggirare', 'Un pacchetto frammentato di proposito non passa più: il primo frammento viene controllato come gli altri.'],
+            ['Protezione dei file più reattiva', 'Se un programma sostituisce un file protetto, la nuova copia viene protetta in circa un decimo di secondo (prima fino a 3 secondi).'],
+            ['La GUI avvisa quando lanci la copia sbagliata', 'In Regole, se hai autorizzato la copia protetta di un programma ma il terminale ne lancia un\'altra, lo vedi subito e ti viene proposto l\'alias.'],
+            ['Finestra adattiva', 'Tutti i componenti seguono la dimensione della finestra: a finestra stretta la barra laterale mostra solo le icone, a finestra larga il contenuto si allarga.'],
+            ['Testi più chiari su «Blocca le scritture»', 'Dice che la scrittura è consentita solo ai programmi in lista.'],
+        ],
+        note: 'Il filtro di rete e il controllo dei file richiedono il demone nuovo: l\'aggiornamento lo riavvia da solo se ZeroShield era già configurato.',
+    },
     '0.0.11': {
         title: 'Novità della versione 0.0.11',
         items: [
