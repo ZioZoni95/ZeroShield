@@ -23,8 +23,8 @@ jobs:
     name: Lint (gofmt, vet, staticcheck, shellcheck)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
           # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
@@ -46,8 +46,8 @@ jobs:
     name: Test (race + coverage)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
           # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
@@ -90,8 +90,8 @@ jobs:
     name: eBPF (clang + bpf2go + demone)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
           # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
@@ -139,12 +139,12 @@ jobs:
     name: GUI (Vite + Wails Go)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26.x"
           check-latest: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -200,8 +200,8 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # Ultima patch 1.26.x: la stdlib di go.mod (1.26.2) ha CVE note che
           # govulncheck segnala; il toolchain in go.mod la allinea anche in locale.
