@@ -111,11 +111,18 @@ type ToolView struct {
 	Allowed []string `json:"allowed"` // regole in cui e' gia' autorizzato
 }
 
+// HelperView: un programma di sistema suggerito, con i percorsi che esistono e che il demone accetterebbe.
+type HelperView struct {
+	Helper
+	Found []string `json:"found"`
+}
+
 // Model: tutto cio' che serve a disegnare la schermata Regole.
 type Model struct {
 	Profile string       `json:"profile"`
 	Groups  []GroupView  `json:"groups"`
 	Tools   []ToolView   `json:"tools"`
+	Helpers []HelperView `json:"helpers"`
 	Custom  []string     `json:"custom"`   // nomi di regole scritte a mano nel config
 	MyRules []MyRuleView `json:"my_rules"` // regole personali create con la GUI
 	Choice  Choice       `json:"choice"`
@@ -223,6 +230,15 @@ func BuildModel(cfgText, home string) Model {
 			}
 		}
 		m.Tools = append(m.Tools, tv)
+	}
+	for _, h := range Helpers {
+		hv := HelperView{Helper: h}
+		for _, p := range h.Paths {
+			if c := Check(home, p); c.Found && c.Trusted {
+				hv.Found = append(hv.Found, c.Path)
+			}
+		}
+		m.Helpers = append(m.Helpers, hv)
 	}
 	return m
 }

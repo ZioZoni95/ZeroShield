@@ -23,6 +23,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -236,57 +237,85 @@ Opzioni:
 	// in poi p/a/topSrc/tracker sono toccati solo da lei, niente data race.
 	ticker := time.NewTicker(time.Duration(cfg.RescanSeconds) * time.Second)
 	defer ticker.Stop()
-	// Radar eBPF: tracker userspace sopra la LRU kernel. La mappa conta per IP,
-	// qui si aggiunge wall-clock (lastSeen quando i contatori crescono) e top-12.
+	// Radar eBPF: tracker userspace sopra le LRU del kernel (IPv4 e IPv6). La mappa conta per IP, qui si aggiunge
+	// wall-clock (lastSeen quando i contatori crescono) e top-12. La chiave e' il testo dell'indirizzo.
 	type seen struct {
 		poison, subnet uint32
 		last           time.Time
 	}
-	tracker := map[[4]byte]*seen{}
+	tracker := map[string]*seen{}
 	var topSrc []ipc.SourceStat
 	var lastV6Drops uint64
-	refreshRadar := func() {
+	var radarSig string
+	// refreshRadar rilegge i contatori e restituisce true se la classifica e' cambiata (le UI vanno aggiornate).
+	// logV6 controlla il riepilogo IPv6 nel journal: una riga per rescan, non ogni pochi secondi.
+	refreshRadar := func(logV6 bool) bool {
 		stats := xdp.ReadStats(objs.XdpStats)
-		// FIX: il tracker cresceva senza limite (IP sorgente spoofati su mDNS
-		// = memoria del demone illimitata). Ora segue la LRU kernel: un IP
-		// sfrattato dal kernel esce anche da qui, tetto 1024 voci.
-		live := make(map[[4]byte]bool, len(stats))
-		for _, s := range stats {
-			live[s.IP] = true
+		stats6 := xdp.ReadStats6(objs.XdpStats6)
+		// FIX: il tracker cresceva senza limite (IP sorgente spoofati su mDNS = memoria illimitata). Ora segue le
+		// LRU del kernel: un IP sfrattato dal kernel esce anche da qui.
+		live := make(map[string]bool, len(stats)+len(stats6))
+		type row struct {
+			ip             string
+			poison, subnet uint32
+		}
+		rows := make([]row, 0, len(stats)+len(stats6))
+		for _, st := range stats {
+			rows = append(rows, row{xdp.IPString(st.IP), st.Poison, st.Subnet})
+		}
+		for _, st := range stats6 {
+			rows = append(rows, row{xdp.IPString6(st.IP), st.Poison, 0})
+		}
+		for _, r := range rows {
+			live[r.ip] = true
 		}
 		for ip := range tracker {
 			if !live[ip] {
 				delete(tracker, ip)
 			}
 		}
-		for _, s := range stats {
-			tot := s.Poison + s.Subnet
-			e, ok := tracker[s.IP]
+		for _, r := range rows {
+			tot := r.poison + r.subnet
+			e, ok := tracker[r.ip]
 			if !ok {
 				e = &seen{}
-				tracker[s.IP] = e
+				tracker[r.ip] = e
 			}
 			if tot > e.poison+e.subnet {
 				e.last = time.Now()
 			}
-			e.poison, e.subnet = s.Poison, s.Subnet
+			e.poison, e.subnet = r.poison, r.subnet
 		}
 		topSrc = topSrc[:0]
 		for ip, e := range tracker {
 			topSrc = append(topSrc, ipc.SourceStat{
-				IP: xdp.IPString(ip), Poison: e.poison, Subnet: e.subnet,
+				IP: ip, Poison: e.poison, Subnet: e.subnet,
 				Total: e.poison + e.subnet, LastSeen: e.last.UTC().Format(time.RFC3339),
 			})
 		}
-		sort.Slice(topSrc, func(i, j int) bool { return topSrc[i].Total > topSrc[j].Total })
+		sort.Slice(topSrc, func(i, j int) bool {
+			if topSrc[i].Total != topSrc[j].Total {
+				return topSrc[i].Total > topSrc[j].Total
+			}
+			return topSrc[i].IP < topSrc[j].IP
+		})
 		if len(topSrc) > 12 {
 			topSrc = topSrc[:12]
 		}
-		// IPv6: il radar e' IPv4, qui c'e' solo il totale. Un log per rescan se cresce.
-		if n := xdp.ReadV6Drops(objs.XdpV6Drops); n > lastV6Drops {
-			log.Printf("📡 poisoning IPv6 scartato da XDP: +%d (totale %d)", n-lastV6Drops, n)
-			lastV6Drops = n
+		if logV6 {
+			// Totale IPv6 aggregato: una riga per rescan se cresce (il dettaglio per indirizzo e' nel radar).
+			if n := xdp.ReadV6Drops(objs.XdpV6Drops); n > lastV6Drops {
+				log.Printf("📡 poisoning IPv6 scartato da XDP: +%d (totale %d)", n-lastV6Drops, n)
+				lastV6Drops = n
+			}
 		}
+		var sb strings.Builder
+		for _, t := range topSrc {
+			fmt.Fprintf(&sb, "%s:%d;", t.IP, t.Total)
+		}
+		changed := sb.String() != radarSig
+		radarSig = sb.String()
+		return changed
 	}
 	// --- XDP: non fatale --------------------------------------------------------------
 	// Se XDP non parte si continua: la protezione dei segreti (LSM) e' indipendente
@@ -383,35 +412,58 @@ Opzioni:
 		defer vt.Stop()
 		vpnC = vt.C
 	}
-	// Interfacce: ogni 2 secondi si controlla se ne e' comparsa o sparita una. Costa una lettura di /sys e del routing.
+	// Interfacce: si riallinea l'aggancio a ogni evento di rete del kernel (netlink: adattatore collegato, Wi-Fi acceso,
+	// rotta cambiata) e, come rete di sicurezza, ogni 2 secondi. Costa una lettura di /sys e del routing.
 	ifaceTick := time.NewTicker(2 * time.Second)
 	defer ifaceTick.Stop()
+	nlCtx, nlCancel := context.WithCancel(context.Background())
+	defer nlCancel()
+	linkC, nlErr := xdp.WatchLinks(nlCtx)
+	if nlErr != nil {
+		log.Printf("ℹ️ ascolto degli eventi di rete non disponibile (%v): le interfacce si controllano ogni 2 secondi", nlErr)
+	}
+	// Radar: i contatori del kernel si rileggono ogni 5 secondi (non solo a ogni rescan) e le UI si aggiornano se cambia.
+	radarTick := time.NewTicker(5 * time.Second)
+	defer radarTick.Stop()
+	syncIfaces := func() {
+		added, removed := xm.Sync()
+		if len(added)+len(removed) > 0 {
+			if len(added) > 0 {
+				log.Printf("🔌 filtro XDP agganciato a %v (ora: %v)", added, xm.Names())
+			}
+			if len(removed) > 0 {
+				log.Printf("🔌 interfaccia %v scomparsa: filtro rilasciato (ora: %v)", removed, xm.Names())
+			}
+			warnUncovered()
+			publishStatus()
+		}
+	}
 	go func() {
 		for {
 			select {
 			case <-ifaceTick.C:
-				added, removed := xm.Sync()
-				if len(added)+len(removed) > 0 {
-					if len(added) > 0 {
-						log.Printf("🔌 filtro XDP agganciato a %v (ora: %v)", added, xm.Names())
-					}
-					if len(removed) > 0 {
-						log.Printf("🔌 interfaccia %v scomparsa: filtro rilasciato (ora: %v)", removed, xm.Names())
-					}
-					warnUncovered()
+				syncIfaces()
+			case _, ok := <-linkC:
+				if !ok {
+					linkC = nil // canale chiuso: resta il controllo periodico
+					continue
+				}
+				syncIfaces()
+			case <-radarTick.C:
+				if refreshRadar(false) {
 					publishStatus()
 				}
 			case <-ticker.C:
 				p, a = mgr.Sync()
 				log.Printf("🔄 Rescan mappe: file=%d binari=%d", p, a)
-				refreshRadar()
+				refreshRadar(true)
 				curVpn = vpn.Check(cfg.Vpn, vpn.ExecRunner)
 				publishStatus()
 				lastRescan.Store(time.Now().UnixNano())
 			case <-rescanReq:
 				p, a = mgr.Sync()
 				log.Printf("🔄 Rescan su richiesta: file=%d binari=%d", p, a)
-				refreshRadar()
+				refreshRadar(true)
 				publishStatus()
 				lastRescan.Store(time.Now().UnixNano())
 			case <-vpnC:
@@ -478,7 +530,10 @@ Opzioni:
 		log.Fatalf("Errore apertura ringbuf: %v", err)
 	}
 	defer rd.Close()
-	go audit.Run(rd, cfg.LogFormat, mgr.RuleName, func(ev audit.ParsedEvent) {
+	// Il kernel porta nell'evento l'identita' (dev, inode) del binario: l'indice la traduce in un percorso anche se il
+	// processo e' gia' uscito (un `cat` negato sparisce prima che si legga /proc/PID/exe).
+	exeIdx := lsm.NewExeIndex(home)
+	go audit.Run(rd, cfg.LogFormat, mgr.RuleName, exeIdx.Resolve, func(ev audit.ParsedEvent) {
 		if srv == nil {
 			return
 		}

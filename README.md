@@ -80,7 +80,7 @@ GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`.
 |---|---|---|
 | XDP anti-poisoning (IPv4 + IPv6, fino a 2 tag VLAN) e radar | ✅ **kernel reale** | `zt-probe -xdp-lo` + pacchetti sintetici contro il vero programma (`BPF_PROG_TEST_RUN`) |
 | Canary anti-ransomware (fanotify) | ✅ **kernel reale** | tocco esca, allarme di massa, kill in `enforce` (`make test-root`) |
-| **Hook LSM dei segreti** (5 programmi) | 🟢 **visti negare su un kernel reale** (un PC) | `file_open`, rinomina, cancellazione, troncamento: file finto, kernel 7.0.0-42 Ubuntu, 2026-11-05; **non** provati `file_truncate`, `deny_write`, le protezioni predefinite con i programmi veri, una VM isolata |
+| **Hook LSM dei segreti** (6 programmi) | 🟢 **visti negare su un kernel reale** (un PC) | `file_open`, rinomina, cancellazione, troncamento: file finto (l'hook sui link, `inode_link`, è nuovo in 0.0.9 e non ancora visto sul PC), kernel 7.0.0-42 Ubuntu, 2026-11-05; **non** provati `file_truncate`, `deny_write`, le protezioni predefinite con i programmi veri, una VM isolata |
 | **Demone end-to-end** | 🟢 **gira su un PC con BPF LSM** | avviato dal `.deb`, XDP + hook + canary + IPC + `config-apply`; mai in una VM con snapshot né per giorni di fila |
 | Config, IPC, audit, whitelist, inotify, `netstat` | ✅ test unitari | `go test -race`, fuzz sul config, CI |
 | TUI, GUI, mock | ✅ testati | test unitari e `--dump` (TUI); test della GUI nel browser contro un demone simulato |
@@ -179,7 +179,7 @@ nome con cui lo chiami.
 * **Rete (XDP + firewall).** Scarta in ingresso LLMNR (5355), mDNS (5353), NBT-NS (137) e NetBIOS-DGM (138),
   guardando sia la porta sorgente sia quella di destinazione (la risposta avvelenata di Responder ha
   `sport=5355`). Il contatore non distingue le *richieste* degli altri host dalle *risposte avvelenate*. Vale
-  per IPv4 e IPv6, anche dietro uno o due tag VLAN; il radar delle UI è solo IPv4. `block_subnets` scarta
+  per IPv4 e IPv6, anche dietro uno o due tag VLAN; il radar mostra le sorgenti IPv4 e IPv6 (per IPv6 si raggruppano per /64). `block_subnets` scarta
   intere reti IPv4 (anche le risposte: mai gateway o DNS). XDP generico: funziona su Wi-Fi, Ethernet e VPN,
   con `interface` come lista (`wlan0,eth0`).
 * **Segreti (LSM).** Hook su `open`, `unlink`, `rename`, `path_truncate` e, sui kernel ≥ 6.2, `file_truncate`
@@ -417,7 +417,7 @@ aggiorna Go, npm e le GitHub Actions; `release.yml` pubblica il `.deb` ai tag `v
 ## 🗂️ Struttura
 
 ```text
-bpf/        kernel C (1 XDP + 5 LSM), loader a runtime e test; gli stub generati non sono versionati
+bpf/        kernel C (1 XDP + 6 LSM), loader a runtime e test; gli stub generati non sono versionati
 cmd/        zt-shield (demone) · zt-tui · zt-tray (icona) · zt-mockd · zt-probe
 internal/   config · lsm · xdp · audit · canary · netstat · vpn · priv (canale privilegiato) · watchdog
 pkg/        ipc (socket di lettura, SafeText) · svc (azioni di servizio dalle UI) · rules (catalogo, verifica «affidabile», blocco gestito)
@@ -446,7 +446,7 @@ docs/       documentazione (vedi sotto)
 **Da sapere prima di `enforce`.**
 
 * Il blocco è stato visto su un solo PC e con un file finto (vedi lo stato sopra): `file_truncate`, `deny_write` e le protezioni predefinite con i programmi veri non sono stati provati.
-* Il radar è solo IPv4 e il poisoning IPv6 dietro extension header passa.
+* Il poisoning IPv6 dietro extension header passa. Il radar si aggiorna ogni ~5 secondi.
 * Dopo un aggiornamento (apt, snap) l'inode di un browser cambia e resta fuori whitelist fino al rescan.
 * Il canary uccide dopo il tocco e non ferma scritture in-place che saltano le esche.
 * Il demone non applica il kill-switch VPN: applicarlo in automatico può spegnere la rete.

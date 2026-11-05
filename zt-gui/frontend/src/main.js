@@ -728,18 +728,39 @@ function toggleKnown(ip) {
     try { localStorage.setItem('zs-radar-known', JSON.stringify([...k])); } catch (_) {}
 }
 
-// Rete /24 di un IPv4 (per riassumere "11 sorgenti, tutte nella stessa rete").
+// Espande un IPv6 ("fe80::1") nei suoi 8 gruppi; null se non e' un IPv6 leggibile.
+function expand6(ip) {
+    const s = String(ip).split('%')[0];
+    if (!s.includes(':')) return null;
+    const [head, tail] = s.split('::');
+    const h = head ? head.split(':') : [];
+    const t = tail !== undefined ? (tail ? tail.split(':') : []) : [];
+    const fill = tail !== undefined ? Array(Math.max(0, 8 - h.length - t.length)).fill('0') : [];
+    const g = [...h, ...fill, ...t];
+    return g.length === 8 ? g.map(x => (x || '0').toLowerCase().replace(/^0+(?=.)/, '')) : null;
+}
+// Rete di un indirizzo, per riassumere "11 sorgenti, tutte nella stessa rete": /24 per IPv4, /64 per IPv6
+// (la rete locale di un'interfaccia IPv6 e' un /64).
 function net24(ip) {
+    const g = expand6(ip);
+    if (g) return g.slice(0, 4).join(':') + '::/64';
     const m = String(ip).match(/^(\d+\.\d+\.\d+)\.\d+$/);
     return m ? m[1] + '.0/24' : ip;
 }
-// Rete in cui cade la maggioranza (>= 60%) delle sorgenti: la LAN. Con meno di 3 sorgenti non si stima.
+const famOf = ip => (String(ip).includes(':') ? 6 : 4);
+// Rete in cui cade la maggioranza (>= 60%) delle sorgenti della STESSA famiglia: la LAN. Con meno di 3 sorgenti non si
+// stima. Le famiglie si valutano a parte: una sorgente IPv6 non e' "fuori rete" solo perche' le altre sono IPv4.
 function dominantNet(src) {
-    if (src.length < 3) return null;
-    const c = {};
-    src.forEach(s => { const n = net24(s.ip || s.IP || ''); c[n] = (c[n] || 0) + 1; });
-    const [n, k] = Object.entries(c).sort((x, y) => y[1] - x[1])[0];
-    return k / src.length >= 0.6 ? n : null;
+    const out = {4: null, 6: null};
+    [4, 6].forEach(f => {
+        const own = src.filter(s => famOf(s.ip || s.IP || '') === f);
+        if (own.length < 3) return;
+        const c = {};
+        own.forEach(s => { const n = net24(s.ip || s.IP || ''); c[n] = (c[n] || 0) + 1; });
+        const [n, k] = Object.entries(c).sort((x, y) => y[1] - x[1])[0];
+        if (k / own.length >= 0.6) out[f] = n;
+    });
+    return out;
 }
 
 function classify(s, domNet) {
@@ -751,7 +772,8 @@ function classify(s, domNet) {
     const rate = srcRate(ip);
     if (rate !== null && rate >= RADAR_BURST_PER_MIN) why.push(`${Math.round(rate)} drop/min sostenuti`);
     if (total >= RADAR_HIGH_TOTAL) why.push(`${total} drop in totale`);
-    if (domNet && net24(ip) !== domNet) why.push(`fuori dalla rete delle altre sorgenti (${domNet})`);
+    const dn = domNet && domNet[famOf(ip)];
+    if (dn && net24(ip) !== dn) why.push(`fuori dalla rete delle altre sorgenti (${dn})`);
     if (why.length) return {cls: 'attention', why: why.join(' · ')};
     return {cls: 'noise', why: 'pochi drop, stessa rete delle altre: tipico sottofondo di una LAN'};
 }

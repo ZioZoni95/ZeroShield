@@ -298,3 +298,20 @@ func TestInterfaceChoice(t *testing.T) {
 		t.Errorf("modello con interface a mano: %+v", mm)
 	}
 }
+
+func TestHelpersAreOnlyListedWhenPresentAndTrusted(t *testing.T) {
+	m := BuildModel("profile: home\nuser: alice\n", t.TempDir())
+	if len(m.Helpers) != len(Helpers) {
+		t.Fatalf("helper nel modello: %d", len(m.Helpers))
+	}
+	for _, h := range m.Helpers {
+		for _, p := range h.Found {
+			if err := Trusted(p); err != nil {
+				t.Errorf("%s: %s suggerito ma non affidabile: %v", h.ID, p, err)
+			}
+			if _, err := os.Stat(p); err != nil {
+				t.Errorf("%s: %s suggerito ma non esiste", h.ID, p)
+			}
+		}
+	}
+}

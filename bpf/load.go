@@ -27,6 +27,7 @@ type CorePrograms struct {
 	ZtFileRename   *ebpf.Program `ebpf:"zt_file_rename"`
 	ZtFileUnlink   *ebpf.Program `ebpf:"zt_file_unlink"`
 	ZtPathTruncate *ebpf.Program `ebpf:"zt_path_truncate"`
+	ZtInodeLink    *ebpf.Program `ebpf:"zt_inode_link"`
 }
 
 type coreObjects struct {
@@ -93,7 +94,7 @@ func Load() (*Objects, error) {
 
 // LSMPrograms: gli hook LSM da agganciare, nell'ordine; include file_truncate se caricato.
 func (o *Objects) LSMPrograms() []*ebpf.Program {
-	progs := []*ebpf.Program{o.ZtFileOpen, o.ZtFileUnlink, o.ZtFileRename, o.ZtPathTruncate}
+	progs := []*ebpf.Program{o.ZtFileOpen, o.ZtFileUnlink, o.ZtFileRename, o.ZtPathTruncate, o.ZtInodeLink}
 	if o.ZtFileTruncate != nil {
 		progs = append(progs, o.ZtFileTruncate)
 	}
@@ -108,7 +109,7 @@ func (o *Objects) Close() error {
 			first = err
 		}
 	}
-	for _, p := range []*ebpf.Program{o.XdpShield, o.ZtFileOpen, o.ZtFileRename, o.ZtFileUnlink, o.ZtPathTruncate, o.ZtFileTruncate} {
+	for _, p := range []*ebpf.Program{o.XdpShield, o.ZtFileOpen, o.ZtFileRename, o.ZtFileUnlink, o.ZtPathTruncate, o.ZtInodeLink, o.ZtFileTruncate} {
 		if p != nil {
 			keep(p.Close())
 		}

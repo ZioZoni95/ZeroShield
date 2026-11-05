@@ -81,7 +81,7 @@ await page.addInitScript((status) => {
   const prog = (name, path, o) => Object.assign({ input: name, name, path, found: true, trusted: true, trust_err: '', verdict_ok: true, why: '', fix: '', ok: true, alt: '' }, o || {});
   const tool = (id, label, rules, reads, p, allowed) => Object.assign({ id, label, names: [id], rules, reads }, p, { allowed: allowed || [] });
   window.__rm = {
-    profile: 'home', manual: false, manual_rules: false, global_mode: 'audit', error: '', custom: [], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
+    profile: 'home', manual: false, manual_rules: false, global_mode: 'audit', error: '', custom: [], helpers: [{ id: 'localsearch', label: 'Indicizzatore di GNOME (localsearch)', why: 'scansiona i file in background', found: ['/usr/libexec/localsearch-extractor-3'] }, { id: 'altro', label: 'Non presente', why: 'x', found: [] }], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
     groups: [
       grp('ssh', 'ssh-keys', true, ['ssh', 'ssh-add'], ['.ssh/id_*']),
       grp('cloud', 'cloud-creds', true, ['kubectl', 'helm', 'k9s'], ['.kube/config']),
@@ -372,6 +372,22 @@ await page.click('#radar-list tr[data-ip="10.0.0.1"] [data-known]');
 await page.waitForTimeout(100);
 check('radar: "togli nota" lo riporta alla classificazione', (await page.getAttribute('#radar-list tr[data-ip="10.0.0.1"]', 'data-class')) === 'attention');
 
+// Radar con sorgenti IPv6: ogni famiglia ha la sua rete di riferimento (/24 per IPv4, /64 per IPv6)
+await page.evaluate(() => {
+  const mk = (ip, t) => ({ ip, poison: t, subnet: 0, total: t, last_seen: '2026-11-04T10:00:00Z' });
+  window.__status = Object.assign({}, window.__status, { top_sources: [
+    mk('10.0.0.1', 4), mk('10.0.0.2', 3), mk('10.0.0.3', 2), mk('10.0.0.4', 2),
+    mk('fe80::1111:2222:3333:4444', 5), mk('fe80::aaaa:bbbb:cccc:dddd', 4), mk('fe80::1', 3), mk('fe80::2', 2),
+    mk('2001:db8:1:2::9', 6),
+  ] });
+  window.__emit('shield:status', window.__status);
+});
+await page.waitForTimeout(150);
+const cls6 = await page.$$eval('#radar-list tr[data-ip]', rows => Object.fromEntries(rows.map(r => [r.dataset.ip, r.dataset.class])));
+check('radar: le sorgenti IPv6 compaiono nell elenco', 'fe80::1' in cls6 && '2001:db8:1:2::9' in cls6, Object.keys(cls6).join(' '));
+check('radar: IPv4 e IPv6 della propria rete sono rumore (non «fuori rete» per colpa dell altra famiglia)', cls6['10.0.0.1'] === 'noise' && cls6['fe80::1'] === 'noise', JSON.stringify(cls6));
+check('radar: un IPv6 di un altro /64 e da verificare, con il motivo', cls6['2001:db8:1:2::9'] === 'attention' && (await page.textContent('#radar-list tr[data-ip="2001:db8:1:2::9"]')).includes('fuori dalla rete'));
+
 const legend = await page.textContent('#radar-legend');
 check('radar: legenda a sezioni (cosa vedi, colori, rumore o attacco, cosa fare) e ammette il limite', ['Cosa vedi', 'Colori', 'Rumore o attacco?', 'Cosa fare', 'non distingue'].every(t => legend.includes(t)));
 
@@ -609,6 +625,11 @@ check('regole: senza programmi si spiega perche serve', (await page.textContent(
 await page.fill('#wz-prog', 'miotool'); await page.click('#wz-progcheck');
 await page.waitForSelector('#wz-trust');
 check('regole: un programma modificabile dall utente propone «Rendi affidabile»', (await page.textContent('#wz-prog-out')).includes('cartella che puoi modificare'));
+check('regole: la procedura suggerisce l indicizzatore di sistema, solo se presente', (await page.locator('[data-helper]').count()) === 1 && (await page.textContent('#wz-helpers')).includes('Indicizzatore di GNOME') && !(await page.textContent('#wz-helpers')).includes('Non presente'));
+await page.click('[data-helper="localsearch"]');
+check('regole: un clic aggiunge i suoi percorsi e il pulsante diventa «✓»', (await page.locator('#wz-allow .rl-chip', { hasText: 'localsearch-extractor-3' }).count()) === 1 && (await page.locator('[data-helper="localsearch"]').isDisabled()));
+await page.click('#wz-allow .rl-chip:has-text("localsearch-extractor-3") .rl-x');
+check('regole: se lo togli il suggerimento torna disponibile', await page.locator('[data-helper="localsearch"]').isEnabled());
 await page.fill('#wz-prog', 'keepassxc'); await page.click('#wz-progcheck');
 await page.waitForFunction(() => document.querySelectorAll('#wz-allow .rl-chip').length === 1);
 await page.selectOption('#wz-mode', 'enforce');

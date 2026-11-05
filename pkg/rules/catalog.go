@@ -33,6 +33,22 @@ var Tools = []Tool{
 	{"glab", "GitLab CLI", []string{"glab"}, []string{"dev-tokens"}, "legge il token in ~/.config/glab-cli"},
 }
 
+// Helper: un programma di sistema che legge i file in background e che conviene autorizzare quando si proteggono cartelle di
+// documenti. Non e' un segreto da custodire: se lo si nega, la regola funziona ma il programma resta bloccato a ogni scansione.
+type Helper struct {
+	ID    string   `json:"id"`
+	Label string   `json:"label"`
+	Why   string   `json:"why"`
+	Paths []string `json:"paths"` // percorsi possibili (se ne usano quelli presenti e affidabili)
+}
+
+// Helpers: indicizzatori e simili. localsearch e' l'indicizzatore di GNOME (ex Tracker): senza, le sue scansioni compaiono tra
+// i blocchi di ogni cartella di documenti protetta.
+var Helpers = []Helper{
+	{"localsearch", "Indicizzatore di GNOME (localsearch)", "scansiona i file in background per la ricerca e le anteprime",
+		[]string{"/usr/libexec/localsearch-extractor-3", "/usr/libexec/localsearch-3", "/usr/libexec/tracker-extract-3", "/usr/libexec/tracker-miner-fs-3"}},
+}
+
 // ToolByID cerca nel catalogo.
 func ToolByID(id string) (Tool, bool) {
 	for _, t := range Tools {
