@@ -1,6 +1,8 @@
 # Copyright (c) 2026 ZioZoni95
 # SPDX-License-Identifier: MIT
-# Pacchetto principale: demone, TUI, probe, script, servizio, documentazione.
+# Pacchetto UNICO: demone, TUI, GUI, probe, script, servizio, documentazione.
+# Le librerie grafiche (GTK/WebKit) sono Recommends: sul desktop apt le installa da solo,
+# su un server si usa `apt install --no-install-recommends` e la GUI semplicemente non parte.
 # Build: make package   (VERSION e ARCH dall'ambiente, vedi Makefile)
 name: zeroshield
 arch: ${ARCH}
@@ -11,7 +13,7 @@ section: admin
 priority: optional
 maintainer: ZioZoni95 <noreply@github.com>
 description: |
-  Scudo zero-trust locale nel kernel Linux (eBPF XDP + LSM).
+  Scudo zero-trust locale nel kernel Linux (eBPF XDP + LSM), con TUI e GUI desktop.
   Protegge i segreti (chiavi SSH, kubeconfig, token) da processi non autorizzati,
   scarta LLMNR/mDNS/NBT-NS in ingresso, esche anti-ransomware via fanotify.
   Progetto sperimentale: leggere /usr/share/doc/zeroshield/TEST_SANDBOX.md.
@@ -21,12 +23,18 @@ license: MIT
 depends:
   - systemd
 recommends:
+  - libgtk-3-0t64 | libgtk-3-0
+  - libwebkit2gtk-4.1-0
   - ufw
   - nftables
   - wireguard-tools
 suggests:
-  - zeroshield-gui
   - fido2-tools
+# Fino a v0.0.3 la GUI era un pacchetto a parte (`zeroshield-gui`): questo lo sostituisce.
+replaces:
+  - zeroshield-gui
+conflicts:
+  - zeroshield-gui
 contents:
   - src: bin/zt-shield
     dst: /usr/sbin/zt-shield
@@ -41,6 +49,14 @@ contents:
   - src: bin/zt-mockd
     dst: /usr/bin/zt-mockd
     file_info: { mode: 0755 }
+  # GUI desktop (Wails + WebKitGTK).
+  - src: bin/zt-gui
+    dst: /usr/bin/zt-gui
+    file_info: { mode: 0755 }
+  - src: packaging/zeroshield.desktop
+    dst: /usr/share/applications/zeroshield.desktop
+  - src: zt-gui/build/appicon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/zeroshield.png
   - src: packaging/zt-shield.service
     dst: /usr/lib/systemd/system/zt-shield.service
   # Config: mai sovrascritta agli aggiornamenti (regole scritte a mano).

@@ -1,6 +1,6 @@
 # Copyright (c) 2026 ZioZoni95
 # SPDX-License-Identifier: MIT
-# Release: a ogni tag vX.Y.Z compila i due .deb e li allega a una GitHub Release.
+# Release: a ogni tag vX.Y.Z compila il .deb UNICO e lo allega a una GitHub Release.
 #   git tag v0.1.0 && git push origin v0.1.0
 name: release
 
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   deb:
-    name: Pacchetti .deb
+    name: Pacchetto .deb
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -38,11 +38,10 @@ jobs:
           make generate BPFTOOL="$BPFTOOL"
           go vet ./...
           go test -race ./internal/... ./pkg/...
-      - name: Pacchetti
+      - name: Pacchetto
         # VERSION dal tag: v0.1.0 -> 0.1.0 (lo calcola il Makefile).
         run: |
           make package BPFTOOL="$BPFTOOL"
-          make package-gui
           cd dist && sha256sum ./*.deb > SHA256SUMS && cat SHA256SUMS
       - name: GitHub Release
         env:
@@ -57,17 +56,14 @@ jobs:
           > (vedi `docs/TEST_SANDBOX.md`). Installare questo .deb su una macchina
           > vera non protegge nulla e può negarti i tuoi stessi file in enforce.**
 
-          Scarica UN SOLO .deb: i due pacchetti sono alternativi (`zeroshield-gui` dichiara
-          `Conflicts: zeroshield`, installarli insieme fallisce).
-
-          | Vuoi | Scarica | Contiene |
-          |---|---|---|
-          | Solo terminale | `zeroshield_*_amd64.deb` | demone, TUI, probe, servizio, script |
-          | Anche la finestra desktop | `zeroshield-gui_*_amd64.deb` | tutto quello sopra + GUI (completo, autonomo) |
+          Un solo pacchetto: `zeroshield_*_amd64.deb` contiene demone, TUI e GUI desktop.
+          Le librerie grafiche (GTK/WebKit) sono *consigliate*: apt le installa da solo sul
+          desktop; su un server usa `apt install --no-install-recommends` e la GUI non parte.
+          Sostituisce il vecchio `zeroshield-gui` (fino a v0.0.3).
 
           ```
           sha256sum -c SHA256SUMS --ignore-missing
-          sudo apt install ./zeroshield-gui_*_amd64.deb   # oppure ./zeroshield_*_amd64.deb
+          sudo apt install ./zeroshield_*_amd64.deb
           ```
 
           Ogni release e' un'istantanea del codice al suo tag, non cumulativa.

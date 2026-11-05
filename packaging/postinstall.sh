@@ -15,7 +15,7 @@ ZeroShield installato (NON avviato).
   2. Verifica il kernel:              sudo zt-probe -xdp-lo
      e che /sys/kernel/security/lsm contenga "bpf"
   3. Avvia in audit:                  sudo systemctl enable --now zt-shield
-  4. Log / interfaccia:               journalctl -u zt-shield -f   |   zt-tui
+  4. Log / interfaccia:               journalctl -u zt-shield -f   |   zt-tui   |   zt-gui (menu applicazioni)
 
 VPN (facoltativa, provala prima in VM): /usr/share/doc/zeroshield/VPN_SETUP.md
   script in /usr/share/zeroshield/scripts/ (vpn_killswitch.sh, nm_vpn.sh, proton_*.sh)

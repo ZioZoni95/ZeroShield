@@ -339,7 +339,7 @@ Variabili d'ambiente: `SHIELD_USER` (utente da proteggere in primo piano), `ZT_S
   sudo update-grub && sudo reboot
   ```
 * **Per installare da pacchetto:** nient'altro (dipendenza: `systemd`; consigliati `ufw`, `nftables`,
-  `wireguard-tools`). La GUI richiede GTK3 e WebKitGTK.
+  `wireguard-tools`, e `libgtk-3-0t64` + `libwebkit2gtk-4.1-0` per la GUI).
 * **Per compilare:**
   ```bash
   sudo apt update
@@ -366,28 +366,29 @@ Verifica automatica: `bash scripts/check_prereqs.sh` (kernel, BTF, LSM `bpf`, to
 ### 📥 Le release: cosa contengono
 
 Ogni tag `v*` fa partire `.github/workflows/release.yml`, che compila e pubblica una **pre-release** con
-due `.deb` e `SHA256SUMS`. **Ogni release è un'istantanea indipendente del codice al suo tag, non
-cumulativa**: scegli la versione e usa i file di *quella* release.
+**un solo `.deb`** (`zeroshield_<versione>_amd64.deb`) e `SHA256SUMS`. **Ogni release è un'istantanea
+indipendente del codice al suo tag, non cumulativa**: scegli la versione e usa i file di *quella* release.
+Le versioni restano `0.0.x` (alpha, solo lab); la `1.0.0` arriverà solo a prodotto testato e completo.
 
-| Release | `zeroshield` | `zeroshield-gui` | La GUI è standalone? |
-|---|---|---|---|
-| [v0.0.1](https://github.com/ZioZoni95/ZeroShield/releases/tag/v0.0.1) | demone, TUI, probe, mock, servizio, script (senza polkit) | solo `zt-gui` + `.desktop` (3,6 MB) | **No**: dipende da `zeroshield` |
-| [v0.0.2](https://github.com/ZioZoni95/ZeroShield/releases/tag/v0.0.2) | come v0.0.1 + policy polkit | come v0.0.1 | **No** |
-| [v0.0.3](https://github.com/ZioZoni95/ZeroShield/releases/tag/v0.0.3) | invariato (9 MB) | **tutto**: demone, TUI, GUI, servizio, polkit, script (12,7 MB) | **Sì**, ma `Conflicts: zeroshield` |
+| Release | Pacchetti | Contenuto |
+|---|---|---|
+| [v0.0.1](https://github.com/ZioZoni95/ZeroShield/releases/tag/v0.0.1) | `zeroshield` + `zeroshield-gui` | la GUI **dipende** da `zeroshield`: vanno installati **entrambi** |
+| [v0.0.2](https://github.com/ZioZoni95/ZeroShield/releases/tag/v0.0.2) | come v0.0.1 (+ policy polkit) | **entrambi** |
+| [v0.0.3](https://github.com/ZioZoni95/ZeroShield/releases/tag/v0.0.3) | `zeroshield` **oppure** `zeroshield-gui` | `zeroshield-gui` è completo ma `Conflicts: zeroshield`: **uno solo** |
+| v0.0.4 e successive | **`zeroshield`** (unico) | demone, TUI, GUI, servizio, polkit, script. Sostituisce `zeroshield-gui` |
 
-* **v0.0.1 e v0.0.2:** scarica e installa **entrambi** i `.deb` insieme.
-* **Da v0.0.3:** scarica **un solo** `.deb`; i due sono **alternativi** (installarli insieme fallisce).
-  * solo terminale → `zeroshield_*_amd64.deb`
-  * anche la finestra desktop → `zeroshield-gui_*_amd64.deb`
+Il pacchetto unico ha le librerie grafiche (GTK e WebKit) come **consigliate** (`Recommends`): sul desktop
+`apt` le installa da solo. Su un server senza schermo usa `sudo apt install --no-install-recommends` e la
+GUI non parte (demone e TUI funzionano). Chi ha già `zeroshield-gui` si aggiorna installando il nuovo
+`zeroshield`: lo sostituisce (`Replaces`/`Conflicts`).
 
-> Le release pubblicate **non** includono ancora l'hardening successivo (canary, XDP IPv6/QinQ, `file_truncate`,
-> inotify, `--dry-run`…): per averlo serve un nuovo tag. L'elenco è nel [`CHANGELOG.md`](CHANGELOG.md).
+> Le release **già pubblicate** (fino a v0.0.3) **non** includono ancora l'hardening successivo (canary, XDP
+> IPv6/QinQ, `file_truncate`, inotify, `--dry-run`…) né la GUI rinnovata: per averli serve un nuovo tag.
+> L'elenco è nel [`CHANGELOG.md`](CHANGELOG.md).
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./zeroshield-gui_*_amd64.deb    # tutto: demone + TUI + GUI
-# oppure, senza desktop:
-sudo apt install ./zeroshield_*_amd64.deb        # demone + TUI
+sudo apt install ./zeroshield_*_amd64.deb        # demone + TUI + GUI (server: --no-install-recommends)
 
 sudoedit /etc/zt-shield/shield.yaml              # user: <tuo-utente>   (obbligatorio)
 sudo zt-probe -xdp-lo                            # il kernel accetta i programmi?
@@ -411,8 +412,9 @@ sudo bash scripts/install_service.sh $USER home   # 6. servizio systemd
 journalctl -u zt-shield -f
 ```
 
-`make package` costruisce `dist/zeroshield_<versione>_<arch>.deb` e `make package-gui` il pacchetto
-con la GUI (versione dal tag git, altrimenti `0.0.0~dev+<commit>`).
+`make package` costruisce `dist/zeroshield_<versione>_<arch>.deb`, il pacchetto unico con demone, TUI e
+GUI (versione dal tag git, altrimenti `0.0.0~dev+<commit>`). Servono anche Node e `libgtk-3-dev
+libwebkit2gtk-4.1-dev`.
 
 ---
 
@@ -509,7 +511,7 @@ Cosa coprono, con i numeri verificati: `test_killswitch.sh` 54 controlli · `tes
 | Lint | `gofmt`, `go vet` (senza stub eBPF), `staticcheck`, `shellcheck` |
 | Test | `go test -race` + coverage, fuzz del config, script con comandi finti, kill-switch in namespace, canary fanotify da root |
 | eBPF | `clang` + `bpf2go`, `go vet` completo, build, `zt-probe` sul kernel del runner, parser XDP da root, pacchetto `.deb` |
-| GUI | Vite + `npm audit`, test nel browser, build Wails (`webkit2_41`), pacchetto `zeroshield-gui`, `govulncheck` |
+| GUI | Vite + `npm audit`, test nel browser, build Wails (`webkit2_41`), pacchetto `.deb` unico, `govulncheck` |
 | Sicurezza | `govulncheck` e `gosec` (SARIF su code scanning) |
 
 Dependabot aggiorna Go, npm e le GitHub Actions. Il workflow `release.yml` costruisce e pubblica i `.deb` ai tag `v*`.

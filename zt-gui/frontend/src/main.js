@@ -797,7 +797,7 @@ function renderGuide() {
 // il demone): niente "make build", e la config esiste gia', quindi si MODIFICA, non si
 // copia sopra. Il percorso da sorgente resta, in coda.
 const GUIDE_PKG = [
-    ['1 · Installa', 'La GUI dipende dal demone: un solo comando installa tutto. Il servizio non parte da solo.', 'sudo apt install ./zeroshield_*_amd64.deb ./zeroshield-gui_*_amd64.deb'],
+    ['1 · Installa', 'Un solo pacchetto contiene demone, TUI e GUI. Il servizio non parte da solo.', 'sudo apt install ./zeroshield_*_amd64.deb'],
     ['2 · Imposta l\'utente', 'Apri la config e scrivi il tuo utente in <b>user:</b>. Resta in <b>audit</b> (non blocca nulla). Il socket sarà leggibile solo da root e da quell\'utente.', 'sudoedit /etc/zt-shield/shield.yaml'],
     ['3 · Verifica il kernel', 'Ogni programma eBPF deve risultare ✅ e <b>bpf</b> deve comparire tra gli LSM attivi.', 'sudo zt-probe -xdp-lo && cat /sys/kernel/security/lsm'],
     ['4 · Avvia in audit', 'Poi guarda questa GUI popolarsi (o <span class="mono">zt-tui</span>).', 'sudo systemctl enable --now zt-shield && journalctl -u zt-shield -f'],
