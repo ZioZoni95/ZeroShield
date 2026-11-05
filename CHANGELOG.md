@@ -6,6 +6,10 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.13] — 2026-11-05
+
+- **GUI**: i riquadri a tendina (`<details>`) non si richiudono più da soli a ogni aggiornamento dello stato, in nessuna schermata. Si ricorda lo stato per schermata, titolo e posizione. Test in Guida e Configurazione.
+
 ## [0.0.12] — 2026-11-05
 
 Hardening dopo una revisione statica del codice (commit `633bdec`); ogni punto è stato verificato sul sorgente prima di correggerlo.

@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.13': {
+        title: 'Novità della versione 0.0.13',
+        items: [
+            ['I riquadri restano come li lasci', 'Le sezioni a tendina (Guida, Configurazione, Regole…) non si richiudono più da sole quando la pagina si aggiorna: restano aperte o chiuse come le hai messe.'],
+        ],
+        note: 'Solo la finestra cambia: il demone resta quello della 0.0.12.',
+    },
     '0.0.12': {
         title: 'Novità della versione 0.0.12',
         items: [
