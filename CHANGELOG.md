@@ -4,10 +4,14 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
-Versione in preparazione: **0.0.6** (file `VERSION`). La 0.0.5 non è stata rilasciata: le sue novità sono qui sotto e il popup
-«Novità» le mostra insieme a quelle della 0.0.6 a chi aggiorna dalla 0.0.4.
+Versione in preparazione: **0.0.7** (file `VERSION`). Le 0.0.5 e 0.0.6 non sono state rilasciate: le loro novità sono qui sotto e il popup
+«Novità» le mostra tutte insieme a chi aggiorna dalla 0.0.4.
 
 ### Aggiunte
+- **Scelta delle interfacce da filtrare** (scheda Rete): elenco con tipo (cavo, USB, Wi-Fi, VPN, bridge, container, loopback) e stato «filtrata / non filtrata»,
+  modalità *Automatica* (la rete in uso al riavvio) o *Scelgo io* (fisiche consigliate preselezionate, anche se spente), virtuali ripiegate con l'avviso sui rischi,
+  bozza + *Applica* con riavvio del servizio. Il demone riporta `interfaces` e `iface_auto` nello stato; `interface` nel config è validata (nomi e doppioni).
+  Il log avvisa una sola volta e solo per interfacce fisiche o VPN accese ma non filtrate (prima ~15 righe a ogni avvio per veth e bridge).
 - **Modalità per singola protezione**: ogni regola può stare in `audit` o `enforce` indipendentemente dalle altre (chiave `mode` nella regola,
   oppure `rule_modes` per quelle predefinite). Nel kernel è una nuova mappa `rule_modes` (0 = eredita la modalità globale, 1 = audit,
   2 = enforce): senza voci il comportamento è identico a prima. `ipc.RuleSummary` riporta `mode` e `deny_write`; `ipc.Status` la `version` del demone.

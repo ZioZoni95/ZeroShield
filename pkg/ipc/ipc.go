@@ -47,6 +47,14 @@ type RuleSummary struct {
 	DenyWrite bool     `json:"deny_write"` // nega anche le scritture
 }
 
+// IfaceInfo: una interfaccia di rete per le UI, con il tipo e se il filtro XDP la copre.
+type IfaceInfo struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind"` // ethernet | usb | wifi | vpn | bridge | virtual | loopback
+	Up      bool   `json:"up"`
+	Covered bool   `json:"covered"` // il filtro XDP e' agganciato
+}
+
 // ListenEntry: una porta TCP in ascolto (da internal/netstat del demone).
 type ListenEntry struct {
 	Proto string `json:"proto"`
@@ -118,6 +126,8 @@ type Status struct {
 	Rules          []RuleSummary `json:"rules"`
 	Time           string        `json:"time"`
 	Version        string        `json:"version"` // versione del demone (le UI avvisano se e' diversa dalla loro)
+	Interfaces     []IfaceInfo   `json:"interfaces"`
+	IfaceAuto      bool          `json:"iface_auto"` // nessuna `interface` nel config: si filtra la rete in uso
 }
 
 // WireEvent: un evento di audit serializzato (stessi campi del log JSON).

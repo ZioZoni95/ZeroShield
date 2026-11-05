@@ -61,6 +61,14 @@ func main() {
 			{Proto: "udp", Addr: "0.0.0.0", Port: 5353, PID: 700, Exe: "/usr/sbin/avahi-daemon"},
 		},
 		ListeningTotal: 3,
+		IfaceAuto:      true,
+		Interfaces: []ipc.IfaceInfo{
+			{Name: "enx00e04c478980", Kind: "usb", Up: true, Covered: true},
+			{Name: "wlp1s0", Kind: "wifi", Up: true, Covered: false},
+			{Name: "tide0", Kind: "vpn", Up: true, Covered: false},
+			{Name: "docker0", Kind: "bridge", Up: true, Covered: false},
+			{Name: "lo", Kind: "loopback", Up: true, Covered: false},
+		},
 		TopSources: []ipc.SourceStat{
 			{IP: "192.168.100.7", Poison: 34, Subnet: 0, Total: 34, LastSeen: "2026-10-02T10:35:01Z"},
 			{IP: "192.168.100.23", Poison: 0, Subnet: 128, Total: 128, LastSeen: "2026-10-02T10:35:00Z"},

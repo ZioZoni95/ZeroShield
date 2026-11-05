@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -44,12 +45,15 @@ type Choice struct {
 	RemoveAllow  map[string][]string `yaml:"remove_allow,omitempty" json:"remove_allow"`
 	RuleModes    map[string]string   `yaml:"rule_modes,omitempty" json:"rule_modes"`
 	ExtraRules   []CustomRule        `yaml:"extra_rules,omitempty" json:"extra_rules"`
+	// Interface: interfacce su cui agganciare il filtro di rete (lista csv, come la chiave `interface` del config).
+	// Vuoto = automatica (la rete in uso).
+	Interface string `yaml:"interface,omitempty" json:"interface"`
 }
 
 // Empty: nessuna scelta (il blocco non serve).
 func (c Choice) Empty() bool {
 	return len(c.EnableGroups) == 0 && len(c.DisableRules) == 0 && len(c.AllowExtra) == 0 &&
-		len(c.RemoveAllow) == 0 && len(c.RuleModes) == 0 && len(c.ExtraRules) == 0
+		len(c.RemoveAllow) == 0 && len(c.RuleModes) == 0 && len(c.ExtraRules) == 0 && c.Interface == ""
 }
 
 // uniqKeep toglie i doppioni mantenendo l'ordine (per i percorsi l'ordine e' quello scelto dall'utente).
@@ -108,6 +112,13 @@ func normalize(c Choice) Choice {
 		out.ExtraRules = append(out.ExtraRules, r)
 	}
 	sort.Slice(out.ExtraRules, func(i, j int) bool { return out.ExtraRules[i].Name < out.ExtraRules[j].Name })
+	var ifs []string
+	for _, n := range strings.Split(c.Interface, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			ifs = append(ifs, n)
+		}
+	}
+	out.Interface = strings.Join(uniqKeep(ifs), ",")
 	return out
 }
 
@@ -158,6 +169,9 @@ func validate(c Choice) error {
 		if m != "audit" && m != "enforce" {
 			return fmt.Errorf("modalita' %q non valida (audit|enforce)", m)
 		}
+	}
+	if err := ValidateInterfaces(c.Interface); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, r := range c.ExtraRules {
@@ -232,6 +246,45 @@ func hasManualExtraRules(rest string) bool {
 	return ok
 }
 
+// ErrManualInterface: `interface` e' scritta a mano nel config: la GUI non puo' definirla una seconda volta.
+var ErrManualInterface = errors.New("nel config c'e' gia' `interface` scritta a mano: modificala li' (o toglila per sceglierla dalla GUI)")
+
+var ifaceRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
+
+// ValidateInterfaces controlla una lista csv di nomi di interfaccia (stessa regola del demone).
+func ValidateInterfaces(list string) error {
+	seen := map[string]bool{}
+	for _, n := range strings.Split(list, ",") {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if !ifaceRe.MatchString(n) {
+			return fmt.Errorf("interfaccia %q non valida", n)
+		}
+		if seen[n] {
+			return fmt.Errorf("interfaccia %q ripetuta", n)
+		}
+		seen[n] = true
+	}
+	return nil
+}
+
+// ManualInterface dice se il config ha `interface` scritta a mano (fuori dal blocco gestito).
+func ManualInterface(text string) bool {
+	before, _, after, found := split(text)
+	rest := text
+	if found {
+		rest = before + after
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal([]byte(rest), &m); err != nil {
+		return false
+	}
+	_, ok := m["interface"]
+	return ok
+}
+
 // ManualExtraRules dice se il config ha extra_rules scritte a mano (fuori dal blocco gestito).
 func ManualExtraRules(text string) bool {
 	before, _, after, found := split(text)
@@ -277,6 +330,9 @@ func Apply(text string, c Choice) (string, error) {
 	}
 	if len(c.ExtraRules) > 0 && hasManualExtraRules(rest) {
 		return "", ErrManualRules
+	}
+	if c.Interface != "" && ManualInterface(text) {
+		return "", ErrManualInterface
 	}
 	blk, err := Render(c)
 	if err != nil {

@@ -73,6 +73,7 @@ await page.addInitScript((status) => {
     CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
     ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
     PreviewPaths: async (ps) => (ps.some(p => p === '/etc') ? { errors: ['"/etc" è troppo largo: proteggerlo bloccherebbe quasi ogni programma'], matched: 0, examples: [], missing: [], warnings: [] } : { errors: [], matched: 3, examples: ['/home/u/Documents/a.kdbx'], missing: [], warnings: ['Sono 3 file: controlla'] }),
+    ApplyInterfaces: async (names) => { window.__ifCalls.push(names); if (window.__ifFail) throw new Error(window.__ifFail); window.__rm.choice = Object.assign({}, window.__rm.choice, { interface: names.join(',') }); },
     PickPath: async (k) => (k === 'dir' ? '.wallet' : 'Documents/segreto.txt'),
     MakeTrusted: async (x) => { window.__trustCalls.push(x); const t = window.__trustResult[x]; if (!t) throw new Error('no'); return t; },
   } } };
@@ -108,7 +109,7 @@ await page.addInitScript((status) => {
   window.__trustResult = {
     '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s': prog('k9s', '/usr/local/bin/k9s'),
   };
-  window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = '';
+  window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = ''; window.__ifCalls = []; window.__ifFail = '';
   window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = [];
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
@@ -640,6 +641,97 @@ check('regole: Elimina toglie la protezione in bozza', (await page.locator('.rl-
 await page.click('#rl-cancel');
 check('regole: Annulla la ripristina', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).count()) === 1);
 await page.evaluate(() => { window.__rm.choice = { enable_groups: null, disable_rules: null, allow_extra: null }; window.__applyCalls = []; });
+
+
+// ---------------------------------------------------------------------------
+// Rete: scelta delle interfacce da filtrare
+// ---------------------------------------------------------------------------
+await page.evaluate(() => {
+  window.__status = Object.assign({}, window.__status, { xdp: ['eth0'], iface_auto: true, interfaces: [
+    { name: 'eth0', kind: 'usb', up: true, covered: true }, { name: 'wlp1s0', kind: 'wifi', up: true, covered: false },
+    { name: 'tide0', kind: 'vpn', up: true, covered: false }, { name: 'docker0', kind: 'bridge', up: true, covered: false },
+    { name: 'veth1', kind: 'virtual', up: true, covered: false }, { name: 'lo', kind: 'loopback', up: true, covered: false },
+  ] });
+  window.__rm.choice = { enable_groups: null, disable_rules: null, allow_extra: null };
+  window.__emit('shield:status', window.__status);
+});
+await page.click('#sidebar button[data-view="net"]');
+await page.waitForSelector('#if-box .if-mode');
+const ifTxt = await page.textContent('#if-box');
+check('rete: sezione «Interfacce filtrate» con le fisiche in chiaro (nome, tipo, stato)', ifTxt.includes('Interfacce filtrate') && ifTxt.includes('eth0') && ifTxt.includes('USB') && ifTxt.includes('wlp1s0') && ifTxt.includes('Wi-Fi') && ifTxt.includes('filtrata'));
+check('rete: avviso quando una fisica accesa non e filtrata', ifTxt.includes('wlp1s0') && ifTxt.includes('è accesa ma non è filtrata'));
+check('rete: di default e «Automatica» e le caselle sono bloccate', (await page.locator('input[name="if-mode"][value="auto"]').isChecked()) && (await page.locator('[data-if="eth0"]').isDisabled()));
+check('rete: le virtuali sono ripiegate e dette come tali', (await page.evaluate(() => !document.getElementById('if-virt').open)) && ifTxt.includes('interfacce virtuali (4'));
+check('rete: niente barra Applica senza modifiche', (await page.locator('#if-apply').count()) === 0);
+await page.click('input[name="if-mode"][value="manual"]');
+check('rete: «Scelgo io» preseleziona le fisiche (cavo, USB, Wi-Fi), anche se una non e coperta', (await page.locator('[data-if="eth0"]').isChecked()) && (await page.locator('[data-if="wlp1s0"]').isChecked()) && !(await page.locator('[data-if="tide0"]').isChecked()));
+check('rete: la barra dice quante interfacce', (await page.textContent('#if-barwrap')).includes('2 interfacce selezionate'));
+await page.evaluate(() => { document.getElementById('if-virt').open = true; });
+await page.check('[data-if="lo"]');
+check('rete: la loopback spiega a cosa serve (prova del radar)', (await page.textContent('#if-box')).includes('prova') || (await page.textContent('#if-box')).includes('Radar'));
+await page.check('[data-if="docker0"]');
+check('rete: un bridge avverte che puo rompere la scoperta tra servizi', (await page.textContent('#if-box')).includes('scoperta tra servizi'));
+await page.uncheck('[data-if="docker0"]');
+await page.uncheck('[data-if="lo"]');
+check('rete: la casella delle virtuali resta aperta dopo un ridisegno', await page.evaluate(() => document.getElementById('if-virt').open));
+for (const n of ['eth0', 'wlp1s0']) await page.uncheck(`[data-if="${n}"]`);
+check('rete: senza nessuna interfaccia Applica e spento e dice di sceglierne una', (await page.locator('#if-apply').isDisabled()) && (await page.textContent('#if-barwrap')).includes('scegline almeno una'));
+await page.check('[data-if="eth0"]'); await page.check('[data-if="wlp1s0"]');
+check('rete: la bozza sopravvive agli stati che arrivano ogni 2 secondi', await (async () => {
+  await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { time: '2026-10-05T11:00:00Z' })));
+  await page.waitForTimeout(120);
+  return (await page.locator('[data-if="wlp1s0"]').isChecked()) && (await page.locator('#if-apply').count()) === 1;
+})());
+await page.click('#if-apply');
+const ifDlg = await page.textContent('#dlg');
+check('rete: la conferma elenca le interfacce e rassicura sulla rete', ifDlg.includes('eth0, wlp1s0') && ifDlg.includes('La rete non si interrompe'));
+await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__ifCalls.length === 1);
+check('rete: ApplyInterfaces riceve la lista ordinata', (await page.evaluate(() => window.__ifCalls[0])).join() === 'eth0,wlp1s0');
+await page.waitForFunction(() => !document.getElementById('if-apply'));
+check('rete: dopo Applica la scelta resta in «Scelgo io»', (await page.locator('input[name="if-mode"][value="manual"]').isChecked()));
+await page.click('input[name="if-mode"][value="auto"]');
+await page.click('#if-apply'); await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__ifCalls.length === 2);
+check('rete: tornare ad automatica manda una lista vuota', (await page.evaluate(() => window.__ifCalls[1])).length === 0);
+await page.evaluate(() => { window.__ifFail = 'il servizio non riparte'; });
+await page.click('input[name="if-mode"][value="manual"]');
+await page.uncheck('[data-if="wlp1s0"]');
+await page.click('#if-apply'); await page.click('#dlg-ok');
+await page.waitForSelector('#toast.danger.show');
+check('rete: se l applicazione fallisce l errore e visibile e la bozza resta', (await page.textContent('#toast')).includes('non riparte') && (await page.locator('#if-apply').count()) === 1);
+await page.evaluate(() => { window.__ifFail = ''; window.__rm.choice = { enable_groups: null, disable_rules: null, allow_extra: null }; });
+
+// interface scritta a mano nel config: sola lettura; demone vecchio senza elenco
+const ifMan = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+ifMan.on('pageerror', e => errors.push(String(e)));
+await ifMan.addInitScript((st) => {
+  window.go = { main: { App: { GetStatus: async () => Object.assign({}, st, { xdp: ['eth0', 'lo'], interfaces: [{ name: 'eth0', kind: 'ethernet', up: true, covered: true }, { name: 'lo', kind: 'loopback', up: true, covered: true }] }),
+    SocketPath: async () => '/x', Version: async () => '1', ServiceState: async () => 'active', ConfigMode: async () => 'audit', ConfigText: async () => '',
+    RulesModel: async () => ({ profile: 'home', manual: false, manual_interface: true, base_interface: 'eth0,lo', choice: {}, groups: [], tools: [] }) } } };
+  window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+  localStorage.setItem('zs-onboarded-v2', '1'); localStorage.setItem('zs-seen-version', '9.9.9');
+}, STATUS);
+await ifMan.goto(`http://127.0.0.1:${port}/`);
+await ifMan.waitForSelector('#content h2');
+await ifMan.click('#sidebar button[data-view="net"]');
+await ifMan.waitForSelector('#if-box [data-if]');
+check('rete: con interface scritta a mano si puo solo guardare, con la spiegazione', (await ifMan.textContent('#if-box')).includes('scritta a mano') && (await ifMan.locator('[data-if="eth0"]').isDisabled()) && (await ifMan.locator('input[name="if-mode"]').count()) === 0);
+await ifMan.close();
+const ifOld = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+ifOld.on('pageerror', e => errors.push(String(e)));
+await ifOld.addInitScript((st) => {
+  window.go = { main: { App: { GetStatus: async () => st, SocketPath: async () => '/x', Version: async () => '1', ServiceState: async () => 'active', ConfigMode: async () => 'audit', ConfigText: async () => '',
+    RulesModel: async () => ({ profile: 'home', choice: {}, groups: [], tools: [] }) } } };
+  window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+  localStorage.setItem('zs-onboarded-v2', '1'); localStorage.setItem('zs-seen-version', '9.9.9');
+}, STATUS);
+await ifOld.goto(`http://127.0.0.1:${port}/`);
+await ifOld.waitForSelector('#content h2');
+await ifOld.click('#sidebar button[data-view="net"]');
+await ifOld.waitForFunction(() => document.getElementById('if-box').textContent.includes('non ha ancora comunicato'));
+check('rete: con un demone vecchio (senza elenco) lo dice invece di mostrare una lista vuota', true);
+await ifOld.close();
 
 // Modello con errore (servizio non installato)
 const rlErr = await browser.newPage({ viewport: { width: 1100, height: 760 } });

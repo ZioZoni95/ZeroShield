@@ -18,6 +18,8 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+
+	"zt-shield/internal/netif"
 )
 
 // lpmKey ha lo stesso layout di lpm_key in zerotrust.c.
@@ -65,7 +67,6 @@ func Attach(prog *ebpf.Program, custom string) (link.Link, *net.Interface, error
 		// interfaccia. XDP e' esclusivo per interfaccia, non si accumula.
 		return nil, iface, fmt.Errorf("attach XDP su %s: %w", iface.Name, err)
 	}
-	logOtherUpInterfaces(iface.Name)
 	return l, iface, nil
 }
 
@@ -95,6 +96,11 @@ func AttachAll(prog *ebpf.Program, custom string) ([]link.Link, []*net.Interface
 		links = append(links, l)
 		ifaces = append(ifaces, iface)
 	}
+	var covered []string
+	for _, ifc := range ifaces {
+		covered = append(covered, ifc.Name)
+	}
+	logUncovered(covered)
 	return links, ifaces
 }
 
@@ -120,22 +126,31 @@ func splitList(s string) []string {
 	return out
 }
 
-// logOtherUpInterfaces elenca le interfacce UP (non loopback) diverse da quella
-// coperta: prima restavano scoperte in silenzio, ora l'operatore lo vede nel log
-// e puo' aggiungerle a `interface: "wlan0,eth0"`.
-func logOtherUpInterfaces(covered string) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return
+// logUncovered avvisa UNA volta sulle interfacce fisiche (cavo, USB, Wi-Fi) e sui tunnel accesi ma non coperte:
+// quelle sono la rete ostile da cui ci si difende. Container e bridge (docker, veth) sono solo contati: sono
+// decine su un PC con Docker e riempivano il log di avvisi che nascondevano quelli utili.
+func logUncovered(covered []string) {
+	is := map[string]bool{}
+	for _, n := range covered {
+		is[n] = true
 	}
-	for _, ifc := range ifaces {
-		if ifc.Name == covered || ifc.Name == "lo" {
+	var risky []string
+	virt := 0
+	for _, i := range netif.List(netif.Sys, netif.Up) {
+		if is[i.Name] || !i.Up || i.Kind == netif.KindLoopback {
 			continue
 		}
-		if ifc.Flags&net.FlagUp == 0 {
-			continue
+		if i.Physical() || i.Kind == netif.KindVPN {
+			risky = append(risky, i.Name)
+		} else {
+			virt++
 		}
-		log.Printf("⚠️ interfaccia %s UP ma NON coperta da XDP (coperta: %s). Aggiungila a 'interface: \"%s,%s\"' se esposta a rete ostile", ifc.Name, covered, covered, ifc.Name)
+	}
+	for _, n := range risky {
+		log.Printf("⚠️ interfaccia %s UP ma NON coperta da XDP (coperte: %s). Aggiungila a 'interface' (o dalla GUI, scheda Rete) se e' esposta a una rete ostile", n, strings.Join(covered, ","))
+	}
+	if virt > 0 {
+		log.Printf("ℹ️ %d interfacce virtuali (container, bridge) non filtrate: di norma e' voluto", virt)
 	}
 }
 

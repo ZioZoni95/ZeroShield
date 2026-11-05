@@ -6,6 +6,10 @@ export function ApplyRules(arg1) {
   return window['go']['main']['App']['ApplyRules'](arg1);
 }
 
+export function ApplyInterfaces(arg1) {
+  return window['go']['main']['App']['ApplyInterfaces'](arg1);
+}
+
 export function CheckProgram(arg1) {
   return window['go']['main']['App']['CheckProgram'](arg1);
 }

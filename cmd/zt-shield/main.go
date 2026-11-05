@@ -30,8 +30,10 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -44,6 +46,7 @@ import (
 	"zt-shield/internal/canary"
 	"zt-shield/internal/config"
 	"zt-shield/internal/lsm"
+	"zt-shield/internal/netif"
 	"zt-shield/internal/netstat"
 	"zt-shield/internal/priv"
 	"zt-shield/internal/vpn"
@@ -338,6 +341,10 @@ Opzioni:
 				Mode: cfg.EffectiveMode(r), DenyWrite: r.DenyWrite})
 		}
 		listening, listeningTotal := listeningSnapshot()
+		var ifs []ipc.IfaceInfo
+		for _, i := range netif.List(netif.Sys, netif.Up) {
+			ifs = append(ifs, ipc.IfaceInfo{Name: i.Name, Kind: i.Kind, Up: i.Up, Covered: slices.Contains(xdpNames, i.Name)})
+		}
 		srv.UpdateStatus(ipc.Status{
 			Profile: cfg.Profile, Mode: cfg.Mode, Home: home,
 			HookLSM: true, XDP: xdpNames,
@@ -345,7 +352,8 @@ Opzioni:
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
 			Vpn: curVpn, TopSources: topSrc,
 			Listening: listening, ListeningTotal: listeningTotal, Rules: rules,
-			Version: version,
+			Version:    version,
+			Interfaces: ifs, IfaceAuto: strings.TrimSpace(cfg.Interface) == "",
 		})
 	}
 	publishStatus()
