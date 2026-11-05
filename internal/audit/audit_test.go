@@ -54,28 +54,28 @@ func TestDecodeEventWithExeIdentity(t *testing.T) {
 }
 
 func TestResolveExeFallback(t *testing.T) {
-	res := func(dev, ino uint64) (string, bool) {
+	res := func(dev, ino uint64, comm string) (string, bool) {
 		if dev == 7 && ino == 42 {
-			return "/usr/bin/cat", true
+			return "/usr/bin/" + comm, true
 		}
 		return "", false
 	}
 	// /proc ha risposto: vale lui, l'indice non si consulta.
-	if got := resolveExeFallback("/proc/risposta", Event{ExeIno: 42, ExeDev: 7}, res); got != "/proc/risposta" {
+	if got := resolveExeFallback("/proc/risposta", Event{ExeIno: 42, ExeDev: 7}, "cat", res); got != "/proc/risposta" {
 		t.Errorf("deve vincere /proc: %q", got)
 	}
 	// /proc vuoto (processo uscito): si usa l'identita' del kernel.
-	if got := resolveExeFallback("", Event{ExeIno: 42, ExeDev: 7}, res); got != "/usr/bin/cat" {
+	if got := resolveExeFallback("", Event{ExeIno: 42, ExeDev: 7}, "cat", res); got != "/usr/bin/cat" {
 		t.Errorf("fallback sull'indice: %q", got)
 	}
 	// Identita' sconosciuta o assente: vuoto, mai un percorso inventato.
-	if got := resolveExeFallback("", Event{ExeIno: 99, ExeDev: 7}, res); got != "" {
+	if got := resolveExeFallback("", Event{ExeIno: 99, ExeDev: 7}, "cat", res); got != "" {
 		t.Errorf("inode sconosciuto: %q", got)
 	}
-	if got := resolveExeFallback("", Event{}, res); got != "" {
+	if got := resolveExeFallback("", Event{}, "cat", res); got != "" {
 		t.Errorf("senza identita': %q", got)
 	}
-	if got := resolveExeFallback("", Event{ExeIno: 42, ExeDev: 7}, nil); got != "" {
+	if got := resolveExeFallback("", Event{ExeIno: 42, ExeDev: 7}, "cat", nil); got != "" {
 		t.Errorf("senza resolver: %q", got)
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -23,7 +25,7 @@ import (
 // solo quando serve (una ricerca fallita e piu' di 10 secondi dall'ultimo giro), non a ogni evento.
 type ExeIndex struct {
 	mu      sync.Mutex
-	m       map[key]string
+	m       map[key][]string // piu' percorsi se sono hard link dello stesso file (binari multi-call)
 	dirs    []indexDir
 	built   time.Time
 	maxWalk int
@@ -36,7 +38,7 @@ type indexDir struct {
 
 // NewExeIndex: cartelle dei programmi di sistema e dell'utente. Profondita' limitata per non scandire mezzo disco.
 func NewExeIndex(home string) *ExeIndex {
-	return &ExeIndex{m: map[key]string{}, maxWalk: 60000, dirs: []indexDir{
+	return &ExeIndex{m: map[key][]string{}, maxWalk: 60000, dirs: []indexDir{
 		{"/usr/bin", 1}, {"/usr/sbin", 1}, {"/bin", 1}, {"/sbin", 1}, {"/usr/local/bin", 1}, {"/usr/local/sbin", 1},
 		{"/snap/bin", 1}, {"/usr/libexec", 3}, {"/usr/lib/cargo/bin", 3}, {"/opt", 4},
 		{filepath.Join(home, ".local/bin"), 1}, {filepath.Join(home, "bin"), 1},
@@ -44,7 +46,7 @@ func NewExeIndex(home string) *ExeIndex {
 }
 
 func (x *ExeIndex) rebuild() {
-	idx := map[key]string{}
+	idx := map[key][]string{}
 	n := 0
 	for _, d := range x.dirs {
 		root := d.path
@@ -71,8 +73,8 @@ func (x *ExeIndex) rebuild() {
 			if r, err := filepath.EvalSymlinks(p); err == nil {
 				real = r
 			}
-			if _, dup := idx[k]; !dup {
-				idx[k] = real
+			if !slices.Contains(idx[k], real) {
+				idx[k] = append(idx[k], real)
 			}
 			return nil
 		})
@@ -94,19 +96,36 @@ func depth(root, p string) int {
 	return d
 }
 
-// Resolve restituisce il percorso del binario con quella identita'. Al primo uso (o dopo una ricerca fallita, al massimo
-// ogni 10 secondi) rilegge le cartelle.
-func (x *ExeIndex) Resolve(dev, ino uint64) (string, bool) {
+// pick sceglie il nome da mostrare tra piu' percorsi dello stesso file. I comandi base di alcune distribuzioni (coreutils
+// in Rust su Ubuntu recenti) sono un unico binario con decine di nomi: quello giusto e' il nome con cui e' stato lanciato
+// (comm, troncato a 15 caratteri dal kernel); in mancanza, il primo in ordine alfabetico.
+func pick(paths []string, comm string) string {
+	if comm != "" {
+		for _, p := range paths {
+			b := filepath.Base(p)
+			if b == comm || (len(comm) == 15 && len(b) > 15 && b[:15] == comm) {
+				return p
+			}
+		}
+	}
+	sorted := append([]string(nil), paths...)
+	sort.Strings(sorted)
+	return sorted[0]
+}
+
+// Resolve restituisce il percorso del binario con quella identita'; comm (il nome del processo, anche vuoto) sceglie tra
+// i nomi dello stesso file. Al primo uso (o dopo una ricerca fallita, al massimo ogni 10 secondi) rilegge le cartelle.
+func (x *ExeIndex) Resolve(dev, ino uint64, comm string) (string, bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	k := key{Ino: ino, Dev: uint32(dev)}
-	if p, ok := x.m[k]; ok {
-		return p, true
+	if ps, ok := x.m[k]; ok && len(ps) > 0 {
+		return pick(ps, comm), true
 	}
 	if x.built.IsZero() || time.Since(x.built) > 10*time.Second {
 		x.rebuild()
-		if p, ok := x.m[k]; ok {
-			return p, true
+		if ps, ok := x.m[k]; ok && len(ps) > 0 {
+			return pick(ps, comm), true
 		}
 	}
 	return "", false
