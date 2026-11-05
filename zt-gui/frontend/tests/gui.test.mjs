@@ -677,6 +677,7 @@ check('rete: la casella delle virtuali resta aperta dopo un ridisegno', await pa
 for (const n of ['eth0', 'wlp1s0']) await page.uncheck(`[data-if="${n}"]`);
 check('rete: senza nessuna interfaccia Applica e spento e dice di sceglierne una', (await page.locator('#if-apply').isDisabled()) && (await page.textContent('#if-barwrap')).includes('scegline almeno una'));
 await page.check('[data-if="eth0"]'); await page.check('[data-if="wlp1s0"]');
+check('rete: il testo spiega che le interfacce si seguono senza riavviare', (await page.textContent('#if-box')).includes('senza riavviare') && (await page.textContent('#if-box')).includes('appena compaiono'));
 check('rete: la bozza sopravvive agli stati che arrivano ogni 2 secondi', await (async () => {
   await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { time: '2026-10-05T11:00:00Z' })));
   await page.waitForTimeout(120);
@@ -718,6 +719,21 @@ await ifMan.click('#sidebar button[data-view="net"]');
 await ifMan.waitForSelector('#if-box [data-if]');
 check('rete: con interface scritta a mano si puo solo guardare, con la spiegazione', (await ifMan.textContent('#if-box')).includes('scritta a mano') && (await ifMan.locator('[data-if="eth0"]').isDisabled()) && (await ifMan.locator('input[name="if-mode"]').count()) === 0);
 await ifMan.close();
+const ifAbs = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+ifAbs.on('pageerror', e => errors.push(String(e)));
+await ifAbs.addInitScript((st) => {
+  window.go = { main: { App: { GetStatus: async () => Object.assign({}, st, { xdp: ['eth0'], interfaces: [{ name: 'eth0', kind: 'ethernet', up: true, covered: true }] }),
+    SocketPath: async () => '/x', Version: async () => '1', ServiceState: async () => 'active', ConfigMode: async () => 'audit', ConfigText: async () => '',
+    RulesModel: async () => ({ profile: 'home', manual: false, choice: { interface: 'eth0,usb9' }, groups: [], tools: [] }) } } };
+  window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+  localStorage.setItem('zs-onboarded-v2', '1'); localStorage.setItem('zs-seen-version', '9.9.9');
+}, STATUS);
+await ifAbs.goto(`http://127.0.0.1:${port}/`);
+await ifAbs.waitForSelector('#content h2');
+await ifAbs.click('#sidebar button[data-view="net"]');
+await ifAbs.waitForSelector('#if-box [data-if="usb9"]');
+check('rete: un adattatore scelto ma scollegato resta in elenco e si aggancera quando compare', (await ifAbs.textContent('#if-box')).includes('non collegata ora') && (await ifAbs.textContent('#if-box')).includes('si aggancia quando compare') && (await ifAbs.locator('[data-if="usb9"]').isChecked()));
+await ifAbs.close();
 const ifOld = await browser.newPage({ viewport: { width: 1100, height: 760 } });
 ifOld.on('pageerror', e => errors.push(String(e)));
 await ifOld.addInitScript((st) => {

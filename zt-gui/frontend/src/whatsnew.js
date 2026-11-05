@@ -5,6 +5,15 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.8': {
+        title: 'Novità della versione 0.0.8',
+        items: [
+            ['Il filtro segue la rete, senza riavviare', 'Se colleghi un adattatore USB, accendi il Wi-Fi o ricolleghi un cavo mentre ZeroShield è in funzione, viene filtrato da solo nel giro di un paio di secondi. Prima restava scoperto fino al riavvio.'],
+            ['Automatica ora protegge di più', 'In modalità automatica il filtro copre tutte le reti fisiche accese (cavo, USB, Wi-Fi) e quella in uso, non solo quella con cui hai avviato il servizio.'],
+            ['Interfacce scelte ma non collegate', 'Se scegli un adattatore USB e lo scolleghi, resta nell\'elenco e si aggancia da solo quando lo rimetti.'],
+        ],
+        note: 'Serve il demone nuovo: dopo l\'aggiornamento riavvia il servizio.',
+    },
     '0.0.7': {
         title: 'Novità della versione 0.0.7',
         items: [

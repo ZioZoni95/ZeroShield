@@ -17,9 +17,6 @@ import (
 	"strings"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
-
-	"zt-shield/internal/netif"
 )
 
 // lpmKey ha lo stesso layout di lpm_key in zerotrust.c.
@@ -34,86 +31,12 @@ type lpmKey struct {
 	Addr      [4]byte
 }
 
-// Attach aggancia il programma XDP all'interfaccia indicata, o a quella della route di default.
-// Supporta lista separata da virgola ("wlan0,eth0"): si attacca alla prima
-// disponibile e AVVISA sulle altre interfacce UP non coperte.
-// Resta single-attach per interfaccia (limite XDP), ma almeno non piu' silenzioso.
+// L'aggancio alle interfacce (anche a caldo) e' in manager.go.
 //
-// XDPGenericMode: il programma gira nel percorso software della ricezione invece che
-// nel driver nativo. Serve perche' i driver nativi esistono solo per schede
-// specifiche (mlx, i40e, e1000e...) e la dev box puo' essere un Wi-Fi, un dongle USB
-// o un tunnel VPN. Il prezzo e' prestazioni: in generic mode ogni pacchetto attraversa
-// il percorso software, quindi piu' CPU che con il driver nativo.
-//
-// NOTA: XDP vede SOLO i pacchetti in ingresso. Non e' un filtro di flusso: non
-// distingue una connessione da uno scan, e non vede nulla di quello che esce.
-//
-// FIX: prima si copriva UNA sola interfaccia in silenzio. Se la route di default
-// passava per un tunnel (WireGuard, tailscale) il filtro andava sul tunnel e chi
-// arrivava da Ethernet/Wi-Fi non incontrava nulla. Ora main attacca a tutte le
-// interfacce elencate in `interface` (csv) e qui si avvisa sulle UP scoperte.
-func Attach(prog *ebpf.Program, custom string) (link.Link, *net.Interface, error) {
-	iface, err := defaultInterface(firstOfList(custom))
-	if err != nil {
-		return nil, nil, err
-	}
-	l, err := link.AttachXDP(link.XDPOptions{
-		Program:   prog,
-		Interface: iface.Index,
-		Flags:     link.XDPGenericMode, // universale (Wi-Fi, Ethernet, VPN)
-	})
-	if err != nil {
-		// Errore tipico: un altro programma XDP e' gia' agganciato a questa
-		// interfaccia. XDP e' esclusivo per interfaccia, non si accumula.
-		return nil, iface, fmt.Errorf("attach XDP su %s: %w", iface.Name, err)
-	}
-	return l, iface, nil
-}
-
-// AttachAll attacca il programma a OGNI interfaccia della lista csv
-// (o alla sola default se custom e' vuoto). Restituisce links e interfacce
-// nella stessa cardinalita': il chiamante chiude ogni link in defer.
-// Un attach fallito non blocca gli altri: si logga e si prosegue, perche'
-// LSM resta attiva comunque (stessa filosofia non-fatale di prima).
-func AttachAll(prog *ebpf.Program, custom string) ([]link.Link, []*net.Interface) {
-	names := splitList(custom)
-	if len(names) == 0 {
-		iface, err := defaultInterface("")
-		if err != nil {
-			log.Printf("⚠️ XDP non attivo: %v", err)
-			return nil, nil
-		}
-		names = []string{iface.Name}
-	}
-	var links []link.Link
-	var ifaces []*net.Interface
-	for _, n := range names {
-		l, iface, err := Attach(prog, n)
-		if err != nil {
-			log.Printf("⚠️ XDP non attivo su %s: %v", n, err)
-			continue
-		}
-		links = append(links, l)
-		ifaces = append(ifaces, iface)
-	}
-	var covered []string
-	for _, ifc := range ifaces {
-		covered = append(covered, ifc.Name)
-	}
-	logUncovered(covered)
-	return links, ifaces
-}
-
-// firstOfList prende il primo nome da una lista csv (compat con Attach singolo).
-func firstOfList(custom string) string {
-	if custom == "" {
-		return ""
-	}
-	for _, p := range splitList(custom) {
-		return p // solo il primo
-	}
-	return custom
-}
+// NOTA: XDP vede SOLO i pacchetti in ingresso. Non e' un filtro di flusso: non distingue una connessione da uno
+// scan, e non vede nulla di quello che esce. Si usa la modalita' generica (XDPGenericMode): il programma gira nel
+// percorso software della ricezione invece che nel driver, perche' i driver nativi esistono solo per schede specifiche
+// e la macchina puo' avere un Wi-Fi, un dongle USB o un tunnel VPN. Il prezzo e' un po' di CPU in piu'.
 
 // splitList divide "eth0, wlan0" in nomi puliti, senza vuoti.
 func splitList(s string) []string {
@@ -124,34 +47,6 @@ func splitList(s string) []string {
 		}
 	}
 	return out
-}
-
-// logUncovered avvisa UNA volta sulle interfacce fisiche (cavo, USB, Wi-Fi) e sui tunnel accesi ma non coperte:
-// quelle sono la rete ostile da cui ci si difende. Container e bridge (docker, veth) sono solo contati: sono
-// decine su un PC con Docker e riempivano il log di avvisi che nascondevano quelli utili.
-func logUncovered(covered []string) {
-	is := map[string]bool{}
-	for _, n := range covered {
-		is[n] = true
-	}
-	var risky []string
-	virt := 0
-	for _, i := range netif.List(netif.Sys, netif.Up) {
-		if is[i.Name] || !i.Up || i.Kind == netif.KindLoopback {
-			continue
-		}
-		if i.Physical() || i.Kind == netif.KindVPN {
-			risky = append(risky, i.Name)
-		} else {
-			virt++
-		}
-	}
-	for _, n := range risky {
-		log.Printf("⚠️ interfaccia %s UP ma NON coperta da XDP (coperte: %s). Aggiungila a 'interface' (o dalla GUI, scheda Rete) se e' esposta a una rete ostile", n, strings.Join(covered, ","))
-	}
-	if virt > 0 {
-		log.Printf("ℹ️ %d interfacce virtuali (container, bridge) non filtrate: di norma e' voluto", virt)
-	}
 }
 
 // xdpStat rispecchia struct xdp_stat in zerotrust.c (16 byte: 4+4+8).

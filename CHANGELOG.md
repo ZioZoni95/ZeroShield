@@ -4,10 +4,15 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
-Versione in preparazione: **0.0.7** (file `VERSION`). Le 0.0.5 e 0.0.6 non sono state rilasciate: le loro novità sono qui sotto e il popup
+Versione in preparazione: **0.0.8** (file `VERSION`). Le 0.0.5, 0.0.6 e 0.0.7 non sono state rilasciate: le loro novità sono qui sotto e il popup
 «Novità» le mostra tutte insieme a chi aggiorna dalla 0.0.4.
 
 ### Aggiunte
+- **Il filtro di rete segue le interfacce a caldo** (`internal/xdp/manager.go`): ogni 2 secondi il demone riallinea l'aggancio XDP. Un adattatore USB collegato,
+  il Wi-Fi acceso o un'interfaccia ricollegata (indice nuovo) vengono filtrati senza riavviare; una scomparsa rilascia il link. In **automatico** (`interface` vuota)
+  il filtro copre ora **tutte le interfacce fisiche accese** (cavo, USB, Wi-Fi) più la rotta predefinita, anche se è un tunnel, invece della sola rotta in uso all'avvio:
+  è più protettivo, e chi vuole l'elenco esatto sceglie «Scelgo io». In manuale le interfacce nominate si agganciano appena esistono. `block_subnets` si carica sempre
+  (prima solo se XDP era attivo all'avvio). Test con interfacce finte (collegamento, scollegamento, indice cambiato, aggancio fallito con un solo avviso).
 - **Scelta delle interfacce da filtrare** (scheda Rete): elenco con tipo (cavo, USB, Wi-Fi, VPN, bridge, container, loopback) e stato «filtrata / non filtrata»,
   modalità *Automatica* (la rete in uso al riavvio) o *Scelgo io* (fisiche consigliate preselezionate, anche se spente), virtuali ripiegate con l'avviso sui rischi,
   bozza + *Applica* con riavvio del servizio. Il demone riporta `interfaces` e `iface_auto` nello stato; `interface` nel config è validata (nomi e doppioni).
