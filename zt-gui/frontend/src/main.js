@@ -116,15 +116,19 @@ content.addEventListener('click', e => {
 // barra laterale si riapre quando vuoi.
 function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* senza storage: si rivede a ogni avvio, nessun danno */ } }
-function showWhatsNew(manual) {
-    const w = WHATS_NEW[baseVersion(appVersion)];
-    if (!w) { if (manual) toast('Nessuna novità registrata per questa versione.'); return; }
+function showWhatsNew(manual, list) {
+    // list: voci [versione, {title, items, note}] da mostrare; senza, la voce della versione in uso.
+    const cur = WHATS_NEW[baseVersion(appVersion)];
+    const entries = list || (cur ? [[baseVersion(appVersion), cur]] : []);
+    if (!entries.length) { if (manual) toast('Nessuna novità registrata per questa versione.'); return; }
     if (document.getElementById('dlg')) return;
     const ov = document.createElement('div');
     ov.id = 'dlg';
-    ov.innerHTML = `<div class="ob-card wn" role="dialog" aria-modal="true" aria-label="${esc(w.title)}"><h2>${esc(w.title)}</h2>
+    const title = entries.length === 1 ? entries[0][1].title : 'Novità dalle ultime versioni';
+    const body = entries.map(([v, w]) => `${entries.length > 1 ? `<h3 class="wn-v">${esc(w.title)}</h3>` : ''}
         <ul class="wn-list">${w.items.map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d)}</span></li>`).join('')}</ul>
-        ${w.note ? `<p class="wn-note">${esc(w.note)}</p>` : ''}
+        ${w.note ? `<p class="wn-note">${esc(w.note)}</p>` : ''}`).join('');
+    ov.innerHTML = `<div class="ob-card wn" role="dialog" aria-modal="true" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${body}
         <div class="ob-btns"><button class="chip on" id="wn-ok">Ho capito</button></div></div>`;
     document.body.appendChild(ov);
     const done = () => { document.removeEventListener('keydown', onKey, true); ov.remove(); };
@@ -137,7 +141,7 @@ function showWhatsNew(manual) {
 function maybeWhatsNew() {
     const r = pickWhatsNew(appVersion, lsGet('zs-seen-version'), !!lsGet('zs-onboarded-v2'));
     if (r.remember) lsSet('zs-seen-version', r.base);
-    if (r.show) showWhatsNew(false);
+    if (r.show) showWhatsNew(false, r.show);
 }
 
 function confirmDialog({title, body, ok, danger}) {
