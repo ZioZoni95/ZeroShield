@@ -69,8 +69,8 @@ Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stat
 
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.3** (pre-release). In sviluppo: **0.0.4** (file `VERSION`, non ancora
-rilasciata). Il numero che vedi in fondo alla barra laterale della GUI è quello del binario in uso. Dettagli in
+Ultima release pubblicata: **v0.0.4** (pre-release, alpha). Il numero che vedi in fondo alla barra laterale della
+GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`. Cosa cambia in ogni versione:
 [`CHANGELOG.md`](CHANGELOG.md).
 
 | Componente | Stato | Come è stato verificato |

@@ -4,6 +4,14 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
+_Nulla per ora._
+
+## [0.0.4] — 2026-11-05
+
+Prima release con un **unico pacchetto** `.deb` (demone, TUI, GUI e icona nella barra). Alpha: solo lab.
+Aggiornamento dal 0.0.3: `apt` sostituisce `zeroshield-gui`; nessuna modifica al formato del config
+(le nuove chiavi `allow_extra`, `disable_rules`, `enable_groups` sono facoltative).
+
 ### Aggiunte
 - GUI: popup «Novità» al primo avvio dopo ogni aggiornamento (una sola volta per versione, si riapre cliccando la versione in fondo alla barra laterale). Il testo sta in `zt-gui/frontend/src/whatsnew.js`: a ogni release si aggiunge la voce, e un test fallisce se il file `VERSION` non ne ha una.
 - Versione: il file `VERSION` (0.0.4) e' la prossima da rilasciare; le build locali diventano `0.0.4~dev+<commit>` invece di `0.0.0~dev+...`. La GUI la mostra sempre in fondo alla barra laterale; `zt-gui -version` la stampa.

@@ -18,7 +18,7 @@ VPN è provato solo in un network namespace e con comandi finti.
 | Hook LSM (`file_open`, `unlink`, `rename`, `truncate`) | 🟡 verifier ok sul runner GitHub, mai agganciati |
 | TUI / GUI / mock / IPC | ✅ GUI vera avviata sotto Xvfb contro il mock + frontend in un browser (21 controlli); socket provato con utenti reali |
 | Demone `zt-shield` end-to-end | ⚠️ mai avviato (non parte senza BPF LSM): il collegamento IPC/VPN/netstat è compilato e analizzato, non eseguito |
-| Pacchetti `.deb` | ✅ costruiti, installati e rimossi · release v0.0.1–v0.0.3 pubblicate (pre-release) · il pacchetto GUI da solo non si installa |
+| Pacchetti `.deb` | ✅ costruiti, installati e rimossi · release v0.0.1–v0.0.4 pubblicate (pre-release) · pacchetto unico dalla v0.0.4 |
 | Kill-switch VPN | 🟡 provato in un network namespace (54 controlli); mai su rete reale |
 | Auto-VPN + helper Proton | 🟡 provati con comandi finti; mai con NetworkManager o Proton veri |
 | `harden_system.sh` | 🟡 `--dry-run` + 21 controlli con comandi finti; mai su un sistema vero |

@@ -56,7 +56,7 @@ jobs:
           > (vedi `docs/TEST_SANDBOX.md`). Installare questo .deb su una macchina
           > vera non protegge nulla e può negarti i tuoi stessi file in enforce.**
 
-          Un solo pacchetto: `zeroshield_*_amd64.deb` contiene demone, TUI e GUI desktop.
+          Un solo pacchetto: `zeroshield_*_amd64.deb` contiene demone, TUI, GUI desktop e icona nella barra.
           Le librerie grafiche (GTK/WebKit) sono *consigliate*: apt le installa da solo sul
           desktop; su un server usa `apt install --no-install-recommends` e la GUI non parte.
           Sostituisce il vecchio `zeroshield-gui` (fino a v0.0.3).
