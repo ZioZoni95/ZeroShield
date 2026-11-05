@@ -305,6 +305,7 @@ l'esempio commentato, e non lo sovrascrive agli aggiornamenti.
 | `block_poisoning` | `true` | drop LLMNR/mDNS/NBT-NS in ingresso |
 | `block_subnets` | — | CIDR IPv4 da scartare in XDP (scarta anche le risposte) |
 | `rules` / `extra_rules` | dal profilo | `name`, `paths` (relativi alla home o assoluti, glob, directory ricorsive), `allow` (nomi o percorsi assoluti), `deny_write` |
+| `allow_extra` / `disable_rules` / `enable_groups` | — | ritocchi alle regole del profilo senza riscriverle: aggiungi binari (percorsi assoluti) a una regola, spegni una regola, accendi un gruppo predefinito. Li gestisce la GUI (scheda Regole) in un blocco in fondo al file |
 | `canary.*` | spento | `enabled`, `dirs`, `names`, `burst_count` (50), `burst_secs` (10), `exclude_exe`, `allow_exe` |
 | `vpn.*` | spento | `enabled`, `endpoint` (IP:porta, mai un nome host), `tunnel`, `block_dhcp`, `allow_lan` |
 | `log_format` | `text` | `text` · `json` (una riga per evento) |

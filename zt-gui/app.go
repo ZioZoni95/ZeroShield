@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"os"
 	"time"
 
 	"github.com/gen2brain/beeep"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"zt-shield/pkg/ipc"
+	"zt-shield/pkg/rules"
 	"zt-shield/pkg/svc"
 )
 
@@ -189,6 +191,49 @@ func (a *App) SetConfigMode(mode string) error {
 // da SetConfigMode con auth). Persiste su disco: ogni boot lo rilegge.
 func (a *App) ConfigText() string {
 	return svc.ReadConfig()
+}
+
+// RulesModel: gruppi di segreti, programmi noti e scelte correnti, dal config di sistema.
+func (a *App) RulesModel() rules.Model {
+	home, _ := os.UserHomeDir()
+	return rules.BuildModel(svc.ReadConfig(), home)
+}
+
+// CheckProgram dice se un programma (nome o percorso) si puo' autorizzare e, se no, perche'.
+func (a *App) CheckProgram(input string) rules.Program {
+	home, _ := os.UserHomeDir()
+	return rules.Check(home, input)
+}
+
+// ApplyRules scrive le scelte nel blocco gestito del config e riavvia il servizio (auth di
+// sistema). Il testo risultante e' validato qui e di nuovo dal demone prima di sostituire il file.
+func (a *App) ApplyRules(c rules.Choice) error {
+	cur := svc.ReadConfig()
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	next, err := rules.Apply(cur, c)
+	if err != nil {
+		return err
+	}
+	if err := rules.Validate(next); err != nil {
+		return fmt.Errorf("il demone rifiuterebbe questa configurazione: %w", err)
+	}
+	return svc.ApplyConfig(next)
+}
+
+// MakeTrusted rende affidabile un programma (copia di root in /usr/local/bin) solo se il
+// controllo lo ritiene sensato: la GUI non puo' farlo per shell, interpreti o lettori generici.
+func (a *App) MakeTrusted(input string) (rules.Program, error) {
+	home, _ := os.UserHomeDir()
+	p := rules.Check(home, input)
+	if !p.Found || p.Fix == "" {
+		return p, fmt.Errorf("questo programma non si può rendere affidabile da qui")
+	}
+	if err := svc.InstallTrusted(p.Path, p.Name); err != nil {
+		return p, err
+	}
+	return rules.Check(home, "/usr/local/bin/"+p.Name), nil
 }
 
 // notifyText rende innocua una stringa esterna per il corpo della notifica:

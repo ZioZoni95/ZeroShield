@@ -3,6 +3,14 @@
 import {ipc} from '../models';
 import {svc} from '../models';
 
+export function ApplyRules(arg1:any):Promise<void>;
+
+export function CheckProgram(arg1:string):Promise<any>;
+
+export function MakeTrusted(arg1:string):Promise<any>;
+
+export function RulesModel():Promise<any>;
+
 export function ConfigMode():Promise<string>;
 
 export function ConfigText():Promise<string>;

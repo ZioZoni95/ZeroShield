@@ -317,3 +317,83 @@ func SetMode(mode string) error {
 	}
 	return nil
 }
+
+// daemonBinary: il binario che la unit avvia davvero (ExecStart). Serve a chiamare il
+// sottocomando giusto: una copia vecchia in un'altra cartella non conosce config-apply.
+func daemonBinary() string {
+	out, err := exec.Command("systemctl", "show", "-p", "ExecStart", "--value", Unit).Output()
+	if err == nil {
+		for _, f := range strings.Fields(strings.ReplaceAll(string(out), ";", " ")) {
+			if p, ok := strings.CutPrefix(f, "path="); ok && filepath.IsAbs(p) {
+				return p
+			}
+		}
+	}
+	for _, c := range []string{"/usr/sbin/zt-shield", "/usr/local/sbin/zt-shield"} {
+		if fileExists(c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// ApplyConfig installa newText come config di sistema: lo scrive in un file privato
+// dell'utente e fa girare da root `zt-shield config-apply`, che lo valida, ne tiene una
+// copia, lo sostituisce e riavvia il servizio (con ripristino se non riparte).
+// L'utente vede il dialogo di sistema (pkexec).
+func ApplyConfig(newText string) error {
+	el, err := elevator()
+	if err != nil {
+		return fmt.Errorf("applicazione manuale: salva il testo e lancia sudo zt-shield config-apply FILE")
+	}
+	bin := daemonBinary()
+	if bin == "" {
+		return fmt.Errorf("binario zt-shield non trovato: reinstalla il pacchetto")
+	}
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	f, err := os.CreateTemp(dir, "zt-rules-*.yaml") // dir vuota = temp di sistema; 0600 di default
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(newText); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	out, err := exec.Command(el, bin, "config-apply", f.Name()).CombinedOutput() //nolint:gosec // binario e file sono nostri
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+// InstallTrusted copia src in /usr/local/bin/<name> come file di root (pkexec), cosi' il demone
+// lo accetta in whitelist. src e name arrivano da rules.Check: qui si rivalidano perche' il
+// comando gira da root. Non sovrascrive mai un file esistente.
+func InstallTrusted(src, name string) error {
+	if !filepath.IsAbs(src) || filepath.Clean(src) != src || strings.ContainsAny(src, "\x00\n") {
+		return fmt.Errorf("percorso non valido")
+	}
+	if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || strings.ContainsAny(name, "\x00\n/") {
+		return fmt.Errorf("nome non valido")
+	}
+	dst := "/usr/local/bin/" + name
+	if _, err := os.Lstat(dst); err == nil {
+		return fmt.Errorf("%s esiste gia'", dst)
+	}
+	el, err := elevator()
+	if err != nil {
+		return fmt.Errorf("manuale: sudo install -m 0755 %q %s", src, dst)
+	}
+	if out, err := exec.Command(el, "install", "-m", "0755", "--", src, dst).CombinedOutput(); err != nil { //nolint:gosec // argomenti validati sopra
+		return fmt.Errorf("copia fallita: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}

@@ -1,6 +1,7 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted} from '../wailsjs/go/main/App.js';
+import {createRulesView} from './rules.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -201,7 +202,7 @@ function render(force) {
     // situazione non cambiano, si salta (gli stream live passano comunque).
     // statusSeq impedisce di mangiare stati diversi con stesso timestamp.
     const key = view + '|' + (status ? statusSeq + ':' + (status.time || 'live') + ':' + appVersion : 'off:' + offlineMsg);
-    if (!force && key === lastKey && view !== 'events' && view !== 'radar') return;
+    if (!force && key === lastKey && view !== 'events' && view !== 'radar' && view !== 'rules') return;
     lastKey = key;
     paintBadge();
     cancelAnimationFrame(radarRAF);
@@ -224,7 +225,7 @@ function render(force) {
     evCount.textContent = events.length > 0 ? events.length : '';
     if (view === 'status') return renderStatus();
     if (view === 'events') return renderEvents();
-    if (view === 'rules') return renderRules();
+    if (view === 'rules') return renderRules(force);
     if (view === 'radar') return renderRadar();
     if (view === 'guide') return renderGuide();
     if (view === 'config') return renderConfig();
@@ -642,24 +643,18 @@ function wireEventLinks() {
     });
 }
 
-function renderRules() {
-    const rules = status.rules || [];
-    if (!rules.length) {
-        content.innerHTML = `${h2(ICO_KEY, 'Regole')}<div class="empty"><span class="big">🗝️</span><b>Nessuna regola caricata.</b><br>Controlla il profilo nel config.</div>`;
-        return;
-    }
-    // Accessi visti in questa sessione per regola: chi e' attiva e chi e' muta.
-    const seen = {};
-    events.forEach(e => { if (!e.canary) seen[e.rule] = (seen[e.rule] || 0) + 1; });
-    content.innerHTML = `${h2(ICO_KEY, 'Regole')}<p class="sub">${rules.length} gruppi di segreti · solo questi binari leggono questi file</p>` +
-        rules.map(r => `<div class="rule"><h3>${ICO_KEY} ${esc(r.name)}${seen[r.name] ? ` <span class="pill">${seen[r.name]} accessi</span>` : ''}</h3>
-        <div><span class="mono">file:</span> <span class="mono">${esc((r.paths || []).join(', '))}</span></div>
-        <div><span class="mono">exe:</span> <span class="mono">${esc((r.allow || []).join(', '))}</span></div>
-        <div class="links"><button class="linklike" data-goto="${esc(r.name)}">vedi eventi →</button></div></div>`).join('');
-    document.querySelectorAll('#content .linklike[data-goto]').forEach(l => {
-        l.onclick = () => gotoEvents(l.dataset.goto);
-    });
-}
+// La schermata Regole vive in rules.js (ha stato proprio: bozza, controlli asincroni, barra "Applica").
+const rulesView = createRulesView({
+    content, esc,
+    api: {RulesModel, CheckProgram, ApplyRules, MakeTrusted},
+    getStatus: () => status,
+    getEvents: () => events,
+    confirmDialog, toast,
+    icons: {key: ICO_KEY, warn: ICO_WARN},
+    active: () => view === 'rules',
+    goto: v => go(v),
+});
+function renderRules(force) { return rulesView.render(force); }
 
 // --- Radar: spazzata canvas con scia + alone + tooltip (dati eBPF) ---
 let radarRAF = 0;

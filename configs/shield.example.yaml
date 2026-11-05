@@ -87,3 +87,10 @@ rescan_seconds: 30
 #          autorizzeresti ogni script che usa quell'interprete.
 #
 # 'rules:' (al posto di 'extra_rules:') sostituisce del tutto le regole del profilo.
+#
+# Ritocchi senza riscrivere le regole (li scrive anche la GUI, scheda Regole, in un blocco
+# delimitato in fondo al file; se li scrivi a mano, la GUI li mostra solo in lettura):
+#   allow_extra:                       # aggiunge binari a una regola esistente
+#     dev-tokens: ["/usr/local/bin/k3d"]   # SOLO percorsi assoluti: il demone li accetta se sono di root
+#   disable_rules: ["gpg-keys"]        # toglie una regola del profilo (cambia la numerazione dei log)
+#   enable_groups: ["browsers"]        # aggiunge un gruppo predefinito: ssh|cloud|tokens|gpg|browsers
