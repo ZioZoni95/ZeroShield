@@ -69,6 +69,8 @@ await page.addInitScript((status) => {
     ConfigMode: async () => window.__cfgMode,
     ConfigText: async () => { await new Promise(r => setTimeout(r, window.__cfgDelay || 0)); return 'profile: home\nuser: tester\n'; },
     SetConfigMode: async (m) => { window.__setModeCalls.push(m); },
+    BootEnabled: async () => window.__boot,
+    SetBootEnabled: async (on) => { window.__bootCalls.push(on); window.__boot = on; },
     RulesModel: async () => JSON.parse(JSON.stringify(window.__rm)),
     CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
     ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
@@ -110,7 +112,7 @@ await page.addInitScript((status) => {
     '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s': prog('k9s', '/usr/local/bin/k9s'),
   };
   window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = ''; window.__ifCalls = []; window.__ifFail = '';
-  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = [];
+  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = [];
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
     EventsOff: () => {},
@@ -274,6 +276,25 @@ await page.click('#dlg-ok');
 await page.waitForTimeout(150);
 check('conferma enforce: OK chiama SetConfigMode("enforce")', (await page.evaluate(() => window.__setModeCalls.join(','))) === 'enforce');
 await page.evaluate(() => { window.__cfgMode = 'audit'; });
+
+// Avvio all'accensione: spento di partenza, attivarlo non chiede conferma, spegnerlo si
+await page.click('#sidebar button[data-view="rules"]');
+await page.click('#sidebar button[data-view="config"]');
+await page.waitForSelector('#boot-toggle');
+check('avvio: parte spento e lo dice', (await page.textContent('#boot-toggle')).includes('Spento'));
+await page.click('#boot-toggle');
+await page.waitForFunction(() => document.getElementById('boot-toggle')?.textContent.includes('Attivo'));
+check('avvio: attivare chiama SetBootEnabled(true) senza dialogo', (await page.evaluate(() => window.__bootCalls.join(','))) === 'true' && (await page.evaluate(() => document.getElementById('dlg') === null)));
+await page.click('#boot-toggle');
+await page.waitForSelector('#dlg');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(80);
+check('avvio: spegnere chiede conferma e Esc non cambia nulla', (await page.evaluate(() => window.__bootCalls.join(','))) === 'true');
+await page.click('#boot-toggle');
+await page.waitForSelector('#dlg');
+await page.click('#dlg-ok');
+await page.waitForFunction(() => document.getElementById('boot-toggle')?.textContent.includes('Spento'));
+check('avvio: confermato, chiama SetBootEnabled(false)', (await page.evaluate(() => window.__bootCalls.join(','))) === 'true,false');
 
 // race: lettura config lenta + cambio tab subito dopo non deve sovrascrivere la pagina nuova
 await page.evaluate(() => { window.__cfgDelay = 250; });

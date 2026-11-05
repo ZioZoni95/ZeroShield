@@ -168,6 +168,16 @@ func (a *App) ServiceStart() error {
 	return svc.Start()
 }
 
+// BootEnabled: il demone parte da solo all'accensione?
+func (a *App) BootEnabled() bool {
+	return svc.BootEnabled()
+}
+
+// SetBootEnabled attiva/disattiva l'avvio all'accensione (pkexec, dialogo di sistema).
+func (a *App) SetBootEnabled(on bool) error {
+	return svc.SetBootEnabled(on)
+}
+
 // ServiceStop ferma il servizio. La UI deve mostrare l'avviso: protezione spenta.
 func (a *App) ServiceStop() error {
 	return svc.Stop()
