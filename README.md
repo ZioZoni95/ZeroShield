@@ -447,12 +447,16 @@ docs/       documentazione (vedi sotto)
 
 * Il blocco è stato visto su un solo PC e con un file finto (vedi lo stato sopra): `file_truncate`, `deny_write` e le protezioni predefinite con i programmi veri non sono stati provati.
 * Il poisoning IPv6 dietro extension header passa. Il radar si aggiorna ogni ~5 secondi.
+* **Bypass noto del filtro di rete (da correggere nella 0.0.12):** un pacchetto UDP IPv4 *frammentato di proposito* (primo frammento con MF) non viene controllato da XDP e può
+  portare una risposta di poisoning. Individuato da una revisione del codice il 2026-11-05 e confermato sul sorgente; fino alla correzione non contare su XDP contro un attaccante che frammenta.
+* Se usi un programma da una cartella tua (es. `~/.local/bin/oh-my-posh`) e hai autorizzato la copia in `/usr/local/bin`, il blocco continua finché la shell non lancia **quella**
+  copia (attenzione anche agli script di init in cache). La GUI non lo segnala ancora.
 * Dopo un aggiornamento (apt, snap) l'inode di un browser cambia e resta fuori whitelist fino al rescan.
 * Il canary uccide dopo il tocco e non ferma scritture in-place che saltano le esche.
 * Il demone non applica il kill-switch VPN: applicarlo in automatico può spegnere la rete.
 * Programmi installati in cartelle che puoi modificare (Homebrew, `~/.local/bin`) non entrano in whitelist
   così come sono: serve la copia protetta («Rendi affidabile») e poi lanciare quella.
-* Scheda Regole e `config-apply` mai provati con `pkexec` e servizio veri; l'icona nella barra mostra solo
+* Scheda Regole e `config-apply` provati con `pkexec` su un solo PC; l'icona nella barra mostra solo
   ciò che il demone dichiara, non verifica il blocco reale dei file.
 
 L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.md).
