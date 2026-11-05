@@ -665,7 +665,7 @@ await page.selectOption('#wz-mode', 'enforce');
 await page.check('#wz-dw');
 await page.click('#wz-save');
 await page.waitForFunction(() => !document.getElementById('rl-wiz'));
-check('regole: la protezione personale compare con modalita e scritture', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('Blocca') && (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('anche la scrittura'));
+check('regole: la protezione personale compare con modalita e scritture', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('Blocca') && (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('scrittura solo ai programmi in lista'));
 check('regole: e in bozza finche non si preme Applica', (await page.textContent('.rl-bar')).includes('1 modifica') && (await page.evaluate(() => window.__applyCalls.length)) === 2);
 await page.click('#rl-apply');
 check('regole: la conferma la elenca', (await page.textContent('#dlg')).includes('Aggiungi la tua protezione «wallet-crypto»'));
@@ -899,6 +899,32 @@ if (shots) {
 }
 
 check('nessun errore JavaScript nella pagina', errors.length === 0, errors.join(' | '));
+// Layout fluido: ogni componente segue la larghezza della finestra (stretta, normale, molto larga)
+{
+  const sizes = [[480, 700], [760, 700], [1100, 760], [1900, 1000]];
+  const seenW = {};
+  for (const [w, h] of sizes) {
+    await page.setViewportSize({ width: w, height: h });
+    for (const v of ['status', 'events', 'radar', 'rules', 'net', 'config', 'guide']) {
+      await page.click(`#sidebar button[data-view="${v}"]`);
+      await page.waitForTimeout(60);
+      const m = await page.evaluate(() => ({
+        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        contentOverflow: document.getElementById('content').scrollWidth - document.getElementById('content').clientWidth,
+        side: document.getElementById('sidebar').getBoundingClientRect().width,
+        cw: document.getElementById('content').getBoundingClientRect().width,
+        kid: (document.querySelector('#content > *') || {}).getBoundingClientRect ? document.querySelector('#content > *').getBoundingClientRect().width : 0,
+      }));
+      check(`layout ${w}px, ${v}: nessuno scorrimento orizzontale della pagina`, m.overflowX <= 1 && m.contentOverflow <= 2, JSON.stringify(m));
+      if (v === 'status') seenW[w] = m;
+    }
+  }
+  check('layout: sotto 900px la barra laterale e a sole icone', seenW[760].side < 80 && seenW[1100].side > 140, JSON.stringify([seenW[760].side, seenW[1100].side]));
+  check('layout: il contenuto occupa la finestra larga (non resta a 920px)', seenW[1900].kid > 1200, String(seenW[1900].kid));
+  check('layout: la barra laterale resta cliccabile a finestra stretta', await page.evaluate(() => [...document.querySelectorAll('#sidebar button')].every(b => b.getBoundingClientRect().width > 30)));
+  await page.setViewportSize({ width: 1100, height: 760 });
+}
+
 await browser.close();
 server.close();
 const failed = results.filter(x => !x).length;

@@ -33,6 +33,9 @@ func main() {
 		Title:  "ZeroShield",
 		Width:  1024,
 		Height: 768,
+		// Minimo: sotto questa larghezza la barra laterale e' gia' a sole icone e il contenuto a una colonna.
+		MinWidth:  480,
+		MinHeight: 420,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

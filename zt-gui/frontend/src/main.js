@@ -848,7 +848,7 @@ function renderRadar() {
     <div class="verdict ${att ? 'warn' : 'ok'}"><div class="verdict-t">${att ? '◐' : '●'} ${esc(title)}</div>
       <ul>${parts.length ? `<li>${esc(parts.join(' · '))}</li>` : ''}
       <li>Il kernel non distingue richieste normali da risposte avvelenate: è una stima, non un verdetto.</li></ul></div>
-    <div id="radar-wrap"><canvas id="radar" width="360" height="360"></canvas>${radarLegend()}</div>
+    <div id="radar-wrap"><canvas id="radar" width="720" height="720"></canvas>${radarLegend()}</div>
     <div id="radar-list"></div><div id="radar-verify"></div>`;
     const cv = document.getElementById('radar');
     const cx = cv.getContext('2d');
@@ -918,6 +918,7 @@ function renderRadar() {
         radarAngle = (radarAngle + 2) % 360;
         trail.push(radarAngle);
         if (trail.length > 8) trail.shift();
+        cx.setTransform(2, 0, 0, 2, 0, 0); // risoluzione interna 720: nitido anche con il radar ingrandito
         cx.clearRect(0, 0, 360, 360);
         cx.strokeStyle = ring; cx.lineWidth = 1;
         [60, 120, 175].forEach(r => { cx.beginPath(); cx.arc(180, 180, r, 0, 7); cx.stroke(); });

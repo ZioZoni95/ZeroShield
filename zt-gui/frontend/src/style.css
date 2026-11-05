@@ -38,11 +38,13 @@ body {
     background: var(--bg); color: var(--text); font-size: 14px;
     -webkit-font-smoothing: antialiased;
 }
+/* Il testo base cresce un poco con la finestra (14px stretta, 16px larga). */
+body { font-size: clamp(14px, 0.5vw + 9px, 16px); }
 #app { display: flex; height: 100vh; }
 
 /* --- Sidebar stretta --- */
 #sidebar {
-    width: 196px; background: var(--side); border-right: 1px solid var(--border);
+    width: clamp(160px, 15vw, 240px); background: var(--side); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; padding: 14px 10px; flex-shrink: 0;
 }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 700; padding: 4px 8px 14px; }
@@ -97,8 +99,8 @@ body {
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #topbar {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 28px; border-bottom: 1px solid var(--border);
-    background: var(--panel);
+    padding: 12px clamp(14px, 2.4vw, 48px); border-bottom: 1px solid var(--border);
+    background: var(--panel); gap: 10px; flex-wrap: wrap;
 }
 #view-title { font-size: 16px; font-weight: 700; }
 .badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 13px;
@@ -110,14 +112,19 @@ body {
 .badge.off { background: rgba(127,127,127,.25); color: var(--dim); }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; } 50% { box-shadow: 0 0 0 5px transparent; opacity: .75; } }
 
-#content { flex: 1; overflow-y: auto; padding: 22px 28px; }
-#content > * { max-width: 920px; }
+/* Layout fluido: il contenuto segue la larghezza della finestra (niente colonna fissa da 920px).
+   Il testo corrente resta a una misura leggibile, ma card, tabelle, regole e radar si allargano. */
+#content { flex: 1; overflow-y: auto; padding: clamp(14px, 1.8vw, 36px) clamp(14px, 2.4vw, 48px); }
+#content > * { max-width: 100%; }
+#content p, #content .sub { max-width: 90ch; }
+#content table { display: table; }
+.tbl-wrap, #ev-body, #radar-list { overflow-x: auto; }
 h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
 h2 svg { width: 21px; height: 21px; color: var(--accent); }
 .sub { color: var(--dim); margin: 0 0 16px; font-size: 13px; }
 
 /* --- Card con numero animato --- */
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
     padding: 14px 16px; border-top: 3px solid var(--accent); transition: transform .15s; }
 .card:hover { transform: translateY(-2px); }
@@ -167,9 +174,9 @@ tr.row-canary td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
 /* --- Radar --- */
 #radar-wrap { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
 #radar { background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
-    max-width: 100%; height: auto; cursor: crosshair; }
+    width: clamp(260px, 36vw, 640px); max-width: 100%; height: auto; aspect-ratio: 1; cursor: crosshair; }
 #radar-legend { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-    padding: 14px 16px; max-width: 330px; font-size: 13px; }
+    padding: 14px 16px; flex: 1 1 260px; max-width: 420px; font-size: 13px; }
 #radar-legend h4 { margin: 0 0 8px; font-size: 13.5px; }
 #radar-legend li { margin-bottom: 6px; }
 #radar-legend ul { margin: 0; padding-left: 18px; color: var(--text); }
@@ -178,7 +185,7 @@ tr.row-canary td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
     background: var(--text); color: var(--bg); border-radius: 8px;
     padding: 6px 10px; font-size: 12px; font-family: var(--mono);
 }
-#radar-list { max-width: 640px; margin-top: 4px; }
+#radar-list { max-width: 100%; margin-top: 4px; }
 
 /* --- Toast --- */
 #toast {
@@ -230,7 +237,7 @@ code { font-family: var(--mono); background: rgba(127,127,127,.18);
 .ob-user input:focus { border-color: var(--accent); }
 
 /* --- Offline contestuale --- */
-.offline { max-width: 640px; }
+.offline { max-width: min(100%, 900px); }
 .off-icon { font-size: 38px; margin-bottom: 4px; }
 .offline h2 { margin-bottom: 6px; }
 .offline .cards { margin: 14px 0; }
@@ -328,7 +335,7 @@ tr[data-class="attention"] td { background: var(--amber-soft); }
 #radar-legend .keys li { margin-bottom: 5px; }
 .dotkey { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
 #radar-legend { max-width: 330px; }
-#radar-verify { max-width: 760px; }
+#radar-verify { max-width: min(100%, 1000px); }
 
 /* --- Guida: schede, punti di controllo, domande frequenti --- */
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 16px; }
@@ -445,7 +452,7 @@ kbd { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--borde
 .hero-btn { font: inherit; font-weight: 600; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 16px; cursor: pointer; }
 .hero-btn:hover { filter: brightness(1.08); }
 .hero-btn.ghost { background: transparent; color: var(--accent); }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 0 0 8px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin: 0 0 8px; }
 .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
 .tile-k { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
 .tile-v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -467,3 +474,24 @@ details.tech { margin: 14px 0 4px; }
 .if-l { display: flex; gap: 10px; align-items: center; flex: 1; min-width: 220px; cursor: pointer; }
 .if-mode { display: grid; gap: 6px; margin: 8px 0 12px; font-size: 13.5px; }
 .if-mode label { display: flex; gap: 8px; align-items: baseline; }
+
+/* --- Finestra stretta: barra laterale a sole icone, poi contenuto a una colonna --- */
+@media (max-width: 900px) {
+    #sidebar { width: 58px; padding: 12px 6px; align-items: center; }
+    #sidebar .brand { padding: 4px 0 12px; }
+    #sidebar .brand > span, #sidebar .nav-label, #sidebar button kbd, #sidebar .ver, #sidebar .conn { display: none; }
+    #sidebar button { justify-content: center; padding: 9px 0; width: 100%; }
+    #sidebar button > span:not(.pill) { display: none; }
+    #sidebar button .pill { position: absolute; transform: translate(12px, -10px); padding: 0 5px; font-size: 10px; }
+    #sidebar button { position: relative; }
+}
+@media (max-width: 640px) {
+    .tiles, .cards { grid-template-columns: 1fr; }
+    #radar { width: 100%; }
+    .hero { flex-direction: column; align-items: stretch; }
+    #topbar { padding-top: 8px; padding-bottom: 8px; }
+}
+/* Finestra molto larga: due colonne dove c'e' spazio, senza allungare le righe di testo. */
+@media (min-width: 1500px) {
+    .tiles { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+}
