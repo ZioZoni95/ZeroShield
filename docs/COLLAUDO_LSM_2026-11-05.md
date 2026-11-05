@@ -52,6 +52,12 @@ Il demone ha registrato ogni tentativo: `🚨 [BLOCCATO] regola=prova PID=… co
 - Prima di questo collaudo la GUI aperta dall'icona non poteva usare `pkexec` (`NoNewPrivileges` nell'unit dell'icona, ereditato dalla GUI):
   corretto nella 0.0.6.
 
+## Radar con un volume alto (stessa giornata)
+
+Con `lo` aggiunto alle interfacce filtrate (`interface: enx…,wlp1s0,lo`, applicato con `pkexec zt-shield config-apply`) sono stati inviati 250 pacchetti UDP a
+`127.0.0.1:5355`. Lo stato del demone ha riportato `127.0.0.1` con 90 drop al primo rescan e **250** al successivo: il conteggio del kernel è corretto e il radar
+si aggiorna ogni 30 secondi (non in tempo reale). Oltre i 100 drop totali la sorgente è classificata «da verificare». Dopo la prova `lo` è stata tolta.
+
 ## Come ripeterlo
 
 ```bash

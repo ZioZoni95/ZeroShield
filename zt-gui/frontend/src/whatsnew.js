@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.9': {
+        title: 'Novità della versione 0.0.9',
+        items: [
+            ['Radar collaudato dal vivo', 'Una sorgente che manda tanti pacchetti compare come «da verificare» (pallino ambra) nel giro di mezzo minuto: provato sul computer vero mandando pacchetti a se stessi.'],
+        ],
+        note: 'Il Radar si aggiorna a ogni controllo del demone, circa ogni 30 secondi.',
+    },
     '0.0.8': {
         title: 'Novità della versione 0.0.8',
         items: [

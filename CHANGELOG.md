@@ -4,7 +4,7 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
-Versione in preparazione: **0.0.8** (file `VERSION`). Le 0.0.5, 0.0.6 e 0.0.7 non sono state rilasciate: le loro novità sono qui sotto e il popup
+Versione in preparazione: **0.0.9** (file `VERSION`). Le 0.0.5, 0.0.6, 0.0.7 e 0.0.8 non sono state rilasciate: le loro novità sono qui sotto e il popup
 «Novità» le mostra tutte insieme a chi aggiorna dalla 0.0.4.
 
 ### Aggiunte
@@ -30,6 +30,9 @@ Versione in preparazione: **0.0.8** (file `VERSION`). Le 0.0.5, 0.0.6 e 0.0.7 no
   possono contenere a-capo o caratteri di controllo (finiscono nei log).
 
 ### Collaudo
+- **Radar con volume alto, visto dal vivo** (2026-11-05): con `lo` aggiunto alle interfacce filtrate, 250 pacchetti UDP verso `127.0.0.1:5355` sono stati contati dal kernel
+  (`127.0.0.1` = 250 drop nello stato del demone) e il radar li classifica «da verificare» oltre la soglia di 100. Il radar si aggiorna a ogni rescan (30 s), non in tempo reale.
+  Aggiungere e togliere `lo` con `config-apply` via `pkexec` ha funzionato (backup, riavvio, filtro agganciato a `lo`).
 - Primo blocco reale degli hook LSM, visto su un PC con kernel 7.0 (file finto): `file_open`, rinomina, cancellazione e troncamento negati, identità del
   binario rispettata, modalità per regola e `config-apply` via `pkexec` funzionanti. Dettagli e limiti in `docs/COLLAUDO_LSM_2026-11-05.md`.
 
