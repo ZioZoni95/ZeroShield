@@ -119,6 +119,7 @@ await page.waitForSelector('#content h2');
 // --- versione dal binario
 const sub = await page.textContent('#content .sub');
 check('la versione arriva dal binario (Version())', sub.includes('ZeroShield 9.9.9-test'), sub.trim());
+check('la versione e sempre visibile nella barra laterale', (await page.textContent('#ver')) === 'ZeroShield v9.9.9-test', await page.textContent('#ver'));
 
 // --- ricerca eventi: focus e testo sopravvivono a un flood di eventi
 await page.evaluate(() => { for (let i = 0; i < 5; i++) window.__emit('shield:event', { time: '2026-10-05T10:00:0' + i + 'Z', action: 'audit', pid: 100 + i, comm: 'cat', exe: '/usr/bin/cat', rule: 'ssh-keys', inode: 1 }); });
@@ -383,7 +384,7 @@ async function offlinePage(svc) {
       ],
     } } };
     window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
-    localStorage.setItem('zs-onboarded-v2', '1');
+    localStorage.setItem('zs-onboarded-v2', '1'); localStorage.setItem('zs-seen-version', '0.0.4');
   }, svc);
   await pg.goto(`http://127.0.0.1:${port}/`);
   await pg.waitForSelector('.offline');
@@ -548,6 +549,56 @@ await rlMan.click('#sidebar button[data-view="rules"]');
 await rlMan.waitForSelector('#rl-root');
 check('regole: scelte a mano -> interruttori e campo disattivati, con spiegazione', (await rlMan.locator('[data-grp="ssh"]').isDisabled()) && (await rlMan.textContent('#content')).includes('scritte a mano'));
 await rlMan.close();
+
+
+// ---------------------------------------------------------------------------
+// "Novita'": popup una sola volta per versione
+// ---------------------------------------------------------------------------
+async function wnPage(version, ls) {
+  const pg = await browser.newPage({ viewport: { width: 1100, height: 760 }, timezoneId: 'Europe/Rome' });
+  pg.on('pageerror', e => errors.push(String(e)));
+  await pg.addInitScript(([st, ver, ls0]) => {
+    window.go = { main: { App: { GetStatus: async () => st, SocketPath: async () => '/x', Version: async () => ver, ServiceState: async () => 'active', ConfigMode: async () => 'audit', ConfigText: async () => '' } } };
+    window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+    // Una sola volta per pagina: un reload non deve reimpostare lo storage di partenza.
+    if (!sessionStorage.getItem('wn-init')) { sessionStorage.setItem('wn-init', '1'); Object.entries(ls0).forEach(([k, v]) => localStorage.setItem(k, v)); }
+  }, [STATUS, version, ls]);
+  await pg.goto(`http://127.0.0.1:${port}/`);
+  await pg.waitForSelector('#content h2');
+  await pg.waitForTimeout(150);
+  return pg;
+}
+const wnUp = await wnPage('0.0.4~dev+abc1234', { 'zs-onboarded-v2': '1', 'zs-seen-version': '0.0.3' });
+check('novita: dopo un aggiornamento compare il popup con le novita', (await wnUp.locator('#dlg.wn, #dlg .wn').count()) === 1 && (await wnUp.textContent('#dlg')).includes('Novità della versione 0.0.4'));
+const wnTxt = await wnUp.textContent('#dlg');
+check('novita: voci principali presenti', ['Icona nella barra di sistema', 'Regole guidate', 'Radar più chiaro', 'ancora in alpha'].every(t => wnTxt.includes(t)));
+check('novita: il popup mette il focus sul pulsante', await wnUp.evaluate(() => document.activeElement && document.activeElement.id === 'wn-ok'));
+await wnUp.keyboard.press('Enter');
+check('novita: Invio lo chiude', (await wnUp.locator('#dlg').count()) === 0);
+check('novita: la versione vista viene ricordata', (await wnUp.evaluate(() => localStorage.getItem('zs-seen-version'))) === '0.0.4');
+await wnUp.reload(); await wnUp.waitForSelector('#content h2'); await wnUp.waitForTimeout(150);
+check('novita: al riavvio della stessa versione non riappare', (await wnUp.locator('#dlg').count()) === 0);
+await wnUp.click('#ver');
+check('novita: cliccando la versione si riapre quando vuoi', (await wnUp.locator('#dlg').count()) === 1);
+await wnUp.close();
+
+const wnNew = await wnPage('0.0.4', {});
+check('novita: alla prima installazione niente popup (c\'e il benvenuto)', (await wnNew.locator('#dlg').count()) === 0);
+check('novita: ...ma la versione viene segnata', (await wnNew.evaluate(() => localStorage.getItem('zs-seen-version'))) === '0.0.4');
+await wnNew.close();
+
+const wnOld = await wnPage('0.0.4', { 'zs-onboarded-v2': '1' });
+check('novita: chi aveva gia la GUI (senza versione salvata) le vede', (await wnOld.locator('#dlg').count()) === 1);
+await wnOld.close();
+
+const wnNone = await wnPage('9.9.9-test', { 'zs-onboarded-v2': '1', 'zs-seen-version': '0.0.3' });
+check('novita: versione senza voce -> nessun popup e nessun errore', (await wnNone.locator('#dlg').count()) === 0);
+await wnNone.close();
+
+// Ogni release deve avere la sua voce: il file VERSION e whatsnew.js non devono andare fuori passo.
+const verFile = fs.readFileSync(new URL('../../../VERSION', import.meta.url), 'utf8').trim();
+const wnSrc = fs.readFileSync(new URL('../src/whatsnew.js', import.meta.url), 'utf8');
+check('novita: la versione in VERSION (' + verFile + ') ha la sua voce in whatsnew.js', wnSrc.includes(`'${verFile}': {`));
 
 if (shots) {
   fs.mkdirSync(shots, { recursive: true });

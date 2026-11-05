@@ -90,6 +90,7 @@ body {
 .chip:hover { background: var(--hover); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .side-foot { margin-top: auto; }
+.ver { font-size: 11px; color: var(--dim); padding: 2px 14px 12px; word-break: break-all; }
 .conn { font-size: 11px; color: var(--dim); padding: 0 4px; }
 
 /* --- Topbar con badge sempre visibile --- */
@@ -406,3 +407,12 @@ kbd { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--borde
     background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; padding: 10px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.18); margin-top: -70px; }
 .rl-bar-b { display: flex; gap: 8px; }
 @media (max-width: 760px) { .rl-steps { grid-template-columns: 1fr; } }
+
+/* ---- Novita' (whatsnew.js) ---- */
+.wn { max-width: 520px; }
+.wn-list { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 10px; }
+.wn-list li { display: grid; gap: 2px; }
+.wn-list span { color: var(--dim); font-size: 13px; line-height: 1.45; }
+.wn-note { background: var(--amber-soft); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; margin: 0 0 12px; }
+.ver { cursor: pointer; }
+.ver:hover { color: var(--accent); text-decoration: underline; }

@@ -2,6 +2,7 @@
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
 import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
+import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -110,6 +111,34 @@ content.addEventListener('click', e => {
 });
 
 // Conferma con spiegazione delle conseguenze (al posto di confirm() nudo).
+// "Novita'": popup una sola volta per versione (vedi whatsnew.js). Cliccando la versione in fondo alla
+// barra laterale si riapre quando vuoi.
+function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* senza storage: si rivede a ogni avvio, nessun danno */ } }
+function showWhatsNew(manual) {
+    const w = WHATS_NEW[baseVersion(appVersion)];
+    if (!w) { if (manual) toast('Nessuna novità registrata per questa versione.'); return; }
+    if (document.getElementById('dlg')) return;
+    const ov = document.createElement('div');
+    ov.id = 'dlg';
+    ov.innerHTML = `<div class="ob-card wn" role="dialog" aria-modal="true" aria-label="${esc(w.title)}"><h2>${esc(w.title)}</h2>
+        <ul class="wn-list">${w.items.map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d)}</span></li>`).join('')}</ul>
+        ${w.note ? `<p class="wn-note">${esc(w.note)}</p>` : ''}
+        <div class="ob-btns"><button class="chip on" id="wn-ok">Ho capito</button></div></div>`;
+    document.body.appendChild(ov);
+    const done = () => { document.removeEventListener('keydown', onKey, true); ov.remove(); };
+    const onKey = e => { if (e.key === 'Escape' || e.key === 'Enter') { e.stopPropagation(); done(); } };
+    document.addEventListener('keydown', onKey, true);
+    ov.querySelector('#wn-ok').onclick = done;
+    ov.addEventListener('click', e => { if (e.target === ov) done(); });
+    ov.querySelector('#wn-ok').focus();
+}
+function maybeWhatsNew() {
+    const r = pickWhatsNew(appVersion, lsGet('zs-seen-version'), !!lsGet('zs-onboarded-v2'));
+    if (r.remember) lsSet('zs-seen-version', r.base);
+    if (r.show) showWhatsNew(false);
+}
+
 function confirmDialog({title, body, ok, danger}) {
     return new Promise(resolve => {
         const ov = document.createElement('div');
@@ -1108,7 +1137,14 @@ async function boot() {
     }
     render();
     // Versione dal binario (ldflags al build): se manca il binding, nessun errore.
-    try { appVersion = await Version(); requestRender(); } catch (_) {}
+    try {
+        appVersion = await Version();
+        const ve = document.getElementById('ver');
+        if (ve && appVersion) { ve.textContent = 'ZeroShield ' + (/^\d/.test(appVersion) ? 'v' : '') + appVersion; ve.title = 'Versione di questa finestra (GUI)'; }
+        if (ve) { ve.onclick = () => showWhatsNew(true); }
+        requestRender();
+        maybeWhatsNew();
+    } catch (_) {}
     // Onboarding: se demone mai visto. Salta = solo questa sessione
     // (sessionStorage), Ho capito = per sempre (localStorage). Così chi
     // skippa per sbaglio rivede il wizard al prossimo avvio.

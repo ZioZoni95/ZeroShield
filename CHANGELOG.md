@@ -5,6 +5,8 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 ## [Non rilasciato]
 
 ### Aggiunte
+- GUI: popup «Novità» al primo avvio dopo ogni aggiornamento (una sola volta per versione, si riapre cliccando la versione in fondo alla barra laterale). Il testo sta in `zt-gui/frontend/src/whatsnew.js`: a ogni release si aggiunge la voce, e un test fallisce se il file `VERSION` non ne ha una.
+- Versione: il file `VERSION` (0.0.4) e' la prossima da rilasciare; le build locali diventano `0.0.4~dev+<commit>` invece di `0.0.0~dev+...`. La GUI la mostra sempre in fondo alla barra laterale; `zt-gui -version` la stampa.
 - GUI, scheda **Regole** riscritta per chi non conosce il progetto: percorso guidato in 3 passi (osserva, autorizza, blocca)
   con l'indicatore «sei pronto per Enforce?», interruttori per i gruppi di segreti, catalogo di programmi noti
   (k3d, helm, k9s, oh-my-posh, kubectx, stern, flux, argocd, kind, minikube, skaffold, lazydocker, gh, glab),

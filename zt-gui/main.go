@@ -5,6 +5,8 @@ package main
 
 import (
 	"embed"
+	"fmt"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -19,6 +21,10 @@ var assets embed.FS
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
+		fmt.Println("zt-gui", version)
+		return
+	}
 	// Create an instance of the app structure
 	app := NewApp()
 
