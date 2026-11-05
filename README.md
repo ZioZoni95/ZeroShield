@@ -29,6 +29,8 @@ Difende segreti e rete di una postazione da Wi-Fi ostili, dipendenze avvelenate 
 > [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md)). Non è stato collaudato in una VM isolata, né con i
 > programmi veri sulle protezioni predefinite, né su altri kernel. Usalo in `audit` e metti in **Blocca** una
 > protezione alla volta, dopo aver controllato i programmi autorizzati; fai prima la prova con un file finto.
+> Una revisione statica del codice (2026-11-05) ha trovato un bypass del filtro di rete e altri difetti minori:
+> corretti in 0.0.12 e ancora da rivedere con test avversari ([`CHANGELOG.md`](CHANGELOG.md)).
 
 ---
 
@@ -54,7 +56,8 @@ ZeroShield lavora in due tempi, pensati per chi non vuole scrivere file di confi
    `sudo /usr/share/zeroshield/scripts/configure_service.sh $USER home` (o il pulsante *Installa e attiva*
    della GUI). In `audit` ZeroShield **osserva e non blocca niente**.
 2. **Guarda l'icona nella barra.** 🔵 blu = protetto (enforce), 🟠 arancione = solo osservazione (audit),
-   🔴 rossa = demone spento. Chiudere la finestra non ferma la protezione: è un servizio di sistema.
+   🔴 rossa = demone spento. Chiudere la finestra non ferma la protezione: è un servizio di sistema. In
+   *Configurazione → Avvio all'accensione* scegli se il demone parte da solo a ogni boot.
 3. **Lavora come al solito per qualche giorno**, poi apri la GUI → scheda **Regole**. Un percorso in tre passi
    (*Osserva → Autorizza → Blocca*) ti mostra i programmi che hanno letto i tuoi segreti e quali puoi
    autorizzare con un clic (kubectl, helm, k3d, k9s…). Premi **Applica**: ZeroShield si riavvia da solo e,
@@ -62,6 +65,9 @@ ZeroShield lavora in due tempi, pensati per chi non vuole scrivere file di confi
 4. **Quando l'indicatore dice che è tutto autorizzato**, passa a **Blocca**: per tutte le protezioni insieme dalla
    scheda *Configurazione*, oppure **una alla volta** dalla scheda *Regole* (ogni protezione ha la sua modalità).
    Da quel momento solo i programmi in lista leggono quei segreti.
+   **Attenzione ai programmi installati in cartelle tue** (Homebrew, `~/.local/bin`: oh-my-posh, k9s…): vanno
+   autorizzati con *Rendi affidabile* **e poi lanciati dalla copia protetta** in `/usr/local/bin` (la GUI ti
+   avvisa e propone l'alias); i terminali già aperti vanno riaperti. Meglio farlo per tutti **prima** di passare a Blocca.
 5. **Hai file tuoi da proteggere?** (un portafoglio crypto, un database di password) *Regole → Proteggi un mio file*:
    scegli il file o la cartella, vedi quanti file protegge e decidi chi può usarli.
 
@@ -72,20 +78,21 @@ Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stat
 
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.9** (pre-release, alpha). Il numero che vedi in fondo alla barra laterale della
+Ultima release pubblicata: **v0.0.9** (pre-release, alpha); `main` è alla **0.0.12**, non ancora rilasciata. Il numero che vedi in fondo alla barra laterale della
 GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`. Cosa cambia in ogni versione:
 [`CHANGELOG.md`](CHANGELOG.md).
 
 | Componente | Stato | Come è stato verificato |
 |---|---|---|
-| XDP anti-poisoning (IPv4 + IPv6, fino a 2 tag VLAN) e radar | ✅ **kernel reale** | `zt-probe -xdp-lo` + pacchetti sintetici contro il vero programma (`BPF_PROG_TEST_RUN`) |
+| XDP anti-poisoning (IPv4 + IPv6, fino a 2 tag VLAN, primo frammento IPv4 compreso) e radar | ✅ **kernel reale** | `zt-probe -xdp-lo` + pacchetti sintetici contro il vero programma (`BPF_PROG_TEST_RUN`, anche frammenti); traffico frammentato vero non provato |
 | Canary anti-ransomware (fanotify) | ✅ **kernel reale** | tocco esca, allarme di massa, kill in `enforce` (`make test-root`) |
 | **Hook LSM dei segreti** (6 programmi) | 🟢 **visti negare su un kernel reale** (un PC) | `file_open`, rinomina, cancellazione, troncamento: file finto (l'hook sui link, `inode_link`, è nuovo in 0.0.9 e non ancora visto sul PC), kernel 7.0.0-42 Ubuntu, 2026-11-05; **non** provati `file_truncate`, `deny_write`, le protezioni predefinite con i programmi veri, una VM isolata |
 | **Demone end-to-end** | 🟢 **gira su un PC con BPF LSM** | avviato dal `.deb`, XDP + hook + canary + IPC + `config-apply`; mai in una VM con snapshot né per giorni di fila |
 | Config, IPC, audit, whitelist, inotify, `netstat` | ✅ test unitari | `go test -race`, fuzz sul config, CI |
 | TUI, GUI, mock | ✅ testati | test unitari e `--dump` (TUI); test della GUI nel browser contro un demone simulato |
 | **Scheda Regole**, modalità per regola e `zt-shield config-apply` | 🟢 provati su un PC | protezione personale creata dalla GUI, applicata con `pkexec`, in `enforce` solo per quella regola; il ripristino automatico dopo un riavvio fallito resta provato solo con test |
-| Icona nella barra (`zt-tray`, servizio utente) | 🟡 provata su un PC | registrata in GNOME, stato e notifiche; percorso `.deb` (postinstall) non provato |
+| Icona nella barra (`zt-tray`, servizio utente) | 🟢 provata su un PC | registrata in GNOME, colori per stato, riavvio dopo `apt install` dal `.deb` (visto un caso di icona invisibile dopo due riavvii ravvicinati: ora si reimposta ogni 30 s) |
+| Revisione del codice (statica, 2026-11-05) | 🟡 4 punti, 3 corretti | frammenti XDP (ZS-001), firma polkit (ZS-004), finestra di rescan (ZS-003) corretti con test; `deny_write` era un malinteso sui testi. Nessun test avversario né runtime |
 | Pacchetto `.deb` | ✅ costruito, installato e rimosso | CI e prove locali |
 | Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh`, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
 | `setup_fido2.sh`, unit systemd | ⚠️ solo sintassi | `shellcheck`, `systemd-analyze verify` |
@@ -133,7 +140,7 @@ flowchart TD
     L3 -- "IPv6" --> P6{"UDP diretto su 5355 / 5353 / 137 / 138?"}
     P6 -- "sì" --> D6["⛔ DROP + contatore v6"]
     P6 -- "no" --> PASS
-    L3 -- "IPv4" --> P4{"UDP su 5355 / 5353 / 137 / 138?<br/>(sport o dport)"}
+    L3 -- "IPv4" --> P4{"UDP su 5355 / 5353 / 137 / 138?<br/>(sport o dport; primo frammento incluso)"}
     P4 -- "sì" --> D4["⛔ DROP + radar per IP"]
     P4 -- "no" --> SUB{"sorgente in block_subnets?"}
     SUB -- "sì" --> D4S["⛔ DROP + radar per IP"]
@@ -187,7 +194,7 @@ nome con cui lo chiami.
   root** non scrivibili da altri. Una scrittura semplice passa, `O_TRUNC` e `truncate` passano dalla
   whitelist, `deny_write` per regola richiede un programma autorizzato anche per scrivere: chi non è in lista (root compreso) viene negato, chi è in lista scrive normalmente. I file nominati dalle regole hanno precedenza
   sulle mappe (tetto di 4096 per regola, 16384 in tutto) e un watcher **inotify** riallinea le mappe entro
-  ~0,5 s da un rename; il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
+  ~0,1 s da un rename (al massimo 1 s sotto una raffica); il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
   **Fail-closed**: se un hook non si aggancia il demone si ferma invece di fingersi attivo.
 * **Anti-ransomware (canary + fanotify).** File esca nascosti nelle cartelle scelte: chi li tocca viene
   ucciso in `enforce` (mai PID ≤ 1 né il demone). Una raffica di scritture, cancellazioni o rinomine genera
@@ -383,8 +390,8 @@ sanificato nel demone (`ipc.SafeText`) prima di raggiungere TUI e GUI.
 |---|---|
 | `zt-shield` | Il demone (`sudo zt-shield` o servizio). Sottocomandi: `ctl ping\|rescan`, `dropin` (drop-in systemd per il canary), `config-apply FILE` (root: valida un config, copia di sicurezza, sostituzione atomica, riavvio e ripristino se non riparte; lo usa la GUI) |
 | `zt-tui` | Terminale con sei schede (Stato, Eventi, Regole, Rete, Radar, Config), filtro eventi, azioni (`i` installa, `s` avvia, `X` ferma, `m` mode, `R` rescan) e `--dump` |
-| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, **regole guidate** (catalogo, «Rendi affidabile», bozza e *Applica*), rete e VPN, configurazione con cambio audit/enforce, guida a schede, primo avvio con controlli preliminari e popup **Novità** a ogni nuova versione. Scorciatoie `1`-`7`; la versione è in fondo alla barra laterale |
-| `zt-tray` | Icona nella barra di sistema: 🟢 enforce con hook, 🟡 audit o senza hook LSM, 🔴 demone spento. Notifica demone caduto/tornato e blocchi/canary **anche a finestra chiusa** (con la GUI aperta se ne occupa lei). Servizio utente systemd; clic = apre la GUI. Chiuderla non ferma la protezione |
+| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, **regole guidate** (catalogo, «Rendi affidabile», bozza e *Applica*), rete e VPN, configurazione con cambio audit/enforce, guida a schede, primo avvio con controlli preliminari, interruttore **Avvio all'accensione** e popup **Novità** a ogni nuova versione. **Finestra adattiva**: il contenuto segue la larghezza (fino a 480 px, con la barra laterale a sole icone sotto i 900 px). Scorciatoie `1`-`7`; la versione è in fondo alla barra laterale |
+| `zt-tray` | Icona nella barra di sistema: 🔵 enforce con hook, 🟠 audit o senza hook LSM, 🔴 demone spento. Notifica demone caduto/tornato e blocchi/canary **anche a finestra chiusa** (con la GUI aperta se ne occupa lei). Servizio utente systemd; clic = apre la GUI. Chiuderla non ferma la protezione |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF |
 | `zt-probe` | Collaudo del kernel: verifier per programma e, con `-xdp-lo`, XDP su loopback |
 
@@ -451,7 +458,7 @@ docs/       documentazione (vedi sotto)
 * Il poisoning IPv6 dietro extension header passa. Il radar si aggiorna ogni ~5 secondi.
 * Il bypass del filtro di rete con pacchetti UDP IPv4 frammentati di proposito (primo frammento con MF) è corretto in 0.0.12: coperto da un test che esegue il vero programma XDP, non ancora provato con traffico frammentato vero su un kernel reale.
 * Se usi un programma da una cartella tua (es. `~/.local/bin/oh-my-posh`) e hai autorizzato la copia in `/usr/local/bin`, il blocco continua finché la shell non lancia **quella**
-  copia (attenzione anche agli script di init in cache). Dalla 0.0.12 la GUI lo segnala e propone l'alias.
+  copia (attenzione agli script di init in cache e ai terminali già aperti, che ricordano il vecchio percorso: `exec bash`). Dalla 0.0.12 la GUI lo segnala e propone l'alias.
 * Dopo un aggiornamento (apt, snap) l'inode di un browser cambia e resta fuori whitelist fino al rescan.
 * Il canary uccide dopo il tocco e non ferma scritture in-place che saltano le esche.
 * Il demone non applica il kill-switch VPN: applicarlo in automatico può spegnere la rete.
