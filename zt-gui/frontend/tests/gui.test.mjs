@@ -508,6 +508,18 @@ check('regole: programmi trovati in cima, non installati ripiegati', (await page
 check('regole: k9s e oh-my-posh spiegano perche serve un passo in piu', (await page.locator('[data-trust]').count()) === 2 && rlTxt.includes('una cartella che puoi modificare tu'));
 check('regole: helm risulta gia autorizzato per cloud ma non per i token', rlTxt.includes('Helm'));
 
+// Autorizzata la copia protetta ma il terminale lancia l'altra: la GUI lo dice (visto con oh-my-posh)
+await page.evaluate(() => { const t = window.__rm.tools.find(x => x.id === 'oh-my-posh'); window.__saveT = JSON.stringify(t); t.alt = '/usr/local/bin/oh-my-posh'; t.ok = false; window.__saveG = JSON.stringify(window.__rm.groups); window.__rm.groups.find(g => g.name === 'cloud-creds').allow.push('/usr/local/bin/oh-my-posh'); });
+await page.click('#sidebar button[data-view="status"]');
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForSelector('.rl-tool');
+const shadowTxt = await page.locator('.rl-tool', { hasText: 'oh-my-posh' }).textContent();
+check('regole: autorizzato ma lanci un altro percorso, la GUI avvisa e propone l\'alias', shadowTxt.includes('lancia la copia protetta') && shadowTxt.includes('alias oh-my-posh=/usr/local/bin/oh-my-posh'), await page.locator('.rl-tool', { hasText: 'oh-my-posh' }).first().innerHTML());
+await page.evaluate(() => { const i = window.__rm.tools.findIndex(x => x.id === 'oh-my-posh'); window.__rm.tools[i] = JSON.parse(window.__saveT); window.__rm.groups = JSON.parse(window.__saveG); });
+await page.click('#sidebar button[data-view="status"]');
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForSelector('.rl-tool');
+
 // Autorizzare k3d crea una bozza e la barra con il conteggio
 await page.click('[data-auth="k3d"]');
 check('regole: autorizzare mette una modifica in bozza', (await page.textContent('.rl-bar')).includes('1 modifica'));
@@ -665,7 +677,7 @@ await page.selectOption('#wz-mode', 'enforce');
 await page.check('#wz-dw');
 await page.click('#wz-save');
 await page.waitForFunction(() => !document.getElementById('rl-wiz'));
-check('regole: la protezione personale compare con modalita e scritture', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('Blocca') && (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('anche la scrittura'));
+check('regole: la protezione personale compare con modalita e scritture', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('Blocca') && (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('scrittura solo ai programmi in lista'));
 check('regole: e in bozza finche non si preme Applica', (await page.textContent('.rl-bar')).includes('1 modifica') && (await page.evaluate(() => window.__applyCalls.length)) === 2);
 await page.click('#rl-apply');
 check('regole: la conferma la elenca', (await page.textContent('#dlg')).includes('Aggiungi la tua protezione «wallet-crypto»'));
@@ -899,6 +911,32 @@ if (shots) {
 }
 
 check('nessun errore JavaScript nella pagina', errors.length === 0, errors.join(' | '));
+// Layout fluido: ogni componente segue la larghezza della finestra (stretta, normale, molto larga)
+{
+  const sizes = [[480, 700], [760, 700], [1100, 760], [1900, 1000]];
+  const seenW = {};
+  for (const [w, h] of sizes) {
+    await page.setViewportSize({ width: w, height: h });
+    for (const v of ['status', 'events', 'radar', 'rules', 'net', 'config', 'guide']) {
+      await page.click(`#sidebar button[data-view="${v}"]`);
+      await page.waitForTimeout(60);
+      const m = await page.evaluate(() => ({
+        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        contentOverflow: document.getElementById('content').scrollWidth - document.getElementById('content').clientWidth,
+        side: document.getElementById('sidebar').getBoundingClientRect().width,
+        cw: document.getElementById('content').getBoundingClientRect().width,
+        kid: (document.querySelector('#content > *') || {}).getBoundingClientRect ? document.querySelector('#content > *').getBoundingClientRect().width : 0,
+      }));
+      check(`layout ${w}px, ${v}: nessuno scorrimento orizzontale della pagina`, m.overflowX <= 1 && m.contentOverflow <= 2, JSON.stringify(m));
+      if (v === 'status') seenW[w] = m;
+    }
+  }
+  check('layout: sotto 900px la barra laterale e a sole icone', seenW[760].side < 80 && seenW[1100].side > 140, JSON.stringify([seenW[760].side, seenW[1100].side]));
+  check('layout: il contenuto occupa la finestra larga (non resta a 920px)', seenW[1900].kid > 1200, String(seenW[1900].kid));
+  check('layout: la barra laterale resta cliccabile a finestra stretta', await page.evaluate(() => [...document.querySelectorAll('#sidebar button')].every(b => b.getBoundingClientRect().width > 30)));
+  await page.setViewportSize({ width: 1100, height: 760 });
+}
+
 await browser.close();
 server.close();
 const failed = results.filter(x => !x).length;

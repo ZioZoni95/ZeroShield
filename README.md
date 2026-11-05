@@ -185,7 +185,7 @@ nome con cui lo chiami.
 * **Segreti (LSM).** Hook su `open`, `unlink`, `rename`, `path_truncate` e, sui kernel ≥ 6.2, `file_truncate`
   (opzionale). Ogni regola associa file ai soli binari autorizzati; entrano in whitelist solo **binari di
   root** non scrivibili da altri. Una scrittura semplice passa, `O_TRUNC` e `truncate` passano dalla
-  whitelist, `deny_write` per regola blocca anche quelle. I file nominati dalle regole hanno precedenza
+  whitelist, `deny_write` per regola richiede un programma autorizzato anche per scrivere: chi non è in lista (root compreso) viene negato, chi è in lista scrive normalmente. I file nominati dalle regole hanno precedenza
   sulle mappe (tetto di 4096 per regola, 16384 in tutto) e un watcher **inotify** riallinea le mappe entro
   ~0,5 s da un rename; il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
   **Fail-closed**: se un hook non si aggancia il demone si ferma invece di fingersi attivo.
@@ -449,10 +449,9 @@ docs/       documentazione (vedi sotto)
 
 * Il blocco è stato visto su un solo PC e con un file finto (vedi lo stato sopra): `file_truncate`, `deny_write` e le protezioni predefinite con i programmi veri non sono stati provati.
 * Il poisoning IPv6 dietro extension header passa. Il radar si aggiorna ogni ~5 secondi.
-* **Bypass noto del filtro di rete (da correggere nella 0.0.12):** un pacchetto UDP IPv4 *frammentato di proposito* (primo frammento con MF) non viene controllato da XDP e può
-  portare una risposta di poisoning. Individuato da una revisione del codice il 2026-11-05 e confermato sul sorgente; fino alla correzione non contare su XDP contro un attaccante che frammenta.
+* Il bypass del filtro di rete con pacchetti UDP IPv4 frammentati di proposito (primo frammento con MF) è corretto in 0.0.12: coperto da un test che esegue il vero programma XDP, non ancora provato con traffico frammentato vero su un kernel reale.
 * Se usi un programma da una cartella tua (es. `~/.local/bin/oh-my-posh`) e hai autorizzato la copia in `/usr/local/bin`, il blocco continua finché la shell non lancia **quella**
-  copia (attenzione anche agli script di init in cache). La GUI non lo segnala ancora.
+  copia (attenzione anche agli script di init in cache). Dalla 0.0.12 la GUI lo segnala e propone l'alias.
 * Dopo un aggiornamento (apt, snap) l'inode di un browser cambia e resta fuori whitelist fino al rescan.
 * Il canary uccide dopo il tocco e non ferma scritture in-place che saltano le esche.
 * Il demone non applica il kill-switch VPN: applicarlo in automatico può spegnere la rete.

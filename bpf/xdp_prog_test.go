@@ -107,6 +107,14 @@ func ip4(proto byte, l4 []byte) []byte {
 	return append(h, l4...)
 }
 
+// ip4frag e' ip4 con il campo flags+offset (frag_off) impostato: 0x2000 = MF, 0x4000 = DF,
+// i 13 bit bassi sono l'offset in unita' da 8 byte.
+func ip4frag(fragOff uint16, proto byte, l4 []byte) []byte {
+	h := ip4(proto, l4)
+	h[6], h[7] = byte(fragOff>>8), byte(fragOff)
+	return h
+}
+
 func ip6(next byte, l4 []byte) []byte {
 	h := make([]byte, 40)
 	h[0], h[6], h[7] = 0x60, next, 255
@@ -161,6 +169,34 @@ func TestXDPPoisoningParsing(t *testing.T) {
 	for _, c := range cases[len(cases)-3:] {
 		if got := run(t, p, c.pkt); got != xdpPass {
 			t.Errorf("%s (senza padding): XDP=%d, atteso PASS", c.name, got)
+		}
+	}
+}
+
+// ZS-001 (revisione del codice 2026-11-05): il primo frammento di un datagramma UDP (offset 0,
+// MF=1) porta l'header UDP e va ispezionato; con la maschera 0x3FFF veniva saltato e una
+// risposta di poisoning frammentata di proposito passava. I frammenti successivi (offset > 0)
+// non hanno header UDP: li' si legge payload a caso e si lascia passare.
+func TestXDPFragments(t *testing.T) {
+	objs := loadXDP(t)
+	const mf, df = 0x2000, 0x4000
+	cases := []struct {
+		name string
+		pkt  []byte
+		want uint32
+	}{
+		{"mDNS non frammentato", vlanFrame(nil, 0x0800, ip4frag(0, 17, udp(5353, 5353))), xdpDrop},
+		{"mDNS con DF", vlanFrame(nil, 0x0800, ip4frag(df, 17, udp(5353, 5353))), xdpDrop},
+		{"LLMNR risposta, primo frammento (MF, offset 0)", vlanFrame(nil, 0x0800, ip4frag(mf, 17, udp(5355, 49152))), xdpDrop},
+		{"NBT-NS, primo frammento con DF+MF", vlanFrame(nil, 0x0800, ip4frag(df|mf, 17, udp(40000, 137))), xdpDrop},
+		{"traffico normale, primo frammento", vlanFrame(nil, 0x0800, ip4frag(mf, 17, udp(40000, 53))), xdpPass},
+		{"frammento successivo (offset 185): niente header UDP, passa", vlanFrame(nil, 0x0800, ip4frag(185, 17, udp(5353, 5353))), xdpPass},
+		{"ultimo frammento (offset 1, MF=0): passa", vlanFrame(nil, 0x0800, ip4frag(1, 17, udp(5355, 5355))), xdpPass},
+		{"frammento successivo con MF: passa", vlanFrame(nil, 0x0800, ip4frag(mf|100, 17, udp(5353, 5353))), xdpPass},
+	}
+	for _, c := range cases {
+		if got := run(t, objs.XdpShield, pad(c.pkt)); got != c.want {
+			t.Errorf("%s: XDP=%d, atteso %d", c.name, got, c.want)
 		}
 	}
 }

@@ -37,8 +37,11 @@ type Watcher struct {
 }
 
 const (
-	watchDebounce = 400 * time.Millisecond
-	watchMinGap   = 3 * time.Second
+	// ZS-003: tra la sostituzione di un segreto (rename: nuovo inode) e il rescan che lo mette
+	// nella mappa il file nuovo e' libero. A riposo la finestra e' watchDebounce; durante una
+	// raffica non supera watchMinGap (un rescan al secondo al massimo). Prima 400 ms / 3 s.
+	watchDebounce = 100 * time.Millisecond
+	watchMinGap   = time.Second
 	watchMask     = unix.IN_CREATE | unix.IN_MOVED_TO | unix.IN_MOVED_FROM |
 		unix.IN_DELETE | unix.IN_DELETE_SELF | unix.IN_MOVE_SELF | unix.IN_ONLYDIR
 )

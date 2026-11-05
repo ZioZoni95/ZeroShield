@@ -48,7 +48,7 @@ type Rule struct {
 	Name      string   `yaml:"name"`
 	Paths     []string `yaml:"paths"`      // relativi alla home, oppure assoluti; glob ammessi; le directory sono ricorsive
 	Allow     []string `yaml:"allow"`      // nomi (risolti via PATH) o percorsi assoluti di binari
-	DenyWrite bool     `yaml:"deny_write"` // se true, nega anche O_WRONLY/O_TRUNC (default false: chiavi e backup scrivibili)
+	DenyWrite bool     `yaml:"deny_write"` // se true, anche la scrittura richiede un programma autorizzato (default false: chiunque puo' scrivere; i programmi autorizzati scrivono sempre)
 	// Mode: modalita' di QUESTA regola (audit|enforce). Vuoto = quella globale. Permette di mettere in
 	// enforce prima le chiavi SSH e lasciare il resto in audit, invece di tutto o niente.
 	Mode string `yaml:"mode"`

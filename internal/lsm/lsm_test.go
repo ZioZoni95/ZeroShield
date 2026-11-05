@@ -224,6 +224,26 @@ func TestWatcherFiresOnRenameIntoPlace(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("nessun rescan dopo il rename")
 	}
+	// ZS-003: a riposo la finestra tra la sostituzione e il rescan resta sotto mezzo secondo.
+	time.Sleep(watchMinGap + 200*time.Millisecond) // lascia passare il minimo tra due rescan
+	for len(fired) > 0 {
+		<-fired
+	}
+	t0 := time.Now()
+	if err := os.WriteFile(tmp, []byte("altra"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, final); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fired:
+		if d := time.Since(t0); d > 500*time.Millisecond {
+			t.Errorf("rescan dopo %v da una sostituzione a riposo, atteso < 500ms", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("nessun rescan dopo il secondo rename")
+	}
 	// Raffica di eventi: debounce, non un rescan per file.
 	for len(fired) > 0 {
 		<-fired
@@ -232,8 +252,8 @@ func TestWatcherFiresOnRenameIntoPlace(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, fmt.Sprintf("n%d", i)), nil, 0o600)
 	}
 	time.Sleep(watchMinGap + time.Second)
-	if n := len(fired); n < 1 || n > 2 {
-		t.Errorf("raffica di 200 file: %d rescan, attesi 1 (max 2)", n)
+	if n := len(fired); n < 1 || n > 3 {
+		t.Errorf("raffica di 200 file: %d rescan, attesi 1 (max 3)", n)
 	}
 	// Set vuoto = niente piu' osservazione.
 	w.Set(nil)

@@ -71,18 +71,18 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
 
 Da fare dopo la revisione del codice (2026-11-05, analisi statica del commit `633bdec`; ogni punto è stato controllato a mano sul sorgente). Previsti per la 0.0.12:
 
-- [ ] **ZS-001 — bypass XDP con frammentazione IPv4 (alto, confermato).** In `bpf/zerotrust.c` (~riga 387) la maschera `0x3FFF` include il flag MF: il primo
+- [x] ~~**ZS-001 — bypass XDP con frammentazione IPv4 (alto, confermato).**~~ **Corretto in 0.0.12** (maschera `0x1FFF`, test `TestXDPFragments` in CI; non ancora visto su un kernel reale con traffico frammentato). In `bpf/zerotrust.c` (~riga 387) la maschera `0x3FFF` include il flag MF: il primo
   frammento di un datagramma UDP (offset 0, MF=1) porta l'header UDP ma non viene ispezionato, quindi una risposta LLMNR/mDNS frammentata di proposito passa e
   lo stack IP la ricompone. Correzione: maschera `0x1FFF` (solo l'offset). Servono test: non frammentato, primo frammento con MF, frammenti successivi, drop effettivo.
-- [ ] **ZS-004 — chiamata Polkit non conforme (medio, fail-closed).** `internal/priv/polkit.go` passa 7 argomenti a `CheckAuthorization`, che ne vuole 5, e il subject ha il tipo
+- [x] ~~**ZS-004 — chiamata Polkit non conforme (medio, fail-closed).**~~ **Corretto in 0.0.12** (firma verificata col polkit vero). Resta da provare l'autorizzazione di un client non-root con il dialogo reale. `internal/priv/polkit.go` passa 7 argomenti a `CheckAuthorization`, che ne vuole 5, e il subject ha il tipo
   sbagliato (`a{ss}` invece di `a{sv}`): la chiamata fallisce sempre. Non è un bypass e oggi non pesa (la GUI usa `pkexec`, per root il controllo è saltato), ma i client non-root
   del socket privilegiato non possono autorizzarsi. Correzione sulla firma ufficiale + test con servizio Polkit reale.
-- [ ] **ZS-003 — finestra fino a ~3 s dopo una sostituzione atomica (basso/medio, noto).** Se un programma autorizzato sostituisce un file protetto con un rename, il nuovo inode
+- [x] ~~**ZS-003 — finestra fino a ~3 s dopo una sostituzione atomica (basso/medio, noto).**~~ **Ridotta in 0.0.12** (≈100 ms a riposo, al massimo 1 s in una raffica); non azzerata: il nuovo inode resta libero fino al rescan. Se un programma autorizzato sostituisce un file protetto con un rename, il nuovo inode
   resta fuori dalla mappa finché non scatta il rescan (`watchDebounce` 400 ms, `watchMinGap` 3 s). L'inotify sulle cartelle la riduce, non la elimina. Da fare: percorso di
   aggiornamento prioritario per i file protetti e test di rename ripetuti.
-- [ ] **`deny_write`: chiarire il testo, non il codice.** Un programma in whitelist per la regola può comunque scrivere: è voluto. `deny_write` nega la scrittura ai programmi
+- [x] ~~**`deny_write`: chiarire il testo, non il codice.**~~ Fatto in 0.0.12. Un programma in whitelist per la regola può comunque scrivere: è voluto. `deny_write` nega la scrittura ai programmi
   *non* autorizzati. La frase in `bpf/zerotrust.c` («anche ssh-keygen e i backup vengono negati») e la documentazione vanno riscritte. Una modalità «nessuno scrive, nemmeno gli autorizzati» sarebbe una funzione nuova.
-- [ ] **GUI, Regole: avvisare quando il programma in uso non è quello autorizzato.** Visto sul PC (2026-11-05): «Rendi affidabile» autorizza la copia di root in `/usr/local/bin`, ma nel `PATH` viene prima la copia
+- [x] ~~**GUI, Regole: avvisare quando il programma in uso non è quello autorizzato.**~~ Fatto in 0.0.12 (avviso con alias suggerito). Visto sul PC (2026-11-05): «Rendi affidabile» autorizza la copia di root in `/usr/local/bin`, ma nel `PATH` viene prima la copia
   in `~/.local/bin` (inode diverso, di proprietà dell'utente) e il blocco continua. Anche lo script di init di oh-my-posh in cache aveva il percorso scritto dentro. Il messaggio deve dire quale copia gira davvero e come usare quella autorizzata.
 - [ ] **Roadmap — audit delle connessioni in uscita dai programmi che toccano i segreti.** Hook `lsm/socket_connect`: logga «il programma X ha letto la regola R e poi si è connesso a IP:porta»
   (solo audit, nessun blocco, con eccezioni per `kubectl`/`git`/`aws`). Non vede il contenuto cifrato né i byte. Non esiste oggi: il radar guarda il traffico in ingresso e ZeroShield non è un firewall in uscita per processo. Dopo il collaudo in VM.

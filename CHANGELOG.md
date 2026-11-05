@@ -6,6 +6,17 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.12] — 2026-11-05
+
+Hardening dopo una revisione statica del codice (commit `633bdec`); ogni punto è stato verificato sul sorgente prima di correggerlo.
+
+- **ZS-001 (alto) — bypass XDP con frammentazione IPv4**: la maschera `0x3FFF` includeva il flag MF e saltava il primo frammento UDP; ora `0x1FFF` (solo l'offset). Test `TestXDPFragments` (esegue il vero programma con `BPF_PROG_TEST_RUN`, in CI come root).
+- **ZS-004 — chiamata polkit**: `CheckAuthorization` riceveva 7 argomenti con il subject di tipo errato e falliva sempre. Ora 5 argomenti, firma `(sa{sv}) s a{ss} u s`; provata anche con il polkit vero del sistema (prima: «Type of message … does not match expected type»).
+- **ZS-003 — finestra di rescan**: `watchDebounce` 400→100 ms e `watchMinGap` 3→1 s. Test di latenza (< 500 ms a riposo).
+- **`deny_write`**: nessun cambio di comportamento; corretti i testi (commento in `zerotrust.c`, README, config d'esempio, GUI): chi è in lista scrive, gli altri (root compreso) no.
+- **GUI**: in Regole, se la copia protetta è autorizzata ma il terminale lancia un altro percorso, compare l'avviso con l'alias suggerito.
+- **GUI adattiva**: contenuto fluido (non più 920 px), barra laterale a sole icone sotto 900 px, radar a risoluzione doppia e ridimensionabile, larghezza minima 480 px; 28 controlli di layout nel browser (4 larghezze × 7 schermate).
+
 ## [0.0.11] — 2026-11-05
 
 - **Avvio all'accensione**: interruttore in Configurazione (`systemctl enable/disable zt-shield` via pkexec, senza avviare/fermare adesso; spegnerlo chiede conferma).
