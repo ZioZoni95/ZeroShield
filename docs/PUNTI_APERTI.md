@@ -17,14 +17,14 @@ VPN è provato solo in un network namespace e con comandi finti.
 | XDP anti-poisoning + radar | ✅ kernel reale (drop verificato su loopback) |
 | Canary fanotify | ✅ kernel reale (esca, massa, kill in enforce) |
 | Hook LSM (`file_open`, `unlink`, `rename`, troncamento) | 🟢 visti negare su un kernel reale (un PC, file finto) · 🟡 `file_truncate` e `deny_write` mai provati |
-| TUI / GUI / mock / IPC | ✅ GUI vera avviata sotto Xvfb contro il mock + frontend in un browser (21 controlli); socket provato con utenti reali |
-| Demone `zt-shield` end-to-end | ⚠️ mai avviato (non parte senza BPF LSM): il collegamento IPC/VPN/netstat è compilato e analizzato, non eseguito |
-| Pacchetti `.deb` | ✅ costruiti, installati e rimossi · release v0.0.1–v0.0.4 pubblicate (pre-release) · pacchetto unico dalla v0.0.4 |
+| TUI / GUI / mock / IPC | ✅ GUI vera contro il demone reale come utente protetto + 152 controlli nel browser contro un demone simulato; socket provato con utenti reali |
+| Demone `zt-shield` end-to-end | 🟢 gira su un PC con BPF LSM (installato dal `.deb`, 2026-11-05): XDP, hook, canary, IPC con GUI e icona, `config-apply`; mai in una VM isolata né per giorni di fila |
+| Pacchetti `.deb` | ✅ costruiti e installati su un PC (aggiornamento 0.0.4 → 0.0.6 con `apt`) · release v0.0.1–v0.0.4 pubblicate (pre-release) · pacchetto unico dalla v0.0.4 |
 | Kill-switch VPN | 🟡 provato in un network namespace (54 controlli); mai su rete reale |
 | Auto-VPN + helper Proton | 🟡 provati con comandi finti; mai con NetworkManager o Proton veri |
 | `harden_system.sh` | 🟡 `--dry-run` + 21 controlli con comandi finti; mai su un sistema vero |
 | `setup_fido2.sh` | ⚠️ mai eseguito (solo shellcheck) |
-| Hook `lsm/file_truncate` (≥ 6.2), inotify sulle dir protette | 🟡 compilati e testati dove possibile (inotify sì); l'hook mai caricato su un kernel con BPF LSM |
+| Hook `lsm/file_truncate` (≥ 6.2), inotify sulle dir protette | 🟡 inotify testato; `file_truncate` non confermato: nel journal compare solo «Hook LSM 'file_open' attivo», da verificare con `zt-probe` come root |
 
 ## Origine e scopo
 
@@ -51,22 +51,26 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
   in `enforce` li rompe. Servono suggerimenti nella GUI e/o un elenco di programmi di sistema da autorizzare con un clic.
 - [ ] **Creazione di hard link non bloccata**: si può creare un secondo nome di un file protetto, ma resta protetto (la chiave è l'inode). Da valutare
   un hook `inode_link` se serve impedire anche l'alias.
-- [ ] **Avviare il demone end-to-end** in una VM con `bpf` attivo: è l'unico modo di eseguire
-  insieme IPC (socket 0600 dell'utente protetto), stato VPN ogni 5 s e porte in ascolto.
+- [x] ~~**Avviare il demone end-to-end** con `bpf` attivo~~ — fatto il 2026-11-05 su un PC (IPC con GUI e icona, porte in ascolto, hook, canary). Resta da rifare in una VM isolata e con VPN reale.
 - [ ] **VPN in VM con snapshot**, con un tunnel vero: kill-switch (tunnel killato → `tcpdump`
   muto 60 s), `portal`, auto-VPN con NetworkManager, helper Proton. Procedura in
   [`VPN_SETUP.md`](VPN_SETUP.md).
-- [ ] **Socket IPC con GUI e TUI vere** da due utenti diversi (il controllo è già provato con
-  un client minimale; manca la prova end-to-end con le interfacce).
-- [ ] **Watchdog systemd** stabile oltre 2 minuti (`systemctl status zt-shield`).
+- [ ] **Socket IPC con GUI e TUI vere da DUE utenti diversi.** Provato con l'utente protetto (GUI e icona leggono il demone vero);
+  manca la prova con un secondo utente locale che deve ricevere *permission denied* (il controllo è già provato con un client minimale).
+- [x] ~~**Watchdog systemd** stabile oltre 2 minuti~~ — il demone è rimasto attivo 9 minuti con `WatchdogSec=30` senza riavvii (poi riavviato di proposito); `NRestarts=0`. Da ripetere per ore/giorni.
 - [ ] **Percorsi dei browser** in `audit` (deb/snap; Flatpak non è coperto) prima di `public-wifi` in enforce.
 - [ ] **`zt-probe` su un kernel con BPF LSM**: deve accettare anche `zt_file_truncate` (nuovo, mai caricato).
-- [ ] **Unit systemd**: provare `ProtectSystem=strict` e `CapabilityBoundingSet` in VM (le direttive a basso rischio aggiunte sono validate solo con `systemd-analyze`).
+- [ ] **Unit systemd**: provare `ProtectSystem=strict` e `CapabilityBoundingSet` in VM. Le direttive a basso rischio già presenti girano su un PC vero (il demone parte e resta attivo).
 - [ ] **Script** `harden_system.sh` (prima con `--dry-run`) e `setup_fido2.sh` in VM con snapshot.
 - [ ] **Test furto-token** in VM isolata: infostealer simulato, reverse shell host-only.
 - [ ] **Pentest LAN** da macchina esterna ([`TESTING.md`](TESTING.md), Test 5).
 
 ## Da fare — codice
+
+Chiusi il 2026-11-05 (release 0.0.4–0.0.6): modalità per singola protezione nel kernel e nel config; scheda Regole guidata con catalogo,
+«Rendi affidabile», «Applica» e **«Proteggi un mio file»**; azione «autorizza questo programma» dagli eventi in audit; avvisi nel journal
+una sola volta per binario; `zt-shield config-apply` provato con `pkexec`; icona nella barra come servizio utente; versione e popup Novità; unità dell'icona
+senza `NoNewPrivileges` (rompeva `pkexec`); build eBPF senza warning; dipendenze aggiornate (Dependabot svuotato).
 
 Chiusi il 2026-10-26 (dettagli in [`FIX_APPLICATI.md`](FIX_APPLICATI.md)): canary sotto systemd
 (`zt-shield dropin`), canary `chown` e `allow_exe`, `ZT_SOCKET` ignorato dal demone root, QinQ a
@@ -81,39 +85,34 @@ finestra di rescan, preset `glab`.
   verificare in audit su una macchina con Flatpak.
 - [ ] **Browser snap/apt aggiornati**: dopo un aggiornamento l'inode del binario cambia e il
   browser resta fuori whitelist fino al rescan (inotify osserva i segreti, non i binari).
-- [ ] **Modalità per regola nel kernel**: la mappa `rule_modes` è letta da `check_access`: il verifier la controlla in CI (`zt-probe`) ma,
-  come gli altri hook LSM, non è mai stata vista decidere un blocco reale; da collaudare in VM con due regole in modalità diverse (una nega, l'altra solo registra).
-- [ ] **GUI, regole editabili: collaudo vero.** La scheda Regole (catalogo guidato, «Rendi affidabile», «Applica»)
-  e il comando root `zt-shield config-apply` (valida, backup, riavvio, ripristino se non riparte) sono provati con
-  test e dischi finti, mai con pkexec e servizio veri. Da provare in VM: applicazione, ripristino dopo un riavvio
-  fallito, copia in `/usr/local/bin`. Limite noto: se il terminale lancia ancora la copia di brew/`~/.local/bin`
+- [x] ~~**Modalità per regola nel kernel**~~ — vista su un PC (2026-11-05): `prova` in `enforce` nega, le altre regole in `audit` registrano soltanto.
+- [ ] **GUI, regole editabili: collaudo parziale.** *Applica* con `pkexec`, backup e riavvio sono provati su un PC (2026-11-05).
+  Restano da provare con un sistema vero: il **ripristino automatico dopo un riavvio fallito** (oggi solo test) e «Rendi affidabile» (copia in `/usr/local/bin`). Limite noto: se il terminale lancia ancora la copia di brew/`~/.local/bin`
   (stesso nome, PATH precedente) l'autorizzazione vale solo per la copia protetta; la GUI lo avvisa.
-- [ ] **GUI, configurazione editabile** (interfaccia, subnet, canary, VPN): oggi la tab mostra un riepilogo e il file, ma si modifica
-  solo `mode`. Un editor a campi (interfaccia, subnet, canary, VPN) con validazione e anteprima
+- [ ] **GUI, configurazione editabile** (interfaccia, subnet, canary, VPN): le **regole** si modificano dalla GUI, il resto della tab
+  Configurazione mostra un riepilogo e il file e si cambia solo `mode`. Un editor a campi (interfaccia, subnet, canary, VPN) con validazione e anteprima
   della differenza richiede scritture sul canale privilegiato (`internal/priv` + polkit): da fare
   con il collaudo in VM, non prima.
 - [ ] **GUI/IPC, interfacce non coperte**: il demone scrive nel journal «interfaccia X UP ma NON
   coperta da XDP», la GUI no. Serve un campo nuovo in `ipc.Status` (elenco interfacce UP e se
   coperte) per mostrarlo in Rete e Configurazione.
-- [ ] **GUI, audit → enforce**: dagli eventi in audit manca l'azione «autorizza questo exe»
-  (frammento di config da copiare). È il passaggio che porta davvero a enforce.
+- [x] ~~**GUI, audit → enforce**: azione «autorizza questo exe»~~ — nella scheda Regole, «Visti da quando hai aperto la finestra» con *Autorizza*, *Rendi affidabile* e l'indicatore di prontezza per Blocca.
 - [ ] **Radar, richieste contro risposte**: la mappa del kernel conta solo `poison` per IP. XDP scarta
   sia le richieste degli altri host (porta di destinazione 5355/5353/137/138, sottofondo normale) sia le
   risposte avvelenate (porta di origine 5355), senza distinguerle né dire il protocollo. Oggi la GUI
   classifica con euristiche dichiarate (tasso, volume, rete). Per un verdetto vero servono due contatori
   separati (richieste/risposte) e il protocollo, cioè una modifica a `bpf/zerotrust.c`, alla mappa e a
   `ipc.SourceStat`, da collaudare in VM.
-- [ ] **Journal, rumore**: i warning «regola X: binario Y non risolto» escono a ogni rescan (ogni
-  30 s) e coprono i messaggi utili. Basta avvisare una volta per binario.
-- [ ] **`configure_service.sh` da provare con un `.deb` vero**: i test usano percorsi e `systemctl` finti. Va
-  provato in una VM con il pacchetto installato (utente, profilo, avvio in audit, dropin del canary, fallimento
-  se `bpf` manca tra gli LSM) e dalla GUI con `pkexec`.
+- [x] ~~**Journal, rumore**: «binario Y non risolto» a ogni rescan~~ — ora escono una volta per binario all'avvio (18 righe in 15 minuti = 3 avvii, non una ogni 30 s). Restano i 15 avvisi «interfaccia X UP ma NON coperta da XDP» a ogni avvio (veth, docker, ppp0...): rumorosi su un PC con container.
+- [ ] **`configure_service.sh` da provare con un `.deb` vero in un'installazione pulita**: il pacchetto installato con `apt` funziona (servizio dalla unit
+  del pacchetto, aggiornamenti 0.0.4 → 0.0.6), ma lo script con utente/profilo/dropin del canary e il fallimento se `bpf` manca non sono stati
+  eseguiti su una macchina nuova, né dalla GUI con `pkexec`.
 - [ ] **Installazione da sorgente e da pacchetto non si mescolano**: su una macchina con la unit del
   pacchetto, `install_service.sh` creerebbe una seconda copia in `/usr/local/sbin`. La GUI sceglie lo script
   giusto, ma a mano nulla lo impedisce: valutare un controllo nello script.
-- [ ] **Falso positivo in audit**: il prompt `oh-my-posh` legge i file della regola `cloud-creds`
-  (compare come `[AUDIT]` a ogni prompt). In enforce verrebbe bloccato a ogni comando: capire se
-  va nei binari consentiti del preset o se il prompt va configurato per non leggerli.
+- [ ] **Falso positivo in audit**: il prompt `oh-my-posh` (in `~/.local/bin`, scrivibile dall'utente) legge i file di `cloud-creds` e compare come `[AUDIT]`
+  a ogni prompt; il demone non può autorizzarlo così com'è. La GUI ora lo spiega e offre «Rendi affidabile» (copia in `/usr/local/bin`), ma sul PC di
+  prova non è stato applicato. In alternativa: disattivare il segmento Kubernetes nel tema del prompt.
 - [ ] **VPN: il demone non applica il kill-switch.** Resta una scelta (il demone è di sola
   misura): applicarlo in automatico può spegnere la rete della macchina, e non è mai stato
   provato su una rete vera. Se lo vuoi, serve un'azione sul canale di controllo con

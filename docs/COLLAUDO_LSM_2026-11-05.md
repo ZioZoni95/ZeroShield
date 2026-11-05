@@ -29,13 +29,14 @@ Prima volta in cui il blocco dei segreti è stato visto funzionare. **Non è una
 | Altre regole (`cloud-creds`, ...) | ✅ restano in **audit**: `oh-my-posh` risulta solo osservato, non bloccato | modalità per regola |
 | Applica dalla GUI | ✅ password via `pkexec`, config scritto nel blocco gestito, copia di sicurezza, riavvio | `config-apply` |
 | `nano segreto.txt` (programma autorizzato) | ✅ si apre (riferito da chi ha fatto la prova) | whitelist |
+| Demone attivo per 9 minuti con `WatchdogSec=30` | ✅ nessun riavvio (`NRestarts=0`) | watchdog |
 
 Il demone ha registrato ogni tentativo: `🚨 [BLOCCATO] regola=prova PID=… comm='…'`, compreso l'indicizzatore di GNOME
 (`localsearch-extractor-3`) che ha provato a leggere il file da solo.
 
 ## Cosa NON è stato provato
 
-- l'hook `file_truncate` (`ftruncate` su un descrittore già aperto, kernel ≥ 6.2) e `path_truncate` isolatamente;
+- l'hook `file_truncate` (`ftruncate` su un descrittore già aperto, kernel ≥ 6.2) e `path_truncate` isolatamente: nel journal compare solo «Hook LSM 'file_open' attivo», quindi non è nemmeno confermato che gli altri siano segnalati a log (il loro effetto è visibile: rinomina e cancellazione negate);
 - `deny_write: true` (blocco anche delle scritture semplici);
 - le protezioni **predefinite** (ssh, kubeconfig, token, gpg) in `enforce` con i programmi veri (`ssh`, `kubectl`, `git`...);
 - il comportamento dopo un aggiornamento del binario autorizzato (inode che cambia);
