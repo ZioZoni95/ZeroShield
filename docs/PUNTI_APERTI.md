@@ -19,7 +19,7 @@ VPN è provato solo in un network namespace e con comandi finti.
 | Hook LSM (`file_open`, `unlink`, `rename`, troncamento) | 🟢 visti negare su un kernel reale (un PC, file finto) · 🟡 `file_truncate` e `deny_write` mai provati |
 | TUI / GUI / mock / IPC | ✅ GUI vera contro il demone reale come utente protetto + 152 controlli nel browser contro un demone simulato; socket provato con utenti reali |
 | Demone `zt-shield` end-to-end | 🟢 gira su un PC con BPF LSM (installato dal `.deb`, 2026-11-05): XDP, hook, canary, IPC con GUI e icona, `config-apply`; mai in una VM isolata né per giorni di fila |
-| Pacchetti `.deb` | ✅ costruiti e installati su un PC (aggiornamento 0.0.4 → 0.0.6 con `apt`) · release v0.0.1–v0.0.4 pubblicate (pre-release) · pacchetto unico dalla v0.0.4 |
+| Pacchetti `.deb` | ✅ costruiti e installati su un PC (aggiornamento 0.0.4 → 0.0.6 con `apt`) · release v0.0.1–v0.0.4 e v0.0.9 pubblicate (pre-release; 0.0.5–0.0.8 sono versioni interne) · pacchetto unico dalla v0.0.4 |
 | Kill-switch VPN | 🟡 provato in un network namespace (54 controlli); mai su rete reale |
 | Auto-VPN + helper Proton | 🟡 provati con comandi finti; mai con NetworkManager o Proton veri |
 | `harden_system.sh` | 🟡 `--dry-run` + 21 controlli con comandi finti; mai su un sistema vero |

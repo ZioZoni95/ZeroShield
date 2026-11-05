@@ -51,10 +51,17 @@ jobs:
           cat > /tmp/notes.md <<'EOF'
           # ⚠️ ALPHA — SOLO LAB, NON USO REALE ⚠️
 
-          > **Gli hook LSM non sono mai stati agganciati su un kernel con BPF attivo:
-          > il blocco effettivo dei segreti NON è verificato. XDP e canary sì
-          > (vedi `docs/TEST_SANDBOX.md`). Installare questo .deb su una macchina
-          > vera non protegge nulla e può negarti i tuoi stessi file in enforce.**
+          > **Il blocco dei segreti è stato visto funzionare una sola volta, su un solo PC
+          > (kernel 7.0 Ubuntu) e con un file finto: apertura, rinomina, cancellazione,
+          > troncamento e hard link negati; XDP, canary e radar collaudati (vedi
+          > `docs/COLLAUDO_LSM_2026-11-05.md`). NON è stato collaudato in una VM isolata
+          > né con i programmi veri sulle protezioni predefinite (ssh, kubectl, git...).
+          > In enforce può negarti i tuoi stessi file: usalo in audit e metti in Blocca
+          > una protezione alla volta.**
+
+          Prima release dopo la v0.0.4: raccoglie le versioni interne 0.0.5-0.0.8 (modalità per protezione, regole
+          guidate con «Proteggi un mio file», scelta e aggancio a caldo delle interfacce di rete, radar IPv4/IPv6).
+          Aggiornando dalla 0.0.4: riavvia `zt-shield` e l'icona (`systemctl --user restart zeroshield-tray`).
 
           Un solo pacchetto: `zeroshield_*_amd64.deb` contiene demone, TUI, GUI desktop e icona nella barra.
           Le librerie grafiche (GTK/WebKit) sono *consigliate*: apt le installa da solo sul
