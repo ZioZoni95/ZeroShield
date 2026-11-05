@@ -19,6 +19,31 @@ const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete',
 const VIEW_ORDER = ['status', 'events', 'radar', 'rules', 'net', 'config', 'guide'];
 
 let view = 'status';
+
+// I riquadri a tendina (<details>) restano come li ha lasciati l'utente: ogni aggiornamento dello
+// stato ridisegna la pagina con innerHTML e prima li richiudeva da soli (in Guida, Configurazione,
+// Regole, Stato...). Si ricorda lo stato per schermata + titolo e lo si rimette dopo ogni ridisegno.
+const detailsOpen = new Map();
+// Chiave = schermata + titolo + posizione tra i riquadri con lo stesso titolo (le schede delle regole
+// hanno tutte lo stesso titolo, quindi il solo testo le confonderebbe).
+const detKey = d => {
+    const title = ((d.querySelector(':scope > summary') || {}).textContent || '').trim();
+    const same = [...content.querySelectorAll('details')].filter(x => ((x.querySelector(':scope > summary') || {}).textContent || '').trim() === title);
+    return view + '|' + title + '|' + same.indexOf(d);
+};
+// Si registra al clic sul titolo (sincrono, prima che il browser cambi lo stato): l'evento `toggle`
+// arriva in ritardo e un ridisegno nel mezzo ripristinerebbe il valore vecchio.
+document.addEventListener('click', e => {
+    const sm = e.target && e.target.closest ? e.target.closest('summary') : null;
+    const d = sm && sm.parentElement;
+    if (d && d.tagName === 'DETAILS' && content.contains(d)) detailsOpen.set(detKey(d), !d.open);
+}, true);
+new MutationObserver(() => {
+    content.querySelectorAll('details').forEach(d => {
+        const k = detKey(d);
+        if (detailsOpen.has(k) && d.open !== detailsOpen.get(k)) d.open = detailsOpen.get(k);
+    });
+}).observe(content, {childList: true, subtree: true});
 let status = null;
 let events = [];
 let offlineMsg = '';

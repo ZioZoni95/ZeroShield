@@ -911,6 +911,28 @@ if (shots) {
 }
 
 check('nessun errore JavaScript nella pagina', errors.length === 0, errors.join(' | '));
+// I riquadri a tendina restano aperti (o chiusi) quando lo stato si aggiorna, in ogni schermata
+for (const v of ['guide', 'config']) {
+  await page.click(`#sidebar button[data-view="${v}"]`);
+  await page.waitForSelector(v === 'config' ? '#content details.file > summary' : '#content details > summary');
+  const sels = await page.evaluate(() => [...document.querySelectorAll('#content details')].map(d => d.querySelector(':scope > summary').textContent.trim()));
+  const target = sels[0];
+  await page.evaluate(t => [...document.querySelectorAll('#content details')].find(d => d.querySelector(':scope > summary').textContent.trim() === t).querySelector(':scope > summary').click(), target);
+  const openBefore = await page.evaluate(t => [...document.querySelectorAll('#content details')].find(d => d.querySelector(':scope > summary').textContent.trim() === t).open, target);
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate((n) => { window.__status = Object.assign({}, window.__status, { time: '2026-10-05T11:00:0' + n + 'Z' }); window.__emit('shield:status', window.__status); }, i);
+    await page.waitForTimeout(120);
+  }
+  const openAfter = await page.evaluate(t => [...document.querySelectorAll('#content details')].find(d => d.querySelector(':scope > summary').textContent.trim() === t).open, target);
+  check(`riquadri: in ${v} quello aperto resta aperto dopo gli aggiornamenti di stato`, openBefore === true && openAfter === true, `${target}: ${openBefore}->${openAfter}`);
+  await page.evaluate(t => [...document.querySelectorAll('#content details')].find(d => d.querySelector(':scope > summary').textContent.trim() === t).querySelector(':scope > summary').click(), target);
+  await page.waitForTimeout(80);
+  await page.evaluate((n) => { window.__status = Object.assign({}, window.__status, { time: '2026-10-05T11:01:0' + n + 'Z' }); window.__emit('shield:status', window.__status); }, 1);
+  await page.waitForTimeout(120);
+  const closedAfter = await page.evaluate(t => [...document.querySelectorAll('#content details')].find(d => d.querySelector(':scope > summary').textContent.trim() === t).open, target);
+  check(`riquadri: in ${v} richiuderlo a mano lo mantiene chiuso`, closedAfter === false);
+}
+
 // Layout fluido: ogni componente segue la larghezza della finestra (stretta, normale, molto larga)
 {
   const sizes = [[480, 700], [760, 700], [1100, 760], [1900, 1000]];
