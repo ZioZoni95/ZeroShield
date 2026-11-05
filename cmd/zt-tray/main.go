@@ -34,6 +34,9 @@ var version = "dev"
 
 const pollEvery = 3 * time.Second
 
+// iconRefresh: ogni quanto riaffermare l'icona anche se lo stato non cambia.
+const iconRefresh = 30 * time.Second
+
 func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
 		fmt.Println("zt-tray", version)
@@ -58,7 +61,8 @@ type tray struct {
 	mOpen  *systray.MenuItem
 	mu     sync.Mutex
 	cur    state
-	known  bool // abbiamo gia' letto almeno uno stato
+	known  bool      // abbiamo gia' letto almeno uno stato
+	iconAt time.Time // ultima volta che l'icona e' stata impostata
 	lastEv time.Time
 	supp   int
 }
@@ -120,8 +124,12 @@ func (t *tray) apply(s state, st ipc.Status) {
 	}
 	t.mStat.SetTitle(line)
 	systray.SetTooltip("ZeroShield: " + line)
-	if !had || prev != s {
+	// L'icona si reimposta anche a stato invariato, ogni iconRefresh: se la prima chiamata
+	// arriva prima che la barra abbia registrato l'elemento, l'immagine resta vuota (icona
+	// invisibile, visto dopo un doppio riavvio da `apt install`) e non si sistemerebbe piu'.
+	if !had || prev != s || time.Since(t.iconAt) >= iconRefresh {
 		systray.SetIcon(iconPNG(s))
+		t.iconAt = time.Now()
 	}
 	switch {
 	case s == stDown && (!had || prev != stDown):

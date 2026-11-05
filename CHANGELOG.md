@@ -9,6 +9,7 @@ _Nulla per ora._
 ## [0.0.10] — 2026-11-05
 
 - Icona nella barra: **blu** in enforce con hook attivo (prima verde), arancione in audit. Dopo `apt install` riavvia l'icona: `systemctl --user restart zeroshield-tray`.
+- Icona nella barra: viene reimpostata ogni 30 s anche a stato invariato, così non resta invisibile se la barra la registra in ritardo (visto dopo due riavvii ravvicinati).
 
 ## [0.0.9] — 2026-11-05
 
