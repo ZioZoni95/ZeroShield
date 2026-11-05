@@ -9,6 +9,10 @@ export function CheckProgram(arg1:string):Promise<any>;
 
 export function MakeTrusted(arg1:string):Promise<any>;
 
+export function PickPath(arg1:string):Promise<string>;
+
+export function PreviewPaths(arg1:Array<string>):Promise<any>;
+
 export function RulesModel():Promise<any>;
 
 export function ConfigMode():Promise<string>;

@@ -196,7 +196,7 @@ code { font-family: var(--mono); background: rgba(127,127,127,.18);
     padding: 1px 6px; border-radius: 6px; font-size: 13px; }
 
 /* --- Onboarding primo avvio --- */
-#onboard, #dlg {
+#onboard, #dlg, #rl-wiz {
     position: fixed; inset: 0; z-index: 100;
     background: rgba(0,0,0,.45); display: flex;
     align-items: center; justify-content: center; padding: 20px;
@@ -416,3 +416,47 @@ kbd { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--borde
 .wn-note { background: var(--amber-soft); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; margin: 0 0 12px; }
 .ver { cursor: pointer; }
 .ver:hover { color: var(--accent); text-decoration: underline; }
+
+/* ---- Regole: modalita' per regola, protezioni personali, procedura guidata ---- */
+.rl-mode { display: grid; gap: 2px; font-size: 12px; min-width: 150px; }
+.rl-mode select { font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 3px 6px; }
+.rl-rdy { margin: 6px 0 0 52px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 0; }
+.rl-rdy:empty { margin: 0; }
+.rl-chip.gone { text-decoration: line-through; opacity: .55; }
+.rl-mine { flex: none; width: 24px; text-align: center; color: var(--amber); font-size: 18px; }
+.wiz { max-width: 640px; width: 92vw; max-height: 90vh; overflow: auto; }
+.wz-sec { margin: 12px 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.wz-sec p { margin: 4px 0 8px; }
+.wiz input[type=text] { font: inherit; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text); width: 100%; box-sizing: border-box; }
+.wz-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.wz-pv { background: var(--hover); border-radius: 10px; padding: 8px 12px; font-size: 13px; line-height: 1.5; margin: 6px 0; }
+.wz-pv .bad { color: var(--red); }
+.wz-pv .warn-t { color: var(--amber); }
+.wz-err { color: var(--red); font-size: 13px; margin: 6px 0; min-height: 0; }
+
+/* ---- Stato: homepage guidata (statuspage.js) ---- */
+.hero { border-radius: 16px; padding: 18px 20px; margin: 0 0 16px; border: 1px solid var(--border); background: var(--panel); border-left-width: 6px; }
+.hero.ok { border-left-color: var(--green); background: var(--green-soft); }
+.hero.warn { border-left-color: var(--amber); background: var(--amber-soft); }
+.hero.bad { border-left-color: var(--red); background: var(--red-soft); }
+.hero-t { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.hero-d { margin-top: 4px; font-size: 14px; line-height: 1.5; max-width: 70ch; }
+.hero-a { margin-top: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.hero-btn { font: inherit; font-weight: 600; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 16px; cursor: pointer; }
+.hero-btn:hover { filter: brightness(1.08); }
+.hero-btn.ghost { background: transparent; color: var(--accent); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 0 0 8px; }
+.tile { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.tile-k { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+.tile-v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile-d { font-size: 12.5px; color: var(--dim); line-height: 1.45; flex: 1; }
+.todo, .recent { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.todo li { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; }
+.todo-i { flex: none; width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--hover); }
+.todo li.ok .todo-i { background: var(--green); color: #fff; }
+.todo li.no .todo-i { background: var(--amber); color: #fff; }
+.recent li { font-size: 13.5px; line-height: 1.5; }
+.ev-bl { color: var(--red); }
+details.tech { margin: 14px 0 4px; }
+.wz-chk { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; font-size: 13.5px; line-height: 1.45; }
+.wz-chk input { margin-top: 3px; flex: none; }

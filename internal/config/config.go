@@ -49,6 +49,20 @@ type Rule struct {
 	Paths     []string `yaml:"paths"`      // relativi alla home, oppure assoluti; glob ammessi; le directory sono ricorsive
 	Allow     []string `yaml:"allow"`      // nomi (risolti via PATH) o percorsi assoluti di binari
 	DenyWrite bool     `yaml:"deny_write"` // se true, nega anche O_WRONLY/O_TRUNC (default false: chiavi e backup scrivibili)
+	// Mode: modalita' di QUESTA regola (audit|enforce). Vuoto = quella globale. Permette di mettere in
+	// enforce prima le chiavi SSH e lasciare il resto in audit, invece di tutto o niente.
+	Mode string `yaml:"mode"`
+}
+
+// MaxRules: limite alle regole (la mappa del kernel con le modalita' ha 256 voci, l'id parte da 1).
+const MaxRules = 255
+
+// EffectiveMode: la modalita' che vale per la regola (la sua, altrimenti quella globale).
+func (c *Config) EffectiveMode(r Rule) string {
+	if r.Mode != "" {
+		return r.Mode
+	}
+	return c.Mode
 }
 
 // CanaryConfig: esche anti-ransomware via fanotify (vedi docs/CANARY.md).
@@ -122,6 +136,8 @@ type Config struct {
 	AllowExtra    map[string][]string `yaml:"allow_extra"`   // regola -> percorsi ASSOLUTI di binari da aggiungere ad allow
 	DisableRules  []string            `yaml:"disable_rules"` // nomi di regole da togliere
 	EnableGroups  []string            `yaml:"enable_groups"` // gruppi predefiniti da aggiungere (ssh|cloud|tokens|gpg|browsers)
+	RemoveAllow   map[string][]string `yaml:"remove_allow"`  // regola -> programmi da togliere da allow (nome o percorso)
+	RuleModes     map[string]string   `yaml:"rule_modes"`    // regola -> audit|enforce (sovrascrive la modalita' globale)
 	Canary        CanaryConfig        `yaml:"canary"`
 	Vpn           VpnConfig           `yaml:"vpn"`
 	LogFormat     string              `yaml:"log_format"` // text | json
@@ -389,6 +405,33 @@ func (c *Config) applyOverrides() error {
 			}
 		}
 	}
+	for name, exes := range c.RemoveAllow {
+		r := find(name)
+		if r == nil {
+			return fmt.Errorf("remove_allow: regola %q inesistente", name)
+		}
+		drop := map[string]bool{}
+		for _, e := range exes {
+			drop[e] = true
+		}
+		var keep []string
+		for _, a := range r.Allow {
+			if !drop[a] && !drop[filepath.Base(a)] {
+				keep = append(keep, a)
+			}
+		}
+		r.Allow = keep
+	}
+	for name, m := range c.RuleModes {
+		r := find(name)
+		if r == nil {
+			return fmt.Errorf("rule_modes: regola %q inesistente", name)
+		}
+		if m != "audit" && m != "enforce" {
+			return fmt.Errorf("rule_modes[%s]: %q non valido (audit|enforce)", name, m)
+		}
+		r.Mode = m
+	}
 	if len(c.DisableRules) > 0 {
 		off := map[string]bool{}
 		for _, n := range c.DisableRules {
@@ -525,7 +568,17 @@ func (c *Config) Validate() error {
 			return err
 		}
 	}
+	if n := len(c.AllRules()); n > MaxRules {
+		return fmt.Errorf("troppe regole: %d (massimo %d)", n, MaxRules)
+	}
 	for i, r := range c.AllRules() {
+		if r.Mode != "" && r.Mode != "audit" && r.Mode != "enforce" {
+			return fmt.Errorf("regola %q: mode %q non valido (audit|enforce)", r.Name, r.Mode)
+		}
+		// Il nome finisce nei log e nelle UI: niente a-capo o caratteri di controllo.
+		if len(r.Name) > 64 || strings.ContainsAny(r.Name, "\x00\n\r\t\x1b") {
+			return fmt.Errorf("regola #%d: nome non valido (max 64 caratteri, niente a-capo o caratteri di controllo)", i+1)
+		}
 		if r.Name == "" || len(r.Paths) == 0 {
 			return fmt.Errorf("regola #%d: servono name e almeno un path", i+1)
 		}

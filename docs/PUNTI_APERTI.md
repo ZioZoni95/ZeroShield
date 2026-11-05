@@ -72,6 +72,8 @@ finestra di rescan, preset `glab`.
   verificare in audit su una macchina con Flatpak.
 - [ ] **Browser snap/apt aggiornati**: dopo un aggiornamento l'inode del binario cambia e il
   browser resta fuori whitelist fino al rescan (inotify osserva i segreti, non i binari).
+- [ ] **Modalità per regola nel kernel**: la mappa `rule_modes` è letta da `check_access`: il verifier la controlla in CI (`zt-probe`) ma,
+  come gli altri hook LSM, non è mai stata vista decidere un blocco reale; da collaudare in VM con due regole in modalità diverse (una nega, l'altra solo registra).
 - [ ] **GUI, regole editabili: collaudo vero.** La scheda Regole (catalogo guidato, «Rendi affidabile», «Applica»)
   e il comando root `zt-shield config-apply` (valida, backup, riavvio, ripristino se non riparte) sono provati con
   test e dischi finti, mai con pkexec e servizio veri. Da provare in VM: applicazione, ripristino dopo un riavvio

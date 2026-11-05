@@ -67,9 +67,9 @@ func main() {
 			{IP: "10.201.50.99", Poison: 5, Subnet: 0, Total: 5, LastSeen: "2026-10-02T10:34:12Z"},
 		},
 		Rules: []ipc.RuleSummary{
-			{Name: "ssh-keys", Paths: []string{".ssh/id_*"}, Allow: []string{"ssh", "ssh-add", "ssh-agent"}},
-			{Name: "cloud-creds", Paths: []string{".kube/config", ".aws/credentials"}, Allow: []string{"kubectl", "helm"}},
-			{Name: "dev-tokens", Paths: []string{".git-credentials", ".docker/config.json"}, Allow: []string{"git", "gh"}},
+			{Name: "ssh-keys", Paths: []string{".ssh/id_*"}, Allow: []string{"ssh", "ssh-add", "ssh-agent"}, Mode: "enforce"},
+			{Name: "cloud-creds", Paths: []string{".kube/config", ".aws/credentials"}, Allow: []string{"kubectl", "helm"}, Mode: "audit"},
+			{Name: "dev-tokens", Paths: []string{".git-credentials", ".docker/config.json"}, Allow: []string{"git", "gh"}, Mode: "audit"},
 		},
 	})
 	fmt.Fprintln(os.Stderr, "mockd: socket attivo, eventi sintetici ogni 1.5s. Ctrl+C per fermare.")

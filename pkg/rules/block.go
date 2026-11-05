@@ -27,16 +27,42 @@ const (
 // stessa chiave sono un YAML non valido: si rifiuta invece di indovinare quale vale.
 var ErrManual = errors.New("allow_extra, disable_rules o enable_groups sono gia' scritte a mano nel config: modificale li' (o spostale)")
 
-// Choice: le tre scelte che la GUI gestisce.
+// CustomRule: una regola creata dall'utente («Proteggi un mio file»). Stessi campi di config.Rule.
+type CustomRule struct {
+	Name      string   `yaml:"name" json:"name"`
+	Paths     []string `yaml:"paths" json:"paths"`
+	Allow     []string `yaml:"allow" json:"allow"`
+	DenyWrite bool     `yaml:"deny_write,omitempty" json:"deny_write"`
+	Mode      string   `yaml:"mode,omitempty" json:"mode"` // "" = come la modalita' globale
+}
+
+// Choice: le scelte che la GUI gestisce.
 type Choice struct {
 	EnableGroups []string            `yaml:"enable_groups,omitempty" json:"enable_groups"`
 	DisableRules []string            `yaml:"disable_rules,omitempty" json:"disable_rules"`
 	AllowExtra   map[string][]string `yaml:"allow_extra,omitempty" json:"allow_extra"`
+	RemoveAllow  map[string][]string `yaml:"remove_allow,omitempty" json:"remove_allow"`
+	RuleModes    map[string]string   `yaml:"rule_modes,omitempty" json:"rule_modes"`
+	ExtraRules   []CustomRule        `yaml:"extra_rules,omitempty" json:"extra_rules"`
 }
 
 // Empty: nessuna scelta (il blocco non serve).
 func (c Choice) Empty() bool {
-	return len(c.EnableGroups) == 0 && len(c.DisableRules) == 0 && len(c.AllowExtra) == 0
+	return len(c.EnableGroups) == 0 && len(c.DisableRules) == 0 && len(c.AllowExtra) == 0 &&
+		len(c.RemoveAllow) == 0 && len(c.RuleModes) == 0 && len(c.ExtraRules) == 0
+}
+
+// uniqKeep toglie i doppioni mantenendo l'ordine (per i percorsi l'ordine e' quello scelto dall'utente).
+func uniqKeep(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func normalize(c Choice) Choice {
@@ -61,6 +87,27 @@ func normalize(c Choice) Choice {
 			out.AllowExtra[rule] = u
 		}
 	}
+	for rule, exes := range c.RemoveAllow {
+		if u := uniq(exes); len(u) > 0 {
+			if out.RemoveAllow == nil {
+				out.RemoveAllow = map[string][]string{}
+			}
+			out.RemoveAllow[rule] = u
+		}
+	}
+	for rule, m := range c.RuleModes {
+		if m != "" {
+			if out.RuleModes == nil {
+				out.RuleModes = map[string]string{}
+			}
+			out.RuleModes[rule] = m
+		}
+	}
+	for _, r := range c.ExtraRules {
+		r.Paths, r.Allow = uniqKeep(r.Paths), uniqKeep(r.Allow)
+		out.ExtraRules = append(out.ExtraRules, r)
+	}
+	sort.Slice(out.ExtraRules, func(i, j int) bool { return out.ExtraRules[i].Name < out.ExtraRules[j].Name })
 	return out
 }
 
@@ -93,6 +140,34 @@ func validate(c Choice) error {
 				return fmt.Errorf("%q: serve un percorso assoluto pulito, senza glob", e)
 			}
 		}
+	}
+	for rule, exes := range c.RemoveAllow {
+		if !name(rule) {
+			return fmt.Errorf("regola %q non valida", rule)
+		}
+		for _, e := range exes {
+			if e == "" || strings.ContainsAny(e, "\x00\n\r\t") || len(e) > 4096 {
+				return fmt.Errorf("programma %q non valido", e)
+			}
+		}
+	}
+	for rule, m := range c.RuleModes {
+		if !name(rule) {
+			return fmt.Errorf("regola %q non valida", rule)
+		}
+		if m != "audit" && m != "enforce" {
+			return fmt.Errorf("modalita' %q non valida (audit|enforce)", m)
+		}
+	}
+	seen := map[string]bool{}
+	for _, r := range c.ExtraRules {
+		if err := ValidateCustom(r); err != nil {
+			return err
+		}
+		if seen[r.Name] {
+			return fmt.Errorf("regola %q duplicata", r.Name)
+		}
+		seen[r.Name] = true
 	}
 	return nil
 }
@@ -136,12 +211,35 @@ func hasManualKeys(rest string) bool {
 	if err := yaml.Unmarshal([]byte(rest), &m); err != nil {
 		return false // il file e' rotto per altri motivi: lo diranno il parser del demone e Apply
 	}
-	for _, k := range []string{"allow_extra", "disable_rules", "enable_groups"} {
+	for _, k := range []string{"allow_extra", "disable_rules", "enable_groups", "remove_allow", "rule_modes"} {
 		if _, ok := m[k]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+// ErrManualRules: ci sono extra_rules scritte a mano nel config: il blocco gestito non puo' definirne di sue
+// (stessa chiave due volte). Il resto della GUI funziona; solo «Proteggi un mio file» resta spento.
+var ErrManualRules = errors.New("nel config ci sono gia' extra_rules scritte a mano: le regole personali si modificano li'")
+
+func hasManualExtraRules(rest string) bool {
+	var m map[string]any
+	if err := yaml.Unmarshal([]byte(rest), &m); err != nil {
+		return false
+	}
+	_, ok := m["extra_rules"]
+	return ok
+}
+
+// ManualExtraRules dice se il config ha extra_rules scritte a mano (fuori dal blocco gestito).
+func ManualExtraRules(text string) bool {
+	before, _, after, found := split(text)
+	rest := text
+	if found {
+		rest = before + after
+	}
+	return hasManualExtraRules(rest)
 }
 
 // Parse legge le scelte correnti dal blocco gestito. Se le chiavi stanno a mano fuori dal
@@ -176,6 +274,9 @@ func Apply(text string, c Choice) (string, error) {
 	}
 	if hasManualKeys(rest) {
 		return "", ErrManual
+	}
+	if len(c.ExtraRules) > 0 && hasManualExtraRules(rest) {
+		return "", ErrManualRules
 	}
 	blk, err := Render(c)
 	if err != nil {

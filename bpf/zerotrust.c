@@ -112,6 +112,20 @@ struct {
     __type(value, __u32);
 } settings SEC(".maps");
 
+// Modalita' per singola regola, indicizzata dall'id regola (>= 1). Valori: 0 = eredita la
+// modalita' globale (settings[SETTING_ENFORCE]), 1 = solo audit, 2 = enforce. Il default 0 di
+// un ARRAY rende il comportamento identico a prima se il demone non la riempie.
+// 256 voci: il config rifiuta piu' di 255 regole (vedi config.MaxRules).
+#define RULE_MODE_INHERIT 0
+#define RULE_MODE_AUDIT   1
+#define RULE_MODE_ENFORCE 2
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 256);
+    __type(key, __u32);
+    __type(value, __u32);
+} rule_modes SEC(".maps");
+
 // Subnet da scartare in XDP, in Longest Prefix Match.
 // NO_PREALLOC: le chiavi hanno lunghezza variabile, la preallocazione non ha senso.
 struct {
@@ -469,6 +483,15 @@ static __always_inline int check_access(struct file_key fk, __u32 rule) {
 
     // -- Audit + decisione ----------------------------------------------------------------
     __u32 enforce = setting(SETTING_ENFORCE, 1);
+    // Modalita' della singola regola: sovrascrive quella globale se impostata.
+    __u32 rkey = rule;
+    __u32 *rmode = bpf_map_lookup_elem(&rule_modes, &rkey);
+    if (rmode) {
+        if (*rmode == RULE_MODE_AUDIT)
+            enforce = 0;
+        else if (*rmode == RULE_MODE_ENFORCE)
+            enforce = 1;
+    }
 
     // reserve + submit invece di output: reserve non puo' fallire per spazio
     // (restituisce NULL) e permette di non scrivere nulla, quindi l'evento non blocca mai.

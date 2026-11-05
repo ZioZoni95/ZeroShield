@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"html"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gen2brain/beeep"
@@ -220,6 +222,32 @@ func (a *App) ApplyRules(c rules.Choice) error {
 		return fmt.Errorf("il demone rifiuterebbe questa configurazione: %w", err)
 	}
 	return svc.ApplyConfig(next)
+}
+
+// PreviewPaths: cosa proteggerebbe una regola con questi percorsi (file trovati, avvisi, errori).
+func (a *App) PreviewPaths(paths []string) rules.PreviewResult {
+	home, _ := os.UserHomeDir()
+	return rules.Preview(home, paths)
+}
+
+// PickPath apre il selettore di file (kind "file") o di cartelle (kind "dir") del sistema. Restituisce
+// il percorso relativo alla home se sta li' dentro, altrimenti assoluto; "" se l'utente annulla.
+func (a *App) PickPath(kind string) (string, error) {
+	home, _ := os.UserHomeDir()
+	var p string
+	var err error
+	if kind == "dir" {
+		p, err = runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "Scegli la cartella da proteggere", DefaultDirectory: home})
+	} else {
+		p, err = runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Scegli il file da proteggere", DefaultDirectory: home})
+	}
+	if err != nil || p == "" {
+		return "", err
+	}
+	if rel, e := filepath.Rel(home, p); e == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		return rel, nil
+	}
+	return p, nil
 }
 
 // MakeTrusted rende affidabile un programma (copia di root in /usr/local/bin) solo se il

@@ -93,6 +93,15 @@ type GroupView struct {
 	ExtraAllow []string `json:"extra_allow"` // aggiunti con la GUI
 	InProfile  bool     `json:"in_profile"`  // gia' nel config di base (profilo o regole a mano)
 	Active     bool     `json:"active"`
+	Mode       string   `json:"mode"`     // modalita' effettiva (audit|enforce)
+	ModeSet    string   `json:"mode_set"` // scelta esplicita per questa regola ("" = eredita la globale)
+	Removed    []string `json:"removed"`  // programmi di base tolti con la GUI
+}
+
+// MyRuleView: una regola personale creata con la GUI.
+type MyRuleView struct {
+	CustomRule
+	EffectiveMode string `json:"effective_mode"`
 }
 
 // ToolView: un programma del catalogo, con lo stato attuale sul sistema.
@@ -104,13 +113,17 @@ type ToolView struct {
 
 // Model: tutto cio' che serve a disegnare la schermata Regole.
 type Model struct {
-	Profile string      `json:"profile"`
-	Groups  []GroupView `json:"groups"`
-	Tools   []ToolView  `json:"tools"`
-	Custom  []string    `json:"custom"` // nomi di regole scritte a mano nel config
-	Choice  Choice      `json:"choice"`
-	Manual  bool        `json:"manual"` // scelte scritte a mano: la GUI non le modifica
-	Error   string      `json:"error"`
+	Profile string       `json:"profile"`
+	Groups  []GroupView  `json:"groups"`
+	Tools   []ToolView   `json:"tools"`
+	Custom  []string     `json:"custom"`   // nomi di regole scritte a mano nel config
+	MyRules []MyRuleView `json:"my_rules"` // regole personali create con la GUI
+	Choice  Choice       `json:"choice"`
+	Manual  bool         `json:"manual"` // scelte scritte a mano: la GUI non le modifica
+	// ManualRules: extra_rules scritte a mano: «Proteggi un mio file» resta spento (stessa chiave due volte).
+	ManualRules bool   `json:"manual_rules"`
+	GlobalMode  string `json:"global_mode"` // audit | enforce
+	Error       string `json:"error"`
 }
 
 // BuildModel costruisce il modello dal testo del config. Non scrive nulla.
@@ -134,7 +147,8 @@ func BuildModel(cfgText, home string) Model {
 		m.Error = "configurazione non leggibile: " + err.Error()
 		return m
 	}
-	m.Profile = cfg.Profile
+	m.Profile, m.GlobalMode = cfg.Profile, cfg.Mode
+	m.ManualRules = ManualExtraRules(cfgText)
 	byName := map[string]config.Rule{}
 	for _, r := range cfg.AllRules() {
 		byName[r.Name] = r
@@ -145,15 +159,31 @@ func BuildModel(cfgText, home string) Model {
 		g, _ := config.Group(id)
 		groupNames[g.Name] = true
 		gv := GroupView{ID: id, Name: g.Name, Desc: config.GroupDesc[id], Paths: g.Paths, Allow: g.Allow,
-			InProfile: slices.Contains(profile, id), ExtraAllow: m.Choice.AllowExtra[g.Name]}
+			InProfile: slices.Contains(profile, id), ExtraAllow: m.Choice.AllowExtra[g.Name],
+			Removed: m.Choice.RemoveAllow[g.Name]}
 		if r, present := byName[g.Name]; present {
 			gv.InProfile = true // presente senza le scelte della GUI: si accende/spegne con disable_rules
 			gv.Paths, gv.Allow = r.Paths, r.Allow
 			gv.Active = !slices.Contains(m.Choice.DisableRules, g.Name)
+			gv.ModeSet = r.Mode
 		} else {
 			gv.Active = slices.Contains(m.Choice.EnableGroups, id)
 		}
+		if v, ok := m.Choice.RuleModes[g.Name]; ok {
+			gv.ModeSet = v
+		}
+		gv.Mode = gv.ModeSet
+		if gv.Mode == "" {
+			gv.Mode = cfg.Mode
+		}
 		m.Groups = append(m.Groups, gv)
+	}
+	for _, r := range m.Choice.ExtraRules {
+		eff := r.Mode
+		if eff == "" {
+			eff = cfg.Mode
+		}
+		m.MyRules = append(m.MyRules, MyRuleView{CustomRule: r, EffectiveMode: eff})
 	}
 	for _, r := range cfg.AllRules() {
 		if !groupNames[r.Name] {
@@ -177,6 +207,9 @@ func BuildModel(cfgText, home string) Model {
 				continue
 			}
 			all := append(append([]string(nil), r.Allow...), m.Choice.AllowExtra[rn]...)
+			all = slices.DeleteFunc(all, func(a string) bool {
+				return slices.Contains(m.Choice.RemoveAllow[rn], a) || slices.Contains(m.Choice.RemoveAllow[rn], filepath.Base(a))
+			})
 			for _, a := range all {
 				if (tv.Found && a == tv.Path) || slices.Contains(t.Names, filepath.Base(a)) && (a == filepath.Base(a) || a == tv.Path) {
 					tv.Allowed = append(tv.Allowed, rn)
