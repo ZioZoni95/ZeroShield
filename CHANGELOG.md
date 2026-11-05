@@ -5,6 +5,7 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 ## [Non rilasciato]
 
 ### Aggiunte
+- `zt-tray`: icona nella barra di sistema (verde/gialla/rossa), avvio automatico alla login, notifiche di demone caduto/tornato e di blocchi/canary anche a GUI chiusa (con la GUI aperta se ne occupa lei, niente doppioni). Nel `.deb` unico; `gnome-shell-extension-appindicator` come Recommends.
 - `canary.allow_exe`, sottocomando `zt-shield dropin`, watcher inotify sulle directory dei segreti.
 - XDP: doppio tag VLAN e poisoning IPv6. Hook opzionale `lsm/file_truncate` (kernel ≥ 6.2).
 - `harden_system.sh --dry-run` e `scripts/test_harden.sh`.

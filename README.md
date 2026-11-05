@@ -12,7 +12,7 @@ Difende segreti e rete di una postazione da Wi-Fi ostili, dipendenze avvelenate 
   <a href="#-configurazione">Configurazione</a> ·
   <a href="#-documentazione">Documentazione</a>
 </p>
-<p align="center"><i>MIT © 2026 ZioZoni95 · binari: <code>zt-shield</code> <code>zt-tui</code> <code>zt-gui</code> <code>zt-mockd</code> <code>zt-probe</code></i></p>
+<p align="center"><i>MIT © 2026 ZioZoni95 · binari: <code>zt-shield</code> <code>zt-tui</code> <code>zt-gui</code> <code>zt-tray</code> <code>zt-mockd</code> <code>zt-probe</code></i></p>
 <p align="center">
   <a href="https://github.com/ZioZoni95/ZeroShield/actions/workflows/ci.yml"><img src="https://github.com/ZioZoni95/ZeroShield/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go"/>
@@ -451,6 +451,7 @@ silenziosi, mai password maneggiate dalle UI. Ogni testo che arriva dai processi
 | `zt-shield` | Il demone. Sottocomandi: `ctl ping\|rescan` (canale di controllo), `dropin` (drop-in systemd per il canary). Opzioni: `-config FILE`, `-version` | `sudo zt-shield` · servizio `zt-shield` |
 | `zt-tui` | Terminale a 6 tab (Stato · Eventi · Regole · Rete · Radar · Config): filtro `f`, blast-radius, suggerimenti anti-bypass, preflight e azioni (`i` installa, `s` avvia, `X` ferma, `m` mode, `R` rescan). `--dump` stampa un'anteprima senza TTY | `zt-tui` |
 | `zt-gui` | Finestra desktop (Wails): sidebar a sezioni, dashboard di sessione, ricerca eventi, radar, stato VPN, vista Configurazione con toggle audit/enforce, Guida e wizard di primo avvio, bottoni Installa/Attiva/Ferma | `zt-gui` · `make gui` |
+| `zt-tray` | Icona nella barra di sistema: verde (enforce con hook), gialla (audit o senza hook LSM), rossa (demone spento). Parte da sola alla login, notifica demone caduto/tornato e blocchi/canary **anche a GUI chiusa**, clic = apre la GUI. Chiuderla non ferma la protezione. Su GNOME serve `gnome-shell-extension-appindicator` | automatico · `zt-tray` |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF | `ZT_SOCKET=/tmp/z.sock zt-mockd &` |
 | `zt-probe` | Collaudo del kernel: verifier per programma (opzionale `file_truncate` sui kernel < 6.2) e, con `-xdp-lo`, XDP su loopback | `sudo zt-probe -xdp-lo` |
 
@@ -531,6 +532,7 @@ ZeroShield/
 ├── cmd/
 │   ├── zt-shield/           # demone (+ ctl, dropin)
 │   ├── zt-tui/              # TUI Bubble Tea
+│   ├── zt-tray/             # icona nella barra di sistema + notifiche
 │   ├── zt-mockd/            # finto demone con dati sintetici
 │   └── zt-probe/            # collaudo kernel
 ├── internal/

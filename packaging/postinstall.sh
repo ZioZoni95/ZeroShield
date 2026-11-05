@@ -18,6 +18,7 @@ ZeroShield installato (NON avviato).
      oppure dalla GUI (zt-gui): «Installa e attiva».
      A mano: sudoedit /etc/zt-shield/shield.yaml (user: ...) e sudo systemctl enable --now zt-shield
   3. Log / interfaccia:               journalctl -u zt-shield -f   |   zt-tui   |   zt-gui (menu applicazioni)
+  4. Icona di stato nella barra:       parte al prossimo login (GNOME: serve gnome-shell-extension-appindicator)
 
 VPN (facoltativa, provala prima in VM): /usr/share/doc/zeroshield/VPN_SETUP.md
   script in /usr/share/zeroshield/scripts/ (vpn_killswitch.sh, nm_vpn.sh, proton_*.sh)

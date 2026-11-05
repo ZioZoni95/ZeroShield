@@ -28,6 +28,8 @@ recommends:
   - ufw
   - nftables
   - wireguard-tools
+  # GNOME mostra l'icona di ZeroShield solo con questa estensione.
+  - gnome-shell-extension-appindicator
 suggests:
   - fido2-tools
 # Fino a v0.0.3 la GUI era un pacchetto a parte (`zeroshield-gui`): questo lo sostituisce.
@@ -49,6 +51,13 @@ contents:
   - src: bin/zt-mockd
     dst: /usr/bin/zt-mockd
     file_info: { mode: 0755 }
+  # Icona nella barra di sistema + avvio automatico alla login (senza privilegi).
+  - src: bin/zt-tray
+    dst: /usr/bin/zt-tray
+    file_info: { mode: 0755 }
+  - src: packaging/zeroshield-tray.desktop
+    dst: /etc/xdg/autostart/zeroshield-tray.desktop
+    file_info: { mode: 0644 }
   # GUI desktop (Wails + WebKitGTK).
   - src: bin/zt-gui
     dst: /usr/bin/zt-gui
