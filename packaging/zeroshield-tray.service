@@ -20,9 +20,12 @@ ExecStart=/usr/bin/env zt-tray
 # Esce con 0 se un'altra icona e' gia' attiva (singola istanza): non va rilanciata.
 Restart=on-failure
 RestartSec=3
-# Niente ProtectSystem/ProtectHome/PrivateTmp: con il filesystem in sola lettura la connessione al
-# socket /run/zt-shield non riesce e l'icona direbbe sempre «demone spento» (provato).
-NoNewPrivileges=yes
+# NIENTE sandbox in questa unit (provato, entrambe rompono cose):
+#  - ProtectSystem/ProtectHome/PrivateTmp: la connessione al socket /run/zt-shield non riesce e l'icona
+#    direbbe sempre «demone spento»;
+#  - NoNewPrivileges: l'icona apre la GUI e la GUI eredita il divieto, quindi pkexec («must be setuid
+#    root») non puo' piu' chiedere la password per Applica, Installa o cambio modalita'.
+# Il test cmd/zt-tray/unit_test.go impedisce di rimetterle.
 
 [Install]
 WantedBy=graphical-session.target

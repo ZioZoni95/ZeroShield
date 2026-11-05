@@ -17,6 +17,9 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 - Config: `rule_modes`, `remove_allow` e `mode` per regola (additivi, formato esistente invariato); massimo 255 regole; i nomi delle regole non
   possono contenere a-capo o caratteri di controllo (finiscono nei log).
 
+### Corretti
+- L'unit `zeroshield-tray.service` aveva `NoNewPrivileges=yes`: la GUI aperta dall'icona lo ereditava e `pkexec` rispondeva «must be setuid root», quindi Applica, Installa e il cambio modalità non chiedevano la password. Tolto, con un test che impedisce di rimetterlo. **Riguarda anche il .deb 0.0.4**: chi lo ha installato deve aggiornare e riavviare l'icona (`systemctl --user restart zeroshield-tray`) e riaprire la GUI.
+
 ### Cambiati
 - I riquadri «Dettagli» della scheda Regole restano aperti quando la pagina si ridisegna.
 
