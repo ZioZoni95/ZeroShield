@@ -5,6 +5,7 @@
 <p align="center"><b>Uno scudo zero-trust locale nel kernel Linux.</b><br/>
 Difende segreti e rete di una postazione da Wi-Fi ostili, dipendenze avvelenate e ladri di token: senza server, senza cloud, senza account.</p>
 <p align="center">
+  <a href="#-come-si-usa-in-breve">Come si usa</a> ·
   <a href="#-stato-reale-del-progetto">Stato</a> ·
   <a href="#-demo-in-60-secondi-dati-finti">Demo</a> ·
   <a href="#-installazione">Installazione</a> ·
@@ -45,9 +46,31 @@ kill-switch VPN e firma dei commit con credenziali hardware.
 
 ---
 
+## 🚀 Come si usa (in breve)
+
+ZeroShield lavora in due tempi, pensati per chi non vuole scrivere file di configurazione:
+
+1. **Installa e avvia in `audit`.** Con il pacchetto: `sudo apt install ./zeroshield_*_amd64.deb`, poi
+   `sudo /usr/share/zeroshield/scripts/configure_service.sh $USER home` (o il pulsante *Installa e attiva*
+   della GUI). In `audit` ZeroShield **osserva e non blocca niente**.
+2. **Guarda l'icona nella barra.** 🟢 verde = protetto (enforce), 🟡 gialla = solo osservazione (audit),
+   🔴 rossa = demone spento. Chiudere la finestra non ferma la protezione: è un servizio di sistema.
+3. **Lavora come al solito per qualche giorno**, poi apri la GUI → scheda **Regole**. Un percorso in tre passi
+   (*Osserva → Autorizza → Blocca*) ti mostra i programmi che hanno letto i tuoi segreti e quali puoi
+   autorizzare con un clic (kubectl, helm, k3d, k9s…). Premi **Applica**: ZeroShield si riavvia da solo e,
+   se qualcosa non va, torna alla configurazione precedente.
+4. **Quando l'indicatore dice che è tutto autorizzato**, passa a **Enforce** dalla scheda *Configurazione*.
+   Da quel momento solo i programmi in lista leggono i segreti.
+
+Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stato reale](#-stato-reale-del-progetto):
+**non usare `enforce` su una macchina vera prima del collaudo in VM**.
+
+---
+
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.3** (pre-release). `main` contiene più della release: vedi
+Ultima release pubblicata: **v0.0.3** (pre-release). In sviluppo: **0.0.4** (file `VERSION`, non ancora
+rilasciata). Il numero che vedi in fondo alla barra laterale della GUI è quello del binario in uso. Dettagli in
 [`CHANGELOG.md`](CHANGELOG.md).
 
 | Componente | Stato | Come è stato verificato |
@@ -58,6 +81,8 @@ Ultima release pubblicata: **v0.0.3** (pre-release). `main` contiene più della 
 | **Demone end-to-end** | ⚠️ **mai in una VM con BPF LSM** | senza BPF LSM si ferma di proposito (fail-closed); i pezzi sono testati, mai insieme su un kernel di prova |
 | Config, IPC, audit, whitelist, inotify, `netstat` | ✅ test unitari | `go test -race`, fuzz sul config, CI |
 | TUI, GUI, mock | ✅ testati | test unitari e `--dump` (TUI); test della GUI nel browser contro un demone simulato |
+| **Scheda Regole** e `zt-shield config-apply` | 🟡 test con file finti | validazione, backup, ripristino e catalogo provati; **mai con `pkexec` e servizio veri** |
+| Icona nella barra (`zt-tray`, servizio utente) | 🟡 provata su un PC | registrata in GNOME, stato e notifiche; percorso `.deb` (postinstall) non provato |
 | Pacchetto `.deb` | ✅ costruito, installato e rimosso | CI e prove locali |
 | Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh`, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
 | `setup_fido2.sh`, unit systemd | ⚠️ solo sintassi | `shellcheck`, `systemd-analyze verify` |
@@ -131,8 +156,8 @@ flowchart TD
     RING --> DAEMON["demone Go: Sync + rescan + inotify + canary<br/>fail-closed + watchdog"]
     DAEMON --> SOCK[("socket di lettura<br/>/run/zt-shield/api.sock")]
     DAEMON --> CTRL[("socket di controllo<br/>/run/zt-shield/control.sock<br/>root o polkit")]
-    SOCK --> UI["💻 zt-tui · 🖥️ zt-gui (leggono)"]
-    CTRL --> ACT["⚙️ azioni: rescan, avvio/stop, install, audit↔enforce"]
+    SOCK --> UI["💻 zt-tui · 🖥️ zt-gui · 🔔 zt-tray (leggono)"]
+    CTRL --> ACT["⚙️ azioni: rescan, avvio/stop, install, audit↔enforce, applica regole"]
     classDef deny fill:#fde7ea,stroke:#d70015,color:#4a0a12;
     classDef ok fill:#e2f3e5,stroke:#1d8127,color:#0c2b12;
     class DENY deny;
@@ -194,7 +219,21 @@ nome con cui lo chiami.
 | `gpg` | `~/.gnupg/private-keys-v1.d/` | gpg, gpg-agent, gpgsm |
 | `browsers` | cookie e password di Chrome, Chromium, Firefox (anche snap), Brave | i binari dei browser (percorsi assoluti) |
 
-Aggiungi i tuoi segreti con `extra_rules`, oppure sostituisci le regole del profilo con `rules`.
+**Dalla GUI (consigliato).** La scheda *Regole* mostra questi gruppi con un interruttore ciascuno, un
+**catalogo di programmi noti** (k3d, helm, k9s, oh-my-posh, kubectx, stern, flux, argocd, kind, minikube,
+skaffold, lazydocker, gh, glab) e l'elenco dei programmi visti in `audit`, con il motivo quando uno non si può
+autorizzare. Le scelte restano una bozza finché non premi *Applica*.
+
+**A mano.** Aggiungi i tuoi segreti con `extra_rules`, sostituisci le regole del profilo con `rules`, oppure
+ritocca quelle del profilo senza riscriverle con `allow_extra` (binari in più per una regola), `disable_rules`
+(togli una regola) ed `enable_groups` (aggiungi un gruppo predefinito). La GUI scrive queste tre chiavi in un
+blocco delimitato in fondo al file e non tocca il resto; se le scrivi tu a mano, la GUI le mostra solo in lettura.
+
+**Perché alcuni programmi non si possono autorizzare.** Il demone accetta in whitelist solo binari (e cartelle)
+di **root**: un programma che puoi modificare tu, come `~/.local/bin/oh-my-posh` o quello di Homebrew, potrebbe
+essere sostituito da un malware con i tuoi permessi. La GUI lo dice e offre *Rendi affidabile*: una copia
+protetta in `/usr/local/bin` (chiede la password). Vale solo se poi lanci quella copia, e va ripetuta dopo un
+aggiornamento del programma.
 
 > [!IMPORTANT]
 > Tool con shebang (`npm`, `pip`, `gcloud`, `az`) **non sono in whitelist** di proposito: il processo che apre
@@ -219,6 +258,7 @@ sconosciute sono **rifiutate** (un refuso non passa in silenzio). Il pacchetto i
 | `block_poisoning` | `true` | drop LLMNR/mDNS/NBT-NS in ingresso |
 | `block_subnets` | — | CIDR IPv4 da scartare in XDP |
 | `rules` / `extra_rules` | dal profilo | `name`, `paths` (relativi alla home o assoluti, glob, directory ricorsive), `allow` (nomi o percorsi assoluti, mai vuota), `deny_write` |
+| `allow_extra` / `disable_rules` / `enable_groups` | — | ritocchi alle regole del profilo: binari in più (**solo percorsi assoluti**), regole da togliere, gruppi da aggiungere (`ssh`·`cloud`·`tokens`·`gpg`·`browsers`). Li gestisce la GUI |
 | `canary.*` | spento | `enabled`, `dirs`, `names`, `burst_count`, `burst_secs`, `exclude_exe`, `allow_exe` |
 | `vpn.*` | spento | `enabled`, `endpoint` (IP:porta, mai un nome host), `tunnel`, `block_dhcp`, `allow_lan` |
 | `log_format` | `text` | `text` · `json` (una riga per evento) |
@@ -259,6 +299,10 @@ commenti), parte **sempre in audit** e avvia il servizio del pacchetto: non copi
 unit. Lo stesso fa il pulsante *Installa e attiva* della GUI. A mano: `sudoedit /etc/zt-shield/shield.yaml`
 (`user:` è obbligatorio) e `sudo systemctl enable --now zt-shield`.
 
+Il pacchetto installa anche l'**icona di stato** come servizio utente (`zeroshield-tray.service`): parte con la
+sessione grafica, riparte da sola e viene riavviata dall'aggiornamento. Su GNOME serve l'estensione AppIndicator
+(`gnome-shell-extension-appindicator`, già presente su Ubuntu).
+
 Le librerie grafiche (GTK e WebKit) sono *consigliate*: sul desktop apt le installa; senza di esse demone e
 TUI funzionano, la GUI no. Fino a v0.0.3 la GUI era un pacchetto a parte (`zeroshield-gui`): il pacchetto
 unico lo sostituisce e `apt` lo gestisce (`Replaces`/`Conflicts`).
@@ -291,8 +335,20 @@ sudo SHIELD_USER=$USER ./bin/zt-shield     # prova in primo piano (profilo home 
 bash scripts/harden_system.sh home --dry-run    # PRIMA: mostra diff e comandi
 sudo bash scripts/harden_system.sh home         # poi, in VM: corporate | public-wifi | paranoid
 sudo bash scripts/install_service.sh $USER home # servizio systemd (solo da sorgente; dal .deb c'è configure_service.sh)
-make package                                    # dist/zeroshield_<versione>_<arch>.deb (demone + TUI + GUI)
+make package                                    # dist/zeroshield_<versione>_<arch>.deb (demone + TUI + GUI + icona)
 ```
+
+Installando i binari a mano (senza `.deb`) mancano l'avvio automatico dell'icona e il file del menu:
+
+```bash
+sudo install -m 0755 bin/zt-shield /usr/local/sbin/zt-shield && sudo systemctl restart zt-shield
+sudo install -m 0755 bin/zt-gui bin/zt-tui bin/zt-tray /usr/local/bin/
+install -Dm644 packaging/zeroshield-tray.service ~/.config/systemd/user/zeroshield-tray.service
+systemctl --user enable --now zeroshield-tray     # icona nella barra, parte a ogni login
+```
+
+La versione dei binari è `<file VERSION>~dev+<commit>` per le build locali e `X.Y.Z` per i tag; `zt-shield -version`,
+`zt-tray -version` e `zt-gui -version` la stampano.
 
 ### Primo avvio sicuro
 
@@ -318,9 +374,10 @@ sanificato nel demone (`ipc.SafeText`) prima di raggiungere TUI e GUI.
 
 | Strumento | Cosa è |
 |---|---|
-| `zt-shield` | Il demone (`sudo zt-shield` o servizio). Sottocomandi: `ctl ping\|rescan`, `dropin` (drop-in systemd per il canary) |
+| `zt-shield` | Il demone (`sudo zt-shield` o servizio). Sottocomandi: `ctl ping\|rescan`, `dropin` (drop-in systemd per il canary), `config-apply FILE` (root: valida un config, copia di sicurezza, sostituzione atomica, riavvio e ripristino se non riparte; lo usa la GUI) |
 | `zt-tui` | Terminale con sei schede (Stato, Eventi, Regole, Rete, Radar, Config), filtro eventi, azioni (`i` installa, `s` avvia, `X` ferma, `m` mode, `R` rescan) e `--dump` |
-| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, regole, rete e VPN, configurazione con cambio audit/enforce, guida a schede e primo avvio con controlli preliminari. Scorciatoie `1`-`7` |
+| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, **regole guidate** (catalogo, «Rendi affidabile», bozza e *Applica*), rete e VPN, configurazione con cambio audit/enforce, guida a schede, primo avvio con controlli preliminari e popup **Novità** a ogni nuova versione. Scorciatoie `1`-`7`; la versione è in fondo alla barra laterale |
+| `zt-tray` | Icona nella barra di sistema: 🟢 enforce con hook, 🟡 audit o senza hook LSM, 🔴 demone spento. Notifica demone caduto/tornato e blocchi/canary **anche a finestra chiusa** (con la GUI aperta se ne occupa lei). Servizio utente systemd; clic = apre la GUI. Chiuderla non ferma la protezione |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF |
 | `zt-probe` | Collaudo del kernel: verifier per programma e, con `-xdp-lo`, XDP su loopback |
 
@@ -356,13 +413,14 @@ aggiorna Go, npm e le GitHub Actions; `release.yml` pubblica il `.deb` ai tag `v
 
 ```text
 bpf/        kernel C (1 XDP + 5 LSM), loader a runtime e test; gli stub generati non sono versionati
-cmd/        zt-shield (demone) · zt-tui · zt-mockd · zt-probe
+cmd/        zt-shield (demone) · zt-tui · zt-tray (icona) · zt-mockd · zt-probe
 internal/   config · lsm · xdp · audit · canary · netstat · vpn · priv (canale privilegiato) · watchdog
-pkg/        ipc (socket di lettura, SafeText) · svc (azioni di servizio dalle UI)
+pkg/        ipc (socket di lettura, SafeText) · svc (azioni di servizio dalle UI) · rules (catalogo, verifica «affidabile», blocco gestito)
 zt-gui/     GUI Wails (frontend Vite + Go) con i suoi test nel browser
 configs/    shield.example.yaml
+VERSION     prossima versione da rilasciare (le build locali diventano <VERSION>~dev+<commit>)
 scripts/    hardening, FIDO2, servizio, VPN (kill-switch, NetworkManager, Proton) e relativi test
-packaging/  nfpm (.deb), unit systemd, policy polkit, .desktop
+packaging/  nfpm (.deb), unit systemd (demone e icona), policy polkit, .desktop
 docs/       documentazione (vedi sotto)
 ```
 
@@ -387,6 +445,10 @@ docs/       documentazione (vedi sotto)
 * Dopo un aggiornamento (apt, snap) l'inode di un browser cambia e resta fuori whitelist fino al rescan.
 * Il canary uccide dopo il tocco e non ferma scritture in-place che saltano le esche.
 * Il demone non applica il kill-switch VPN: applicarlo in automatico può spegnere la rete.
+* Programmi installati in cartelle che puoi modificare (Homebrew, `~/.local/bin`) non entrano in whitelist
+  così come sono: serve la copia protetta («Rendi affidabile») e poi lanciare quella.
+* Scheda Regole e `config-apply` mai provati con `pkexec` e servizio veri; l'icona nella barra mostra solo
+  ciò che il demone dichiara, non verifica il blocco reale dei file.
 
 L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.md).
 
