@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -145,5 +146,115 @@ func TestCatalogRulesExist(t *testing.T) {
 				t.Errorf("%s: regola %q inesistente", tl.ID, r)
 			}
 		}
+	}
+}
+
+func TestCustomRulesRoundTripAndValidation(t *testing.T) {
+	txt := "profile: home\nuser: alice\n"
+	c := Choice{
+		RuleModes:   map[string]string{"ssh-keys": "enforce"},
+		RemoveAllow: map[string][]string{"dev-tokens": {"cargo"}},
+		ExtraRules: []CustomRule{{Name: "wallet", Paths: []string{".wallet", "Documents/*.kdbx"},
+			Allow: []string{"/usr/bin/keepassxc"}, DenyWrite: true, Mode: "enforce"}},
+	}
+	out, err := Apply(txt, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(out); err != nil {
+		t.Fatalf("il demone accetterebbe? %v\n%s", err, out)
+	}
+	got, err := Parse(out)
+	if err != nil || len(got.ExtraRules) != 1 || got.ExtraRules[0].Name != "wallet" || !got.ExtraRules[0].DenyWrite || got.RuleModes["ssh-keys"] != "enforce" {
+		t.Fatalf("round-trip: %v %+v", err, got)
+	}
+	m := BuildModel(out, t.TempDir())
+	if m.Error != "" || len(m.MyRules) != 1 || m.MyRules[0].EffectiveMode != "enforce" {
+		t.Fatalf("modello: %+v", m)
+	}
+	for _, g := range m.Groups {
+		if g.ID == "ssh" && (g.Mode != "enforce" || g.ModeSet != "enforce") {
+			t.Errorf("ssh: %+v", g)
+		}
+		if g.ID == "gpg" && (g.Mode != "audit" || g.ModeSet != "") {
+			t.Errorf("gpg eredita la globale: %+v", g)
+		}
+		if g.ID == "tokens" && len(g.Removed) != 1 {
+			t.Errorf("tokens: programma tolto non riportato: %+v", g)
+		}
+	}
+	bad := map[string]CustomRule{
+		"nome vuoto":      {Name: "", Paths: []string{"x"}, Allow: []string{"/usr/bin/y"}},
+		"nome riservato":  {Name: "ssh-keys", Paths: []string{"x"}, Allow: []string{"/usr/bin/y"}},
+		"nome con spazio": {Name: "mio wallet", Paths: []string{"x"}, Allow: []string{"/usr/bin/y"}},
+		"nessun percorso": {Name: "a", Allow: []string{"/usr/bin/y"}},
+		"home intera":     {Name: "a", Paths: []string{"."}, Allow: []string{"/usr/bin/y"}},
+		"tutto":           {Name: "a", Paths: []string{"/"}, Allow: []string{"/usr/bin/y"}},
+		"etc":             {Name: "a", Paths: []string{"/etc"}, Allow: []string{"/usr/bin/y"}},
+		"glob totale":     {Name: "a", Paths: []string{"*"}, Allow: []string{"/usr/bin/y"}},
+		"risale":          {Name: "a", Paths: []string{"../x"}, Allow: []string{"/usr/bin/y"}},
+		"nessun exe":      {Name: "a", Paths: []string{"x"}},
+		"exe relativo":    {Name: "a", Paths: []string{"x"}, Allow: []string{"keepassxc"}},
+		"exe con jolly":   {Name: "a", Paths: []string{"x"}, Allow: []string{"/usr/bin/*"}},
+		"modo strano":     {Name: "a", Paths: []string{"x"}, Allow: []string{"/usr/bin/y"}, Mode: "boh"},
+	}
+	for n, r := range bad {
+		if _, err := Apply(txt, Choice{ExtraRules: []CustomRule{r}}); err == nil {
+			t.Errorf("%s: doveva essere rifiutato", n)
+		}
+	}
+	dup := Choice{ExtraRules: []CustomRule{c.ExtraRules[0], c.ExtraRules[0]}}
+	if _, err := Apply(txt, dup); err == nil {
+		t.Error("regola duplicata accettata")
+	}
+	// extra_rules a mano: le regole personali sono spente, il resto no
+	manual := txt + "extra_rules:\n  - name: mia\n    paths: [x]\n    allow: [/usr/bin/y]\n"
+	if _, err := Apply(manual, Choice{ExtraRules: c.ExtraRules}); !errors.Is(err, ErrManualRules) {
+		t.Errorf("extra_rules a mano: %v", err)
+	}
+	if _, err := Apply(manual, Choice{DisableRules: []string{"gpg-keys"}}); err != nil {
+		t.Errorf("il resto della GUI deve funzionare: %v", err)
+	}
+	if mm := BuildModel(manual, t.TempDir()); !mm.ManualRules || len(mm.Custom) != 1 {
+		t.Errorf("modello con extra_rules a mano: %+v", mm)
+	}
+}
+
+func TestPreview(t *testing.T) {
+	home := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.MkdirAll(filepath.Join(home, "Documents"), 0o755))
+	must(os.MkdirAll(filepath.Join(home, ".wallet"), 0o755))
+	for _, f := range []string{"Documents/a.kdbx", "Documents/b.kdbx", "Documents/note.txt", ".wallet/w1", ".wallet/w2"} {
+		must(os.WriteFile(filepath.Join(home, f), []byte("x"), 0o600))
+	}
+	r := Preview(home, []string{"Documents/*.kdbx", ".wallet", "non-esiste"})
+	if r.Matched != 4 || len(r.Missing) != 1 || len(r.Errors) != 0 {
+		t.Fatalf("anteprima: %+v", r)
+	}
+	if r2 := Preview(home, []string{"/etc"}); len(r2.Errors) == 0 || r2.Matched != 0 {
+		t.Fatalf("troppo largo deve essere un errore: %+v", r2)
+	}
+	if r3 := Preview(home, []string{"mai-esistito"}); len(r3.Warnings) == 0 {
+		t.Errorf("percorso inesistente: nessun avviso: %+v", r3)
+	}
+	// Tanti file: avviso di troppo largo.
+	big := filepath.Join(home, "big")
+	must(os.MkdirAll(big, 0o755))
+	for i := 0; i < manyFilesLimit+5; i++ {
+		must(os.WriteFile(filepath.Join(big, "f"+strconv.Itoa(i)), nil, 0o600))
+	}
+	if r4 := Preview(home, []string{"big"}); r4.Matched <= manyFilesLimit || len(r4.Warnings) == 0 {
+		t.Errorf("avviso cartella enorme: %+v", r4)
+	}
+	// I symlink non si seguono: una cartella che punta altrove non fa contare i file di la'.
+	must(os.Symlink("/usr/bin", filepath.Join(home, "lnk")))
+	if r5 := Preview(home, []string{"lnk"}); r5.Matched > 0 {
+		t.Errorf("symlink seguito: %+v", r5)
 	}
 }

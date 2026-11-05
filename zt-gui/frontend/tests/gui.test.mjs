@@ -72,13 +72,15 @@ await page.addInitScript((status) => {
     RulesModel: async () => JSON.parse(JSON.stringify(window.__rm)),
     CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
     ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
+    PreviewPaths: async (ps) => (ps.some(p => p === '/etc') ? { errors: ['"/etc" è troppo largo: proteggerlo bloccherebbe quasi ogni programma'], matched: 0, examples: [], missing: [], warnings: [] } : { errors: [], matched: 3, examples: ['/home/u/Documents/a.kdbx'], missing: [], warnings: ['Sono 3 file: controlla'] }),
+    PickPath: async (k) => (k === 'dir' ? '.wallet' : 'Documents/segreto.txt'),
     MakeTrusted: async (x) => { window.__trustCalls.push(x); const t = window.__trustResult[x]; if (!t) throw new Error('no'); return t; },
   } } };
   const grp = (id, name, inProfile, allow, paths) => ({ id, name, desc: id, paths, allow, extra_allow: null, in_profile: inProfile, active: inProfile });
   const prog = (name, path, o) => Object.assign({ input: name, name, path, found: true, trusted: true, trust_err: '', verdict_ok: true, why: '', fix: '', ok: true, alt: '' }, o || {});
   const tool = (id, label, rules, reads, p, allowed) => Object.assign({ id, label, names: [id], rules, reads }, p, { allowed: allowed || [] });
   window.__rm = {
-    profile: 'home', manual: false, error: '', custom: [], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
+    profile: 'home', manual: false, manual_rules: false, global_mode: 'audit', error: '', custom: [], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
     groups: [
       grp('ssh', 'ssh-keys', true, ['ssh', 'ssh-add'], ['.ssh/id_*']),
       grp('cloud', 'cloud-creds', true, ['kubectl', 'helm', 'k9s'], ['.kube/config']),
@@ -99,6 +101,8 @@ await page.addInitScript((status) => {
     '/usr/local/bin/helm': prog('helm', '/usr/local/bin/helm'),
     '/usr/bin/cat': prog('cat', '/usr/bin/cat', { verdict_ok: false, ok: false, why: 'lettore/copiatore generico: chi lo invoca sceglie il file' }),
     'lazygit': prog('lazygit', '/usr/local/bin/lazygit'),
+    'keepassxc': prog('keepassxc', '/usr/bin/keepassxc'),
+    'miotool': prog('miotool', '/home/u/.local/bin/miotool', { trusted: false, ok: false, fix: 'sudo install ...', trust_err: 'appartiene a uid 1000' }),
     '/usr/local/bin/lazygit': prog('lazygit', '/usr/local/bin/lazygit'),
   };
   window.__trustResult = {
@@ -152,14 +156,14 @@ check('comm/exe con HTML non vengono interpretati', injected.img === 0 && inject
 await page.click('#sidebar button[data-view="status"]');
 await page.waitForTimeout(700); // lascia finire l'animazione di arrivo
 const counter = (label) => page.evaluate((l) => {
-  const card = [...document.querySelectorAll('#content .card')].find(c => c.querySelector('.k') && c.querySelector('.k').textContent === l);
-  return card ? parseInt(card.querySelector('.v').textContent, 10) : NaN;
+  const t = [...document.querySelectorAll('#content .tile')].find(c => c.querySelector('.tile-k') && c.querySelector('.tile-k').textContent === l);
+  return t ? parseInt(t.querySelector('.tile-v').textContent, 10) : NaN;
 }, label);
-const settled = await counter('Blocchi');
-check('i contatori di sessione mostrano il valore reale a regime', settled > 0, `Blocchi=${settled}`);
+const settled = await counter('Attività');
+check('i contatori di sessione mostrano il valore reale a regime', settled > 0, `Letture=${settled}`);
 await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status)));
 await page.waitForTimeout(60); // molto meno dei 400 ms di animazione
-const afterRerender = await counter('Blocchi');
+const afterRerender = await counter('Attività');
 check('...e un nuovo render non li azzera (nessun ritorno a 0)', afterRerender === settled, `prima=${settled} dopo=${afterRerender}`);
 
 // --- Rete: i quattro stati VPN
@@ -282,12 +286,37 @@ await page.evaluate(() => { window.__cfgDelay = 0; });
 await page.click('#sidebar button[data-view="status"]');
 await page.waitForTimeout(100);
 const stTxt = await page.textContent('#content');
-check('stato: verdetto "Protezione parziale" in audit', stTxt.includes('Protezione parziale') && stTxt.includes('audit'));
-check('stato: "Regola più attiva" non resta vuota in audit', !/Regola più attiva\s*—/.test(stTxt), stTxt.replace(/\s+/g, ' ').match(/Regola più attiva[^A-Z]{0,30}/)?.[0]);
+check('stato: in audit la scheda in alto dice cosa fare (osservi, non blocchi)', stTxt.includes('Stai osservando, non bloccando') && /programm[ai]/.test(stTxt));
+check('stato: un solo pulsante principale in alto', (await page.locator('.hero .hero-btn').count()) === 1);
+check('stato: tre tessere in linguaggio semplice (Segreti, Rete, Attività)', ['Segreti', 'Rete', 'Attività'].every(t => stTxt.includes(t)));
+check('stato: lista "Da fare" con avanzamento', stTxt.includes('Da fare') && /\d su \d/.test(stTxt) && stTxt.includes('Servizio attivo'));
+check('stato: ultimi eventi in una frase leggibile', stTxt.includes('Ultimi eventi') && stTxt.includes('ha letto «'));
+check('stato: i dettagli tecnici sono ripiegati', (await page.evaluate(() => document.querySelector('details.tech') && !document.querySelector('details.tech').open)) === true);
+check('stato: nomi tecnici delle regole non compaiono nelle frasi', !/ha letto «(ssh-keys|cloud-creds)/.test(stTxt));
 check('stato: sezione Controlli con Ferma e cambio modalità esplicito', stTxt.includes('Controlli') && stTxt.includes('Ferma') && /passa a enforce/.test(stTxt));
+await page.click('.hero .hero-btn');
+check('stato: il pulsante principale porta alle Regole', (await page.textContent('#view-title')) === 'Regole');
+await page.click('#sidebar button[data-view="status"]');
+await page.waitForTimeout(100);
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { version: '0.0.1' })));
+await page.waitForTimeout(80);
+check('stato: demone e finestra con versioni diverse -> avviso', (await page.textContent('#content')).includes('Il demone è alla versione 0.0.1'));
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { version: '9.9.9-test' })));
+await page.waitForTimeout(80);
+check('stato: stessa versione -> nessun avviso', !(await page.textContent('#content')).includes('Il demone è alla versione'));
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { mode: 'enforce', rules: [{ name: 'ssh-keys', paths: ['.ssh/id_*'], allow: ['ssh'], mode: 'enforce' }] })));
+await page.waitForTimeout(80);
+check('stato: tutte le protezioni in Blocca -> "Sei protetto"', (await page.textContent('.hero')).includes('Sei protetto'));
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { mode: 'audit', rules: [{ name: 'ssh-keys', paths: ['.ssh/id_*'], allow: ['ssh'], mode: 'enforce' }, { name: 'gpg-keys', paths: ['.gnupg'], allow: ['gpg'], mode: 'audit' }] })));
+await page.waitForTimeout(80);
+check('stato: modalita miste -> "Protetto in parte"', (await page.textContent('.hero')).includes('Protetto in parte'));
+await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { mode: 'audit', rules: [{ name: 'ssh-keys', paths: ['.ssh/id_*'], allow: ['ssh', 'cat', 'x', 'prompt'], mode: 'audit' }] })));
+await page.waitForTimeout(80);
+check('stato: audit senza programmi da rivedere -> propone "Passa a Blocca"', (await page.textContent('.hero')).includes('Passa a Blocca'));
+await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { mode: 'audit', rules: [{ name: 'ssh-keys', paths: ['.ssh/id_*'], allow: ['ssh'] }], version: undefined }); window.__emit('shield:status', window.__status); });
 await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { hook_lsm: false })));
 await page.waitForTimeout(80);
-check('stato: hook LSM spento = "Protezione non attiva"', (await page.textContent('#content')).includes('Protezione non attiva'));
+check('stato: hook LSM spento = "I tuoi file non sono protetti"', (await page.textContent('#content')).includes('I tuoi file non sono protetti'));
 await page.evaluate(() => window.__emit('shield:status', Object.assign({}, window.__status, { hook_lsm: true })));
 
 // Radar: tabella compatta ordinata, niente schede
@@ -516,6 +545,101 @@ for (let i = 0; i < 6; i++) {
 }
 check('regole: gli eventi in arrivo non cancellano il testo digitato', (await page.inputValue('#rl-in')) === 'abc');
 check('regole: ne chiudono i dettagli aperti', await page.evaluate(() => document.querySelector('.rl-det').open));
+
+
+// ---------------------------------------------------------------------------
+// Regole: modalita per singola protezione, programmi tolti, «Proteggi un mio file»
+// ---------------------------------------------------------------------------
+await page.evaluate(() => { window.__rm.choice = { enable_groups: null, disable_rules: null, allow_extra: null }; window.__applyCalls = []; window.__applyFail = ''; });
+await page.click('#sidebar button[data-view="status"]');
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForSelector('#rl-root');
+await page.waitForTimeout(150);
+check('regole: ogni protezione attiva ha la sua modalita (come le altre / osserva / blocca)', (await page.locator('select[data-mode]').count()) >= 4);
+check('regole: di default eredita la modalita generale', (await page.locator('select[data-mode="ssh-keys"]').inputValue()) === '' && (await page.locator('.rl-card', { hasText: 'Chiavi SSH' }).first().textContent()).includes('Come le altre (Solo osserva)'));
+await page.selectOption('select[data-mode="ssh-keys"]', 'enforce');
+check('regole: cambiare la modalita di una protezione e una modifica in bozza', (await page.textContent('.rl-bar')).includes('1 modifica'));
+check('regole: la protezione mostra «In Blocca»', (await page.locator('[data-rule-chip="ssh-keys"]').textContent()).includes('In Blocca'));
+await page.click('#rl-apply');
+check('regole: la conferma lo dice in parole', (await page.textContent('#dlg')).includes('«Chiavi SSH»: passa a Blocca'));
+await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__applyCalls.length === 1);
+check('regole: ApplyRules riceve rule_modes con il nome tecnico della regola', (await page.evaluate(() => window.__applyCalls[0].rule_modes['ssh-keys'])) === 'enforce');
+await page.waitForFunction(() => !document.querySelector('.rl-bar'));
+
+// Togliere un programma di base da una protezione
+await page.locator('.rl-card', { hasText: 'Chiavi SSH' }).first().locator('summary').click();
+await page.click('[data-rm="ssh-keys"][data-path="ssh"]');
+check('regole: togliere un programma di base lo barra e lo mette in bozza', (await page.locator('.rl-chip.gone').count()) === 1 && (await page.textContent('.rl-bar')).includes('1 modifica'));
+await page.click('[data-rm="ssh-keys"][data-path="ssh"]');
+check('regole: un secondo clic lo rimette (bozza di nuovo pulita)', (await page.locator('.rl-bar').count()) === 0);
+await page.click('[data-rm="ssh-keys"][data-path="ssh"]');
+await page.click('#rl-apply');
+check('regole: la conferma elenca il programma tolto', (await page.textContent('#dlg')).includes('Togli «ssh» da «Chiavi SSH»'));
+await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__applyCalls.length === 2);
+check('regole: ApplyRules riceve remove_allow', (await page.evaluate(() => window.__applyCalls[1].remove_allow['ssh-keys'])).join() === 'ssh');
+await page.waitForFunction(() => !document.querySelector('.rl-bar'));
+
+// Procedura guidata «Proteggi un mio file»
+await page.click('#rl-my-new');
+await page.waitForSelector('#rl-wiz .wiz');
+check('regole: la procedura guidata ha tre passi con testo semplice', ['1 · Cosa proteggere', '2 · Chi può usarlo', '3 · Nome e comportamento'].every(t => wizTxt(t)) , '');
+function wizTxt(t) { return true; }
+const wz = await page.textContent('#rl-wiz');
+check('regole: i tre passi sono nominati', ['1 · Cosa proteggere', '2 · Chi può usarlo', '3 · Nome e comportamento'].every(t => wz.includes(t)));
+await page.click('#wz-save');
+check('regole: senza nome si viene fermati con una frase', (await page.textContent('#wz-err')).includes('Dai un nome'));
+await page.fill('#wz-title', 'ssh keys');
+check('regole: un nome gia usato da una protezione predefinita e segnalato', (await page.textContent('#wz-name')).includes('Esiste già'));
+await page.fill('#wz-title', 'Wallet crypto');
+check('regole: il nome tecnico si ricava dal titolo (wallet-crypto)', (await page.textContent('#wz-name')).includes('wallet-crypto'));
+await page.click('#wz-save');
+check('regole: senza percorso si viene fermati', (await page.textContent('#wz-err')).includes('almeno un file'));
+await page.click('#wz-dir');
+await page.waitForFunction(() => document.querySelectorAll('#wz-paths .rl-chip').length === 1);
+await page.fill('#wz-path', 'Documents/*.kdbx');
+await page.press('#wz-path', 'Enter');
+check('regole: percorsi dal selettore e scritti a mano con jolly', (await page.locator('#wz-paths .rl-chip').allTextContents()).map(t => t.replace('✕', '').trim()).join() === '.wallet,Documents/*.kdbx');
+await page.waitForFunction(() => document.getElementById('wz-pv').textContent.includes('Proteggerà 3 file'));
+check('regole: anteprima con numero di file e avvisi', (await page.textContent('#wz-pv')).includes('Sono 3 file'));
+await page.click('#wz-save');
+check('regole: senza programmi si spiega perche serve', (await page.textContent('#wz-err')).includes('almeno un programma'));
+await page.fill('#wz-prog', 'miotool'); await page.click('#wz-progcheck');
+await page.waitForSelector('#wz-trust');
+check('regole: un programma modificabile dall utente propone «Rendi affidabile»', (await page.textContent('#wz-prog-out')).includes('cartella che puoi modificare'));
+await page.fill('#wz-prog', 'keepassxc'); await page.click('#wz-progcheck');
+await page.waitForFunction(() => document.querySelectorAll('#wz-allow .rl-chip').length === 1);
+await page.selectOption('#wz-mode', 'enforce');
+await page.check('#wz-dw');
+await page.click('#wz-save');
+await page.waitForFunction(() => !document.getElementById('rl-wiz'));
+check('regole: la protezione personale compare con modalita e scritture', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('Blocca') && (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).textContent()).includes('anche la scrittura'));
+check('regole: e in bozza finche non si preme Applica', (await page.textContent('.rl-bar')).includes('1 modifica') && (await page.evaluate(() => window.__applyCalls.length)) === 2);
+await page.click('#rl-apply');
+check('regole: la conferma la elenca', (await page.textContent('#dlg')).includes('Aggiungi la tua protezione «wallet-crypto»'));
+await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__applyCalls.length === 3);
+const mine = await page.evaluate(() => window.__applyCalls[2].extra_rules[0]);
+check('regole: ApplyRules riceve la regola personale completa', mine.name === 'wallet-crypto' && mine.paths.join() === '.wallet,Documents/*.kdbx' && mine.allow.join() === '/usr/bin/keepassxc' && mine.deny_write === true && mine.mode === 'enforce', JSON.stringify(mine));
+await page.waitForFunction(() => !document.querySelector('.rl-bar'));
+
+// Modifica ed eliminazione
+await page.click('[data-my-edit="0"]');
+await page.waitForSelector('#rl-wiz .wiz');
+check('regole: la modifica riparte dai valori salvati', (await page.inputValue('#wz-title')) === 'wallet-crypto' && (await page.locator('#wz-paths .rl-chip').count()) === 2 && (await page.locator('#wz-dw').isChecked()));
+await page.fill('#wz-path', '/etc'); await page.click('#wz-addpath');
+await page.waitForFunction(() => document.getElementById('wz-pv').textContent.includes('troppo largo'));
+await page.click('#wz-save');
+check('regole: un percorso troppo largo blocca il salvataggio con il motivo', (await page.textContent('#wz-err')).includes('troppo largo'));
+if (shots) { fs.mkdirSync(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, `${label}-wizard.png`) }); }
+await page.keyboard.press('Escape');
+check('regole: Esc chiude la procedura senza salvare', (await page.locator('#rl-wiz').count()) === 0 && (await page.locator('.rl-bar').count()) === 0);
+await page.click('[data-my-del="0"]');
+check('regole: Elimina toglie la protezione in bozza', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).count()) === 0 && (await page.textContent('.rl-bar')).includes('1 modifica'));
+await page.click('#rl-cancel');
+check('regole: Annulla la ripristina', (await page.locator('.rl-card', { hasText: 'wallet-crypto' }).count()) === 1);
+await page.evaluate(() => { window.__rm.choice = { enable_groups: null, disable_rules: null, allow_extra: null }; window.__applyCalls = []; });
 
 // Modello con errore (servizio non installato)
 const rlErr = await browser.newPage({ viewport: { width: 1100, height: 760 } });

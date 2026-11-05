@@ -59,8 +59,11 @@ ZeroShield lavora in due tempi, pensati per chi non vuole scrivere file di confi
    (*Osserva → Autorizza → Blocca*) ti mostra i programmi che hanno letto i tuoi segreti e quali puoi
    autorizzare con un clic (kubectl, helm, k3d, k9s…). Premi **Applica**: ZeroShield si riavvia da solo e,
    se qualcosa non va, torna alla configurazione precedente.
-4. **Quando l'indicatore dice che è tutto autorizzato**, passa a **Enforce** dalla scheda *Configurazione*.
-   Da quel momento solo i programmi in lista leggono i segreti.
+4. **Quando l'indicatore dice che è tutto autorizzato**, passa a **Blocca**: per tutte le protezioni insieme dalla
+   scheda *Configurazione*, oppure **una alla volta** dalla scheda *Regole* (ogni protezione ha la sua modalità).
+   Da quel momento solo i programmi in lista leggono quei segreti.
+5. **Hai file tuoi da proteggere?** (un portafoglio crypto, un database di password) *Regole → Proteggi un mio file*:
+   scegli il file o la cartella, vedi quanti file protegge e decidi chi può usarli.
 
 Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stato reale](#-stato-reale-del-progetto):
 **non usare `enforce` su una macchina vera prima del collaudo in VM**.
@@ -219,7 +222,9 @@ nome con cui lo chiami.
 | `gpg` | `~/.gnupg/private-keys-v1.d/` | gpg, gpg-agent, gpgsm |
 | `browsers` | cookie e password di Chrome, Chromium, Firefox (anche snap), Brave | i binari dei browser (percorsi assoluti) |
 
-**Dalla GUI (consigliato).** La scheda *Regole* mostra questi gruppi con un interruttore ciascuno, un
+**Dalla GUI (consigliato).** La scheda *Regole* mostra questi gruppi con un interruttore e **una modalità propria**
+(*come le altre*, *solo osserva*, *blocca*) ciascuno, permette di togliere o rimettere i programmi di base e di creare
+**protezioni tue** (*Proteggi un mio file*: selettore, schemi con `*`, anteprima dei file coperti e avvisi). Mostra anche un
 **catalogo di programmi noti** (k3d, helm, k9s, oh-my-posh, kubectx, stern, flux, argocd, kind, minikube,
 skaffold, lazydocker, gh, glab) e l'elenco dei programmi visti in `audit`, con il motivo quando uno non si può
 autorizzare. Le scelte restano una bozza finché non premi *Applica*.
@@ -257,8 +262,8 @@ sconosciute sono **rifiutate** (un refuso non passa in silenzio). Il pacchetto i
 | `interface` | rotta di default | interfaccia XDP; lista separata da virgole. **Le altre interfacce attive non sono filtrate** |
 | `block_poisoning` | `true` | drop LLMNR/mDNS/NBT-NS in ingresso |
 | `block_subnets` | — | CIDR IPv4 da scartare in XDP |
-| `rules` / `extra_rules` | dal profilo | `name`, `paths` (relativi alla home o assoluti, glob, directory ricorsive), `allow` (nomi o percorsi assoluti, mai vuota), `deny_write` |
-| `allow_extra` / `disable_rules` / `enable_groups` | — | ritocchi alle regole del profilo: binari in più (**solo percorsi assoluti**), regole da togliere, gruppi da aggiungere (`ssh`·`cloud`·`tokens`·`gpg`·`browsers`). Li gestisce la GUI |
+| `rules` / `extra_rules` | dal profilo | `name`, `paths` (relativi alla home o assoluti, glob, directory ricorsive), `allow` (nomi o percorsi assoluti, mai vuota), `deny_write`, `mode` (`audit`/`enforce`, vuoto = modalità globale). Massimo 255 regole |
+| `allow_extra` / `remove_allow` / `disable_rules` / `enable_groups` / `rule_modes` | — | ritocchi alle regole del profilo senza riscriverle: binari in più (**solo percorsi assoluti**) o tolti, regole da togliere, gruppi da aggiungere (`ssh`·`cloud`·`tokens`·`gpg`·`browsers`), modalità `audit`/`enforce` per singola regola. Li gestisce la GUI (anche `extra_rules` per le protezioni personali) |
 | `canary.*` | spento | `enabled`, `dirs`, `names`, `burst_count`, `burst_secs`, `exclude_exe`, `allow_exe` |
 | `vpn.*` | spento | `enabled`, `endpoint` (IP:porta, mai un nome host), `tunnel`, `block_dhcp`, `allow_lan` |
 | `log_format` | `text` | `text` · `json` (una riga per evento) |

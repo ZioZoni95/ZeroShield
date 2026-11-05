@@ -40,9 +40,11 @@ func socketPath() string {
 
 // RuleSummary: una regola in forma leggibile per le UI (niente inode qui).
 type RuleSummary struct {
-	Name  string   `json:"name"`
-	Paths []string `json:"paths"`
-	Allow []string `json:"allow"`
+	Name      string   `json:"name"`
+	Paths     []string `json:"paths"`
+	Allow     []string `json:"allow"`
+	Mode      string   `json:"mode"`       // audit | enforce: quella che vale per la regola
+	DenyWrite bool     `json:"deny_write"` // nega anche le scritture
 }
 
 // ListenEntry: una porta TCP in ascolto (da internal/netstat del demone).
@@ -115,6 +117,7 @@ type Status struct {
 	ListeningTotal int           `json:"listening_total"` // > len(Listening) se troncato
 	Rules          []RuleSummary `json:"rules"`
 	Time           string        `json:"time"`
+	Version        string        `json:"version"` // versione del demone (le UI avvisano se e' diversa dalla loro)
 }
 
 // WireEvent: un evento di audit serializzato (stessi campi del log JSON).

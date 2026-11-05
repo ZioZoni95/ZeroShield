@@ -38,18 +38,31 @@ export function createRulesView(d) {
         const c = choice || {};
         const allow = {};
         Object.entries(c.allow_extra || {}).forEach(([k, v]) => { allow[k] = new Set(v || []); });
-        return {enable: new Set(c.enable_groups || []), disable: new Set(c.disable_rules || []), allow};
+        const removed = {};
+        Object.entries(c.remove_allow || {}).forEach(([k, v]) => { removed[k] = new Set(v || []); });
+        const my = (c.extra_rules || []).map(r => ({name: r.name, paths: [...(r.paths || [])], allow: [...(r.allow || [])], deny_write: !!r.deny_write, mode: r.mode || ''}));
+        return {enable: new Set(c.enable_groups || []), disable: new Set(c.disable_rules || []), allow, removed, my, modes: {...(c.rule_modes || {})}};
     }
     function norm(dr) {
-        const allow = {};
+        const allow = {}, removed = {};
         Object.keys(dr.allow).sort().forEach(k => { if (dr.allow[k].size) allow[k] = [...dr.allow[k]].sort(); });
-        return JSON.stringify({e: [...dr.enable].sort(), d: [...dr.disable].sort(), a: allow});
+        Object.keys(dr.removed).sort().forEach(k => { if (dr.removed[k].size) removed[k] = [...dr.removed[k]].sort(); });
+        const modes = {};
+        Object.keys(dr.modes).sort().forEach(k => { if (dr.modes[k]) modes[k] = dr.modes[k]; });
+        const my = [...dr.my].sort((a, b) => a.name < b.name ? -1 : 1);
+        return JSON.stringify({e: [...dr.enable].sort(), d: [...dr.disable].sort(), a: allow, r: removed, m: modes, x: my});
     }
     const dirty = () => !!(model && draft && norm(draft) !== norm(draftFrom(model.choice)));
     function choiceOut() {
         const allow = {};
         Object.keys(draft.allow).forEach(k => { if (draft.allow[k].size) allow[k] = [...draft.allow[k]].sort(); });
-        return {enable_groups: [...draft.enable].sort(), disable_rules: [...draft.disable].sort(), allow_extra: allow};
+        const removed = {};
+        Object.keys(draft.removed).forEach(k => { if (draft.removed[k].size) removed[k] = [...draft.removed[k]].sort(); });
+        const modes = {};
+        Object.keys(draft.modes).forEach(k => { if (draft.modes[k]) modes[k] = draft.modes[k]; });
+        return {enable_groups: [...draft.enable].sort(), disable_rules: [...draft.disable].sort(), allow_extra: allow,
+            remove_allow: removed, rule_modes: modes,
+            extra_rules: draft.my.map(r => ({name: r.name, paths: r.paths, allow: r.allow, deny_write: !!r.deny_write, mode: r.mode || ''}))};
     }
 
     // ---------- modello ----------
@@ -69,8 +82,17 @@ export function createRulesView(d) {
         const path = p.alt || p.path;
         if (!path) return false;
         if (draft.allow[g.name] && draft.allow[g.name].has(path)) return true;
-        return (g.allow || []).some(a => a === path || (a === baseName(path) && (p.trusted || !!p.alt)));
+        return (g.allow || []).some(a => !isRemoved(g.name, a) && (a === path || (a === baseName(path) && (p.trusted || !!p.alt))));
     }
+    const isRemoved = (rule, a) => !!(draft.removed[rule] && (draft.removed[rule].has(a) || draft.removed[rule].has(baseName(a))));
+    function toggleRemoved(rule, a) {
+        const set = (draft.removed[rule] = draft.removed[rule] || new Set());
+        set.has(a) ? set.delete(a) : set.add(a);
+    }
+    // Modalita' mostrata per una regola: la sua scelta, altrimenti quella globale del demone.
+    const globalMode = () => (model && model.global_mode) || (getStatus() || {}).mode || 'audit';
+    const modeOf = rule => draft.modes[rule] || globalMode();
+    const MODE_TXT = {audit: 'Solo osserva', enforce: 'Blocca'};
     function authorize(rules, p) {
         const path = p.alt || p.path;
         rules.forEach(n => { (draft.allow[n] = draft.allow[n] || new Set()).add(path); });
@@ -106,19 +128,48 @@ export function createRulesView(d) {
     function groupCard(g) {
         const on = groupActive(g);
         const extra = [...(draft.allow[g.name] || [])];
-        const progs = (g.allow || []).map(a => `<span class="rl-chip">${esc(baseName(a))}</span>`).join('') +
+        const progs = (g.allow || []).map(a => {
+            const gone = isRemoved(g.name, a);
+            return `<span class="rl-chip${gone ? ' gone' : ''}" title="${gone ? 'Tolto: non può più leggere questo segreto' : esc(a)}">${esc(baseName(a))}${model.manual ? '' : `<button class="rl-x" data-rm="${esc(g.name)}" data-path="${esc(a)}" aria-label="${gone ? 'Rimetti' : 'Togli'} ${esc(baseName(a))}">${gone ? '↺' : '✕'}</button>`}</span>`;
+        }).join('') +
             extra.map(a => `<span class="rl-chip add" title="${esc(a)}">${esc(baseName(a))}<button class="rl-x" data-revoke="${esc(g.name)}" data-path="${esc(a)}" aria-label="Togli ${esc(baseName(a))}">✕</button></span>`).join('');
         return `<div class="rl-card${on ? '' : ' off'}">
           <div class="rl-head">
             <label class="sw"><input type="checkbox" data-grp="${esc(g.id)}" ${on ? 'checked' : ''} ${model.manual ? 'disabled' : ''}><span class="sw-t"></span></label>
             <div class="rl-title"><b>${esc(label(g))}</b>${g.in_profile ? '' : ' <span class="rl-tag">facoltativa</span>'}
               <div class="rl-d">${esc(WHAT[g.id] || g.desc)}</div></div>
+            ${on ? modeSelect(g.name) : ''}
           </div>
+          ${on ? `<div class="rl-rdy" data-rule-chip="${esc(g.name)}"></div>` : ''}
           <details class="rl-det"><summary>${on ? 'Cosa protegge e chi può usarlo' : 'Dettagli'}</summary>
             <div class="rl-k">File protetti</div><div class="rl-mono">${(g.paths || []).map(esc).join('<br>')}</div>
             <div class="rl-k">Programmi autorizzati</div><div>${progs || '<span class="rl-d">nessuno</span>'}</div>
           </details></div>`;
     }
+
+    // Modalita' per singola regola: "come le altre" non scrive niente nel config.
+    function modeSelect(rule, dis) {
+        const cur = draft.modes[rule] || '';
+        const glob = globalMode() === 'enforce' ? 'Blocca' : 'Solo osserva';
+        return `<label class="rl-mode" title="Cosa fa ZeroShield quando un programma non autorizzato prova a leggere questo segreto"><span class="rl-d">Se non autorizzato</span>
+          <select data-mode="${esc(rule)}" ${model.manual || dis ? 'disabled' : ''} aria-label="Modalità di questa protezione">
+            <option value="" ${cur === '' ? 'selected' : ''}>Come le altre (${glob})</option>
+            <option value="audit" ${cur === 'audit' ? 'selected' : ''}>Solo osserva</option>
+            <option value="enforce" ${cur === 'enforce' ? 'selected' : ''}>Blocca</option>
+          </select></label>`;
+    }
+
+    // Le tue regole (create con «Proteggi un mio file»).
+    function myCard(r, i) {
+        const progs = r.allow.map(a => `<span class="rl-chip add" title="${esc(a)}">${esc(baseName(a))}</span>`).join('');
+        return `<div class="rl-card">
+          <div class="rl-head"><span class="rl-mine" aria-hidden="true">★</span>
+            <div class="rl-title"><b>${esc(r.name)}</b> <span class="rl-b ${modeOf2(r) === 'enforce' ? 'no' : 'ready'}">${MODE_TXT[modeOf2(r)]}</span>${r.deny_write ? ' <span class="rl-tag">blocca anche la scrittura</span>' : ''}
+              <div class="rl-mono rl-d">${r.paths.map(esc).join('<br>')}</div></div>
+            <div class="rl-ta"><button class="rl-btn ghost" data-my-edit="${i}" ${model.manual_rules ? 'disabled' : ''}>Modifica</button><button class="rl-btn ghost" data-my-del="${i}" ${model.manual_rules ? 'disabled' : ''}>Elimina</button></div></div>
+          <div class="rl-k">Programmi autorizzati</div><div>${progs}</div></div>`;
+    }
+    const modeOf2 = r => r.mode || globalMode();
 
     function toolRow(t) {
         const rules = (t.rules || []).map(groupByName).filter(g => g && groupActive(g));
@@ -214,6 +265,30 @@ export function createRulesView(d) {
         bindSeen(el);
         const gd = document.getElementById('rl-guide');
         if (gd) { gd.innerHTML = guideHtml(); bindGuide(); }
+        paintRuleChips();
+    }
+
+    // Per ogni protezione attiva: e' pronta per «Blocca»? Si guarda cio' che il demone ha visto in questa sessione.
+    function paintRuleChips() {
+        document.querySelectorAll('[data-rule-chip]').forEach(el => {
+            const rule = el.dataset.ruleChip, g = groupByName(rule);
+            let seen = 0, pending = 0;
+            seenCache.forEach(s => {
+                if (s.rule !== rule) return;
+                seen++;
+                const p = (progCache.get(s.exe) || {}).v;
+                if (!p) { pending++; return; }
+                if (!(g && (allowedFor(g, p) || (draft.allow[rule] && draft.allow[rule].has(s.exe))))) pending++;
+            });
+            const enf = modeOf(rule) === 'enforce';
+            let html = '';
+            if (enf) html = '<span class="rl-b ok">In Blocca</span>';
+            else if (seen === 0) html = '<span class="rl-d">Nessun accesso visto finora.</span>';
+            else if (pending > 0) html = `<span class="rl-b warn">${pending} programm${pending === 1 ? 'a' : 'i'} da autorizzare prima di bloccare</span>`;
+            else html = `<span class="rl-b ok">Pronta per Blocca</span><button class="rl-btn ghost" data-mode-go="${esc(rule)}">Metti solo questa in Blocca</button>`;
+            el.innerHTML = html;
+            el.querySelectorAll('[data-mode-go]').forEach(b => { b.onclick = () => { draft.modes[rule] = 'enforce'; render(true); }; });
+        });
     }
 
     // Percorso guidato in 3 passi con l'indicatore "sei pronto per Enforce?". Si basa su cio' che il
@@ -287,6 +362,20 @@ export function createRulesView(d) {
             const now = groupActive(g);
             if (was !== now) out.push(now ? `Attivi la protezione «${label(g)}»` : `Spegni la protezione «${label(g)}»`);
         });
+        const names = new Set([...Object.keys(base.modes), ...Object.keys(draft.modes)]);
+        names.forEach(r => {
+            const a = base.modes[r] || '', b = draft.modes[r] || '';
+            if (a !== b) out.push(`«${labelOfRule(r)}»: ${b ? (b === 'enforce' ? 'passa a Blocca' : 'passa a Solo osserva') : 'torna alla modalità generale'}`);
+        });
+        const rnames = new Set([...Object.keys(base.removed), ...Object.keys(draft.removed)]);
+        rnames.forEach(r => {
+            const a = base.removed[r] || new Set(), b = draft.removed[r] || new Set();
+            [...b].filter(x => !a.has(x)).forEach(x => out.push(`Togli «${baseName(x)}» da «${labelOfRule(r)}»`));
+            [...a].filter(x => !b.has(x)).forEach(x => out.push(`Rimetti «${baseName(x)}» in «${labelOfRule(r)}»`));
+        });
+        const bm = Object.fromEntries(base.my.map(r => [r.name, JSON.stringify(r)])), dm = Object.fromEntries(draft.my.map(r => [r.name, JSON.stringify(r)]));
+        Object.keys(dm).forEach(n => { if (!(n in bm)) out.push(`Aggiungi la tua protezione «${n}»`); else if (bm[n] !== dm[n]) out.push(`Modifichi la tua protezione «${n}»`); });
+        Object.keys(bm).forEach(n => { if (!(n in dm)) out.push(`Elimini la tua protezione «${n}»`); });
         const rules = new Set([...Object.keys(base.allow), ...Object.keys(draft.allow)]);
         rules.forEach(r => {
             const a = base.allow[r] || new Set(), b = draft.allow[r] || new Set();
@@ -313,6 +402,8 @@ export function createRulesView(d) {
             return;
         }
         const scrollY = content.scrollTop;
+        // I riquadri «Dettagli» aperti restano aperti quando la pagina si ridisegna (altrimenti ogni clic li chiude).
+        const wasOpen = [...content.querySelectorAll('details.rl-det')].map(d => d.open);
         const found = (model.tools || []).filter(t => t.found), rest = (model.tools || []).filter(t => !t.found);
         content.innerHTML = `<div id="rl-root"><h2>${icons.key}Regole</h2>
           <p class="sub">Scegli quali segreti proteggere e quali programmi possono usarli. Per tutti gli altri l’accesso è ${(getStatus() || {}).mode === 'enforce' ? 'bloccato' : 'solo registrato'}.</p>
@@ -321,6 +412,10 @@ export function createRulesView(d) {
           <h3 class="sec">Cosa proteggere</h3>
           ${(model.groups || []).map(groupCard).join('')}
           ${(model.custom || []).length ? `<div class="rl-d">Regole personalizzate nel file di configurazione (non modificabili da qui): ${model.custom.map(esc).join(', ')}.</div>` : ''}
+          <h3 class="sec">Le tue protezioni</h3>
+          ${draft.my.length ? draft.my.map(myCard).join('') : '<div class="rl-empty">Non hai ancora aggiunto protezioni tue. Per esempio un portafoglio crypto, un database di password o una cartella di documenti riservati.</div>'}
+          ${model.manual_rules ? `<div class="warn">${icons.warn}<div>Nel config ci sono già <span class="rl-mono">extra_rules</span> scritte a mano: le protezioni personali si modificano lì.</div></div>` : ''}
+          <div class="rl-bulk"><button class="rl-btn" id="rl-my-new" ${model.manual || model.manual_rules ? 'disabled' : ''}>+ Proteggi un mio file</button><span class="rl-d">Scegli un file o una cartella e decidi chi può leggerli.</span></div>
           <h3 class="sec">Programmi che usi</h3>
           <p class="rl-d">Gli strumenti noti che hanno bisogno di leggere un segreto. Quelli trovati sul tuo computer sono in cima.</p>
           ${bulkTools(found)}
@@ -336,6 +431,7 @@ export function createRulesView(d) {
           <div class="rl-spacer"></div></div>
           <div id="rl-barwrap">${applyBar()}</div>`;
         content.scrollTop = scrollY;
+        content.querySelectorAll('details.rl-det').forEach((d, i) => { if (wasOpen[i]) d.open = true; });
         seenSig = '';
         paintSeen(true);
         bind();
@@ -418,6 +514,16 @@ export function createRulesView(d) {
         root.querySelectorAll('[data-grp]').forEach(i => {
             i.onchange = () => { toggleGroup((model.groups || []).find(g => g.id === i.dataset.grp)); render(true); };
         });
+        root.querySelectorAll('[data-mode]').forEach(sel => {
+            sel.onchange = () => { draft.modes[sel.dataset.mode] = sel.value; render(true); };
+        });
+        root.querySelectorAll('[data-rm]').forEach(b => {
+            b.onclick = e => { e.preventDefault(); toggleRemoved(b.dataset.rm, b.dataset.path); render(true); };
+        });
+        const nw = document.getElementById('rl-my-new');
+        if (nw) nw.onclick = () => openWizard(null);
+        root.querySelectorAll('[data-my-edit]').forEach(b => { b.onclick = () => openWizard(+b.dataset.myEdit); });
+        root.querySelectorAll('[data-my-del]').forEach(b => { b.onclick = () => { draft.my.splice(+b.dataset.myDel, 1); render(true); }; });
         root.querySelectorAll('[data-revoke]').forEach(b => {
             b.onclick = e => { e.preventDefault(); revoke(b.dataset.revoke, b.dataset.path); render(true); };
         });
@@ -471,6 +577,123 @@ export function createRulesView(d) {
         document.getElementById('rl-check').onclick = check;
         inp.onkeydown = e => { if (e.key === 'Enter') check(); };
         bindBar();
+    }
+
+
+    // ---------- «Proteggi un mio file» ----------
+    let wiz = null; // {idx, title, paths, allow, deny_write, mode}
+    let wzTimer = 0;
+    const slug = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    function wzName() {
+        const n = slug(wiz.title);
+        const taken = (model.groups || []).some(g => g.name === n) || draft.my.some((r, i) => r.name === n && i !== wiz.idx);
+        return {n, bad: !n ? 'Dai un nome alla protezione.' : taken ? 'Esiste già una protezione con questo nome.' : ''};
+    }
+    function openWizard(i) {
+        const r = i == null ? null : draft.my[i];
+        wiz = {idx: i, title: r ? r.name : '', paths: r ? [...r.paths] : [], allow: r ? [...r.allow] : [], deny_write: r ? !!r.deny_write : false, mode: r ? r.mode : ''};
+        const ov = document.createElement('div');
+        ov.id = 'rl-wiz';
+        ov.innerHTML = `<div class="ob-card wiz" role="dialog" aria-modal="true" aria-label="Proteggi un mio file">
+          <h2>${i == null ? 'Proteggi un mio file' : 'Modifica la protezione'}</h2>
+          <p class="rl-d">Tre passi: cosa proteggere, chi può usarlo, come chiamarla. Non cambia nulla finché non premi <b>Applica</b>.</p>
+          <div class="wz-sec"><b>1 · Cosa proteggere</b>
+            <div class="wz-row"><button class="rl-btn" id="wz-file">Scegli un file…</button><button class="rl-btn" id="wz-dir">Scegli una cartella…</button></div>
+            <div class="rl-add"><input id="wz-path" type="text" placeholder="oppure scrivi un percorso o uno schema, es. Documents/*.kdbx" aria-label="Percorso o schema"><button class="rl-btn" id="wz-addpath">Aggiungi</button></div>
+            <div class="rl-d">Senza «/» iniziale il percorso parte dalla tua cartella personale. Il jolly <span class="rl-mono">*</span> sostituisce una parte del nome (<span class="rl-mono">*.kdbx</span> = tutti i file .kdbx).</div>
+            <div id="wz-paths"></div><div id="wz-pv"></div></div>
+          <div class="wz-sec"><b>2 · Chi può usarlo</b>
+            <p class="rl-d">Solo questi programmi potranno aprire quei file: aggiungi quelli che usi davvero (per esempio il tuo gestore di password).</p>
+            <div class="rl-add"><input id="wz-prog" type="text" placeholder="nome o percorso del programma, es. keepassxc" aria-label="Programma"><button class="rl-btn" id="wz-progcheck">Controlla</button></div>
+            <div id="wz-prog-out"></div><div id="wz-allow"></div></div>
+          <div class="wz-sec"><b>3 · Nome e comportamento</b>
+            <div class="wz-row"><input id="wz-title" type="text" placeholder="es. Wallet crypto" aria-label="Nome" value="${esc(wiz.title)}"></div>
+            <div class="rl-d" id="wz-name"></div>
+            <div class="wz-row"><label class="rl-mode"><span class="rl-d">Se un programma non autorizzato prova a leggerlo</span>
+              <select id="wz-mode"><option value="">Come le altre protezioni (${globalMode() === 'enforce' ? 'Blocca' : 'Solo osserva'})</option><option value="audit">Solo osserva</option><option value="enforce">Blocca</option></select></label></div>
+            <label class="wz-chk"><input type="checkbox" id="wz-dw"> <span>Blocca anche le <b>scritture</b> <span class="rl-d">(utile contro i ransomware; rompe chi aggiorna quel file di norma, per esempio un gestore di password che salva)</span></span></label></div>
+          <div class="wz-err" id="wz-err" role="alert"></div>
+          <div class="ob-btns"><button class="chip" id="wz-cancel">Annulla</button><button class="chip on" id="wz-save">${i == null ? 'Aggiungi alla bozza' : 'Salva nella bozza'}</button></div></div>`;
+        document.body.appendChild(ov);
+        const done = () => { document.removeEventListener('keydown', onKey, true); clearTimeout(wzTimer); ov.remove(); wiz = null; };
+        const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(); } };
+        document.addEventListener('keydown', onKey, true);
+        const $ = id => ov.querySelector('#' + id);
+        $('wz-mode').value = wiz.mode; $('wz-dw').checked = wiz.deny_write;
+        $('wz-cancel').onclick = done;
+        ov.addEventListener('mousedown', e => { if (e.target === ov) done(); });
+        const paintPaths = () => {
+            $('wz-paths').innerHTML = wiz.paths.map((p, k) => `<span class="rl-chip add" title="${esc(p)}">${esc(p)}<button class="rl-x" data-wz-rmp="${k}" aria-label="Togli ${esc(p)}">✕</button></span>`).join('');
+            $('wz-paths').querySelectorAll('[data-wz-rmp]').forEach(b => { b.onclick = () => { wiz.paths.splice(+b.dataset.wzRmp, 1); paintPaths(); schedulePreview(); }; });
+        };
+        const paintAllow = () => {
+            $('wz-allow').innerHTML = wiz.allow.map((a, k) => `<span class="rl-chip add" title="${esc(a)}">${esc(baseName(a))}<button class="rl-x" data-wz-rma="${k}" aria-label="Togli ${esc(baseName(a))}">✕</button></span>`).join('') || '<span class="rl-d">Nessun programma ancora.</span>';
+            $('wz-allow').querySelectorAll('[data-wz-rma]').forEach(b => { b.onclick = () => { wiz.allow.splice(+b.dataset.wzRma, 1); paintAllow(); }; });
+        };
+        const paintName = () => { const nm = wzName(); $('wz-name').innerHTML = nm.n ? `Nome tecnico (compare nei log): <span class="rl-mono">${esc(nm.n)}</span>${nm.bad ? ` <span class="bad" style="color:var(--red)">· ${esc(nm.bad)}</span>` : ''}` : ''; };
+        const preview = async () => {
+            if (!wiz) return;
+            if (!wiz.paths.length) { $('wz-pv').innerHTML = ''; return; }
+            let r;
+            try { r = await api.PreviewPaths([...wiz.paths]); } catch (e) { $('wz-pv').innerHTML = `<div class="wz-pv bad">${esc(String(e && e.message || e))}</div>`; return; }
+            if (!wiz || !document.getElementById('wz-pv')) return;
+            wiz.pv = r;
+            const parts = [];
+            (r.errors || []).forEach(e => parts.push(`<div class="bad">✕ ${esc(e)}</div>`));
+            if (r.matched > 0) parts.push(`<div><b>Proteggerà ${r.capped ? 'più di ' : ''}${r.matched} file</b> <span class="rl-d">(es. ${(r.examples || []).map(x => esc(baseName(x))).join(', ')})</span></div>`);
+            (r.missing || []).forEach(m => parts.push(`<div class="rl-d">«${esc(m)}» oggi non esiste: la protezione scatterà se compare.</div>`));
+            (r.warnings || []).forEach(w => parts.push(`<div class="warn-t">⚠ ${esc(w)}</div>`));
+            $('wz-pv').innerHTML = parts.length ? `<div class="wz-pv">${parts.join('')}</div>` : '';
+        };
+        const schedulePreview = () => { clearTimeout(wzTimer); wzTimer = setTimeout(preview, 250); };
+        const addPath = p => {
+            p = String(p || '').trim();
+            if (p && !wiz.paths.includes(p)) { wiz.paths.push(p); paintPaths(); schedulePreview(); }
+        };
+        $('wz-file').onclick = async () => { try { addPath(await api.PickPath('file')); } catch (e) { toast(String(e && e.message || e), true); } };
+        $('wz-dir').onclick = async () => { try { addPath(await api.PickPath('dir')); } catch (e) { toast(String(e && e.message || e), true); } };
+        $('wz-addpath').onclick = () => { addPath($('wz-path').value); $('wz-path').value = ''; };
+        $('wz-path').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('wz-addpath').click(); } };
+        const progCheck = async () => {
+            const v = $('wz-prog').value.trim();
+            if (!v) return;
+            const out = $('wz-prog-out');
+            out.innerHTML = '<div class="rl-d">controllo…</div>';
+            let p;
+            try { p = await api.CheckProgram(v); } catch (e) { out.innerHTML = `<div class="rl-help">${esc(String(e && e.message || e))}</div>`; return; }
+            if (!p.found) { out.innerHTML = `<div class="rl-help">«${esc(v)}» non è stato trovato sul computer. Prova con il percorso completo.</div>`; return; }
+            const add = pp => { const path = pp.alt || pp.path; if (!wiz.allow.includes(path)) wiz.allow.push(path); out.innerHTML = ''; $('wz-prog').value = ''; paintAllow(); };
+            if (p.ok || p.alt) { add(p); return; }
+            if (p.fix) {
+                out.innerHTML = `<div class="rl-help"><b>${esc(p.name)}</b> si trova in una cartella che puoi modificare tu (<span class="rl-mono">${esc(p.path)}</span>): ZeroShield non può fidarsi.
+                  <button class="rl-btn" id="wz-trust">Rendi affidabile</button></div>`;
+                $('wz-trust').onclick = async () => { const r = await trust(p.path); if (r && r.ok) add(r); };
+                return;
+            }
+            out.innerHTML = `<div class="rl-help"><b>${esc(p.name)}</b> non si può autorizzare: ${esc(p.why || p.trust_err || '')}</div>`;
+        };
+        $('wz-progcheck').onclick = progCheck;
+        $('wz-prog').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); progCheck(); } };
+        $('wz-title').oninput = () => { wiz.title = $('wz-title').value; paintName(); };
+        $('wz-mode').onchange = () => { wiz.mode = $('wz-mode').value; };
+        $('wz-dw').onchange = () => { wiz.deny_write = $('wz-dw').checked; };
+        $('wz-save').onclick = async () => {
+            const err = $('wz-err'), nm = wzName();
+            err.textContent = '';
+            if (nm.bad) { err.textContent = nm.bad; return; }
+            if (!wiz.paths.length) { err.textContent = 'Scegli almeno un file o una cartella.'; return; }
+            if (!wiz.allow.length) { err.textContent = 'Aggiungi almeno un programma che può usarlo: senza, nemmeno tu potresti più aprire quei file.'; return; }
+            try {
+                const r = await api.PreviewPaths([...wiz.paths]);
+                if (r.errors && r.errors.length) { err.textContent = r.errors[0]; return; }
+            } catch (e) { err.textContent = String(e && e.message || e); return; }
+            const rule = {name: nm.n, paths: [...wiz.paths], allow: [...wiz.allow], deny_write: wiz.deny_write, mode: wiz.mode};
+            if (wiz.idx == null) draft.my.push(rule); else draft.my[wiz.idx] = rule;
+            done();
+            render(true);
+        };
+        paintPaths(); paintAllow(); paintName(); preview();
+        $('wz-file').focus();
     }
 
     return {

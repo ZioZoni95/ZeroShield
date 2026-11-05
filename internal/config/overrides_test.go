@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -160,5 +161,57 @@ func TestInstallValidatesBacksUpAndIsAtomic(t *testing.T) {
 		if strings.HasPrefix(e.Name(), ".shield-new-") {
 			t.Errorf("residuo temporaneo %s", e.Name())
 		}
+	}
+}
+
+func TestRuleModesAndRemoveAllow(t *testing.T) {
+	c, err := loadText(t, "profile: home\nrule_modes:\n  ssh-keys: enforce\nremove_allow:\n  dev-tokens: [cargo, /usr/bin/docker]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := ruleByName(c, "ssh-keys"); r.Mode != "enforce" || c.EffectiveMode(*r) != "enforce" {
+		t.Fatalf("modalita' per regola: %+v", r)
+	}
+	if r := ruleByName(c, "gpg-keys"); r.Mode != "" || c.EffectiveMode(*r) != "audit" {
+		t.Fatalf("le altre ereditano la globale (home = audit): %+v", r)
+	}
+	if r := ruleByName(c, "dev-tokens"); slices.Contains(r.Allow, "cargo") || !slices.Contains(r.Allow, "git") {
+		t.Fatalf("remove_allow per nome: %v", r.Allow)
+	}
+	for name, txt := range map[string]string{
+		"modo sconosciuto":      "rule_modes:\n  ssh-keys: paranoid\n",
+		"regola inesistente":    "rule_modes:\n  nope: audit\n",
+		"remove su inesistente": "remove_allow:\n  nope: [x]\n",
+		"svuota allow":          "remove_allow:\n  gpg-keys: [gpg, gpg-agent, gpgsm]\n",
+	} {
+		if _, err := loadText(t, txt); err == nil {
+			t.Errorf("%s: doveva fallire", name)
+		}
+	}
+}
+
+func TestRuleModeInExtraRulesAndLimits(t *testing.T) {
+	ok := "extra_rules:\n  - name: wallet\n    paths: [\".wallet\"]\n    allow: [\"/usr/bin/electrum\"]\n    mode: enforce\n    deny_write: true\n"
+	c, err := loadText(t, ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := ruleByName(c, "wallet"); r == nil || c.EffectiveMode(*r) != "enforce" || !r.DenyWrite {
+		t.Fatalf("regola personale: %+v", r)
+	}
+	bad := strings.Replace(ok, "mode: enforce", "mode: forse", 1)
+	if _, err := loadText(t, bad); err == nil {
+		t.Error("mode non valido accettato")
+	}
+	if _, err := loadText(t, strings.Replace(ok, "name: wallet", "name: \"a\\nb\"", 1)); err == nil {
+		t.Error("nome con a-capo accettato (finirebbe nei log)")
+	}
+	var b strings.Builder
+	b.WriteString("extra_rules:\n")
+	for i := 0; i < MaxRules; i++ { // + le 4 del profilo supera il limite
+		b.WriteString("  - name: r" + strconv.Itoa(i) + "\n    paths: [x]\n    allow: [/usr/bin/y]\n")
+	}
+	if _, err := loadText(t, b.String()); err == nil || !strings.Contains(err.Error(), "troppe regole") {
+		t.Errorf("limite regole: %v", err)
 	}
 }

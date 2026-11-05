@@ -1,7 +1,8 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
+import {statusHtml} from './statuspage.js';
 import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
@@ -196,7 +197,7 @@ function paintBadge() {
 // col numero precedente e l'animazione parte da li', senza mai passare da "0".
 const shownCounts = {};
 function countUp(el, target) {
-    const label = el.closest('.card')?.querySelector('.k')?.textContent || '';
+    const label = el.closest('.card, .tile')?.querySelector('.k, .tile-k')?.textContent || '';
     const from = Number.isFinite(shownCounts[label]) ? shownCounts[label] : 0;
     shownCounts[label] = target;
     el.textContent = from;
@@ -453,55 +454,14 @@ function verdict() {
 const SVC_IT = {active: 'attivo', inactive: 'fermo', failed: 'in errore', activating: 'in avvio', missing: 'non installato'};
 
 function renderStatus() {
-    const xdp = (status.xdp && status.xdp.length) ? status.xdp.join(', ') : '(spento)';
-    const lsm = status.hook_lsm
-        ? '<span class="dot-ok">●</span> attivo' : '<span class="dot-off">●</span> spento';
-    // Sessione: conteggi live + regola più colpita. Numeri che contano, non decorazione.
-    let nB = 0, nA = 0, nC = 0;
-    const byRule = {};
-    events.forEach(e => {
-        if (e.canary) { nC++; return; }
-        if (e.action === 'blocked') nB++; else nA++;
-        // In audit non ci sono blocchi: la regola piu' attiva conta tutti gli accessi, non
-        // solo i blocchi (prima restava "—" per sempre).
-        byRule[e.rule] = (byRule[e.rule] || 0) + 1;
-    });
-    let topRule = '—';
-    let topN = 0;
-    Object.entries(byRule).forEach(([r, n]) => { if (n > topN) { topN = n; topRule = r; } });
-    let lastB = 'mai';
-    for (let i = events.length - 1; i >= 0; i--) {
-        const e = events[i];
-        if (e.action === 'blocked' || e.action === 'killed') {
-            lastB = `${e.canary ? '🐤' : '⛔'} ${fmtTime(e.time)} ${esc(e.rule || 'canary')} pid=${e.pid}`;
-            break;
-        }
-    }
-    const vd = verdict();
-    content.innerHTML = `${h2(ICO_GAUGE, 'Stato')}<p class="sub">Profilo ${esc(status.profile)} · home ${esc(status.home)}${appVersion ? ` · ZeroShield ${esc(appVersion)}` : ''}</p>
-    <div class="verdict ${vd.level}"><div class="verdict-t">${vd.level === 'ok' ? '●' : (vd.level === 'warn' ? '◐' : '○')} ${vd.title}</div>
-      ${vd.items.length ? `<ul>${vd.items.map(([t, g]) => `<li>${esc(t)} <button class="linklike" data-go="${g}">vedi →</button></li>`).join('')}</ul>` : ''}</div>
-    ${sec('Protezione')}
-    <div class="cards">
-      <div class="card"><div class="k">Modalità</div><div class="v" style="font-size:17px">${esc(status.mode)}</div></div>
-      <div class="card"><div class="k">Hook LSM</div><div class="v" style="font-size:17px">${lsm}</div></div>
-      <div class="card"><div class="k">XDP su</div><div class="v small">${esc(xdp)}</div></div>
-      <div class="card"><div class="k">File protetti</div><div class="v" data-count="${status.protected}">0</div></div>
-      <div class="card"><div class="k">Binari autorizzati</div><div class="v" data-count="${status.allowed}">0</div></div>
-    </div>
-    ${sec('Sessione · dall\'apertura della GUI')}
-    <div class="cards">
-      <div class="card warn-top"><div class="k">Blocchi</div><div class="v" data-count="${nB}">0</div></div>
-      <div class="card"><div class="k">Audit</div><div class="v" data-count="${nA}">0</div></div>
-      <div class="card warn-top"><div class="k">Canary</div><div class="v" data-count="${nC}">0</div></div>
-      <div class="card"><div class="k">Regola più attiva</div><div class="v small">${esc(topRule)}${topN ? ` ×${topN}` : ''}</div></div>
-      <div class="card warn-top"><div class="k">Ultimo blocco</div><div class="v small mono">${lastB}</div></div>
-    </div>
-    ${sec('Controlli')}
-    <div class="panel">
-      <div class="kv"><div class="kv-k">Servizio</div><div class="kv-v"><b id="svc-state">…</b> <button class="chip danger" id="svc-stop">■ Ferma</button></div><div class="kv-h">Fermandolo nulla più viene difeso finché non lo riattivi.</div></div>
-      <div class="kv"><div class="kv-k">Modalità nel file</div><div class="kv-v"><b id="cfg-mode">…</b> <button class="chip" id="mode-toggle">…</button></div><div class="kv-h" id="cfg-hint">Quella che il demone userà al prossimo avvio.</div></div>
-    </div>`;
+    // Versioni a confronto: demone e finestra possono essere di release diverse dopo un aggiornamento
+    // a meta' (il demone si riavvia a mano, la finestra no). Si confronta solo X.Y.Z.
+    const dv = baseVersion(status.version), gv = baseVersion(appVersion);
+    const mismatch = dv && gv && dv !== gv
+        ? `Il demone è alla versione ${status.version} ma questa finestra è la ${appVersion}: riavvia il servizio e la finestra per allinearle.` : '';
+    content.innerHTML = statusHtml({status, events, esc, fmtTime, icons: {gauge: ICO_GAUGE, warn: ICO_WARN}, appVersion, daemonMismatch: mismatch, svcOk: true});
+    const heroAct = document.getElementById('hero-act');
+    if (heroAct) heroAct.onclick = () => switchMode('enforce');
     content.querySelectorAll('[data-count]').forEach(el =>
         countUp(el, parseInt(el.dataset.count, 10)));
     bound(ServiceState).then(st => {
@@ -675,7 +635,7 @@ function wireEventLinks() {
 // La schermata Regole vive in rules.js (ha stato proprio: bozza, controlli asincroni, barra "Applica").
 const rulesView = createRulesView({
     content, esc,
-    api: {RulesModel, CheckProgram, ApplyRules, MakeTrusted},
+    api: {RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath},
     getStatus: () => status,
     getEvents: () => events,
     confirmDialog, toast,

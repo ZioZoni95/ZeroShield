@@ -165,6 +165,24 @@ Opzioni:
 	// Le impostazioni sono lette dal kernel a ogni invocazione del programma.
 	must(objs.Settings.Put(uint32(settingEnforce), b2u(cfg.Enforce())))
 	must(objs.Settings.Put(uint32(settingPoison), b2u(cfg.BlockPoisoning)))
+	// Modalita' per regola: 0 eredita la globale, 1 audit, 2 enforce (stesso id regola del kernel: indice + 1).
+	mixed := false
+	for i, r := range cfg.AllRules() {
+		v := uint32(0)
+		switch r.Mode {
+		case "audit":
+			v = 1
+		case "enforce":
+			v = 2
+		}
+		if r.Mode != "" && r.Mode != cfg.Mode {
+			mixed = true
+		}
+		must(objs.RuleModes.Put(uint32(i+1), v))
+	}
+	if mixed {
+		log.Printf("ℹ️ modalità per regola attiva: alcune regole hanno una modalità diversa da quella globale (%s)", cfg.Mode)
+	}
 
 	// --- LSM: fail-closed ------------------------------------------------------------
 	// Un'hook non agganciato che si dichiara attivo e' peggio di un'hook assente:
@@ -316,7 +334,8 @@ Opzioni:
 		}
 		var rules []ipc.RuleSummary
 		for _, r := range cfg.AllRules() {
-			rules = append(rules, ipc.RuleSummary{Name: r.Name, Paths: r.Paths, Allow: r.Allow})
+			rules = append(rules, ipc.RuleSummary{Name: r.Name, Paths: r.Paths, Allow: r.Allow,
+				Mode: cfg.EffectiveMode(r), DenyWrite: r.DenyWrite})
 		}
 		listening, listeningTotal := listeningSnapshot()
 		srv.UpdateStatus(ipc.Status{
@@ -326,6 +345,7 @@ Opzioni:
 			BlockPoisoning: cfg.BlockPoisoning, BlockSubnets: cfg.BlockSubnets,
 			Vpn: curVpn, TopSources: topSrc,
 			Listening: listening, ListeningTotal: listeningTotal, Rules: rules,
+			Version: version,
 		})
 	}
 	publishStatus()

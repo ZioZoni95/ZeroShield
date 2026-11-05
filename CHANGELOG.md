@@ -4,7 +4,21 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
-_Nulla per ora._
+### Aggiunte
+- **Modalità per singola protezione**: ogni regola può stare in `audit` o `enforce` indipendentemente dalle altre (chiave `mode` nella regola,
+  oppure `rule_modes` per quelle predefinite). Nel kernel è una nuova mappa `rule_modes` (0 = eredita la modalità globale, 1 = audit,
+  2 = enforce): senza voci il comportamento è identico a prima. `ipc.RuleSummary` riporta `mode` e `deny_write`; `ipc.Status` la `version` del demone.
+- **«Proteggi un mio file»** nella scheda Regole: selettore di file/cartelle (anche schemi come `Documents/*.kdbx`), anteprima di quanti file
+  protegge, avvisi (troppo largo, troppi file, btrfs/overlayfs dove la protezione non funziona), scelta dei programmi autorizzati con le stesse
+  verifiche di sicurezza, nome, modalità e blocco delle scritture. Modifica ed eliminazione dalla stessa scheda.
+- **Togliere programmi** dalle liste delle protezioni predefinite (`remove_allow`).
+- **Nuova pagina Stato**: una frase e un solo pulsante con la prossima azione, tre tessere (Segreti, Rete, Attività), lista «Da fare»,
+  ultimi eventi in italiano, dettagli tecnici ripiegati; avviso se demone e finestra hanno versioni diverse.
+- Config: `rule_modes`, `remove_allow` e `mode` per regola (additivi, formato esistente invariato); massimo 255 regole; i nomi delle regole non
+  possono contenere a-capo o caratteri di controllo (finiscono nei log).
+
+### Cambiati
+- I riquadri «Dettagli» della scheda Regole restano aperti quando la pagina si ridisegna.
 
 ## [0.0.4] — 2026-11-05
 

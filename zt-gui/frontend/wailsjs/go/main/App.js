@@ -14,6 +14,14 @@ export function MakeTrusted(arg1) {
   return window['go']['main']['App']['MakeTrusted'](arg1);
 }
 
+export function PickPath(arg1) {
+  return window['go']['main']['App']['PickPath'](arg1);
+}
+
+export function PreviewPaths(arg1) {
+  return window['go']['main']['App']['PreviewPaths'](arg1);
+}
+
 export function RulesModel() {
   return window['go']['main']['App']['RulesModel']();
 }
