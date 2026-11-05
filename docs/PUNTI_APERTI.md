@@ -7,15 +7,16 @@ piano feature unificato in [`ROADMAP.md`](ROADMAP.md).
 ## Stato in una riga
 
 Compila, CI verde (lint, test `-race`, test degli script, eBPF, GUI nel browser, sicurezza,
-pacchetti `.deb`). **XDP e canary collaudati su kernel reale; i 4 hook LSM passano il verifier ma
-non sono mai stati agganciati**: il blocco effettivo dei segreti resta da vedere in VM. Lo stack
+pacchetti `.deb`). **XDP, canary e hook LSM collaudati su un kernel reale** (un PC, file finto, 2026-11-05:
+[`COLLAUDO_LSM_2026-11-05.md`](COLLAUDO_LSM_2026-11-05.md)); restano da provare `file_truncate`, `deny_write`, le protezioni predefinite con i
+programmi veri e una VM isolata. Lo stack
 VPN è provato solo in un network namespace e con comandi finti.
 
 | Componente | Stato |
 |---|---|
 | XDP anti-poisoning + radar | ✅ kernel reale (drop verificato su loopback) |
 | Canary fanotify | ✅ kernel reale (esca, massa, kill in enforce) |
-| Hook LSM (`file_open`, `unlink`, `rename`, `truncate`) | 🟡 verifier ok sul runner GitHub, mai agganciati |
+| Hook LSM (`file_open`, `unlink`, `rename`, troncamento) | 🟢 visti negare su un kernel reale (un PC, file finto) · 🟡 `file_truncate` e `deny_write` mai provati |
 | TUI / GUI / mock / IPC | ✅ GUI vera avviata sotto Xvfb contro il mock + frontend in un browser (21 controlli); socket provato con utenti reali |
 | Demone `zt-shield` end-to-end | ⚠️ mai avviato (non parte senza BPF LSM): il collegamento IPC/VPN/netstat è compilato e analizzato, non eseguito |
 | Pacchetti `.deb` | ✅ costruiti, installati e rimossi · release v0.0.1–v0.0.4 pubblicate (pre-release) · pacchetto unico dalla v0.0.4 |
@@ -41,7 +42,15 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
 ## Da fare — collaudo
 
 - [ ] **VM Ubuntu 24.04 con `lsm=...,bpf`**: `make probe`, poi collaudo completo di
-  [`TESTING_LAB.md`](TESTING_LAB.md) in `enforce` (è l'unico pezzo mai visto funzionare).
+  [`TESTING_LAB.md`](TESTING_LAB.md) in `enforce`. Il blocco di base è già stato visto su un PC (vedi sopra): in VM servono le protezioni
+  predefinite con i programmi veri (`ssh`, `kubectl`, `git`), `deny_write`, `file_truncate`, l'aggiornamento di un binario autorizzato (inode che cambia)
+  e giorni di uso continuo in `audit` prima di `enforce`.
+- [ ] **`exe=` vuoto negli eventi `[BLOCCATO]`** (visto con `cat`): il processo negato esce prima che il demone legga `/proc/<pid>/exe`. Il kernel
+  potrebbe portare nell'evento il percorso del binario invece di lasciarlo risolvere dopo.
+- [ ] **Indicizzatori e altri programmi di sistema** (`localsearch`, backup) vengono negati come gli altri: proteggere cartelle di documenti comuni
+  in `enforce` li rompe. Servono suggerimenti nella GUI e/o un elenco di programmi di sistema da autorizzare con un clic.
+- [ ] **Creazione di hard link non bloccata**: si può creare un secondo nome di un file protetto, ma resta protetto (la chiave è l'inode). Da valutare
+  un hook `inode_link` se serve impedire anche l'alias.
 - [ ] **Avviare il demone end-to-end** in una VM con `bpf` attivo: è l'unico modo di eseguire
   insieme IPC (socket 0600 dell'utente protetto), stato VPN ogni 5 s e porte in ascolto.
 - [ ] **VPN in VM con snapshot**, con un tunnel vero: kill-switch (tunnel killato → `tcpdump`

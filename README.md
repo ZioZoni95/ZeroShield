@@ -24,11 +24,11 @@ Difende segreti e rete di una postazione da Wi-Fi ostili, dipendenze avvelenate 
 </p>
 
 > [!WARNING]
-> **Alpha sperimentale, mai provata su una macchina fisica.** Gli hook LSM che proteggono i segreti sono
-> accettati dal verifier del kernel ma **non sono mai stati agganciati** su un kernel con BPF LSM attivo:
-> il blocco effettivo dei file non è stato ancora visto funzionare. Usalo in una **VM con snapshot** e in
-> modalità `audit` finché il collaudo di [`docs/TESTING_LAB.md`](docs/TESTING_LAB.md) non passa sulla tua
-> macchina.
+> **Alpha sperimentale.** Il blocco dei segreti è stato visto funzionare **una sola volta, su un solo PC**
+> (kernel 7.0 Ubuntu, file finto: `file_open`, rinomina, cancellazione e troncamento negati, vedi
+> [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md)). Non è stato collaudato in una VM isolata, né con i
+> programmi veri sulle protezioni predefinite, né su altri kernel. Usalo in `audit` e metti in **Blocca** una
+> protezione alla volta, dopo aver controllato i programmi autorizzati; fai prima la prova con un file finto.
 
 ---
 
@@ -80,11 +80,11 @@ GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`.
 |---|---|---|
 | XDP anti-poisoning (IPv4 + IPv6, fino a 2 tag VLAN) e radar | ✅ **kernel reale** | `zt-probe -xdp-lo` + pacchetti sintetici contro il vero programma (`BPF_PROG_TEST_RUN`) |
 | Canary anti-ransomware (fanotify) | ✅ **kernel reale** | tocco esca, allarme di massa, kill in `enforce` (`make test-root`) |
-| **Hook LSM dei segreti** (5 programmi) | 🟡 **verifier ok, mai agganciati** | accettati dal verifier sul runner GitHub; attach e blocco reale **mai visti**: da provare in VM |
-| **Demone end-to-end** | ⚠️ **mai in una VM con BPF LSM** | senza BPF LSM si ferma di proposito (fail-closed); i pezzi sono testati, mai insieme su un kernel di prova |
+| **Hook LSM dei segreti** (5 programmi) | 🟢 **visti negare su un kernel reale** (un PC) | `file_open`, rinomina, cancellazione, troncamento: file finto, kernel 7.0.0-42 Ubuntu, 2026-11-05; **non** provati `file_truncate`, `deny_write`, le protezioni predefinite con i programmi veri, una VM isolata |
+| **Demone end-to-end** | 🟢 **gira su un PC con BPF LSM** | avviato dal `.deb`, XDP + hook + canary + IPC + `config-apply`; mai in una VM con snapshot né per giorni di fila |
 | Config, IPC, audit, whitelist, inotify, `netstat` | ✅ test unitari | `go test -race`, fuzz sul config, CI |
 | TUI, GUI, mock | ✅ testati | test unitari e `--dump` (TUI); test della GUI nel browser contro un demone simulato |
-| **Scheda Regole** e `zt-shield config-apply` | 🟡 test con file finti | validazione, backup, ripristino e catalogo provati; **mai con `pkexec` e servizio veri** |
+| **Scheda Regole**, modalità per regola e `zt-shield config-apply` | 🟢 provati su un PC | protezione personale creata dalla GUI, applicata con `pkexec`, in `enforce` solo per quella regola; il ripristino automatico dopo un riavvio fallito resta provato solo con test |
 | Icona nella barra (`zt-tray`, servizio utente) | 🟡 provata su un PC | registrata in GNOME, stato e notifiche; percorso `.deb` (postinstall) non provato |
 | Pacchetto `.deb` | ✅ costruito, installato e rimosso | CI e prove locali |
 | Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh`, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
@@ -281,8 +281,8 @@ per mock e test: il demone root le **ignora**). Percorsi: socket di lettura `/ru
 
 > [!CAUTION]
 > Installare il pacchetto **non attiva la protezione**: il servizio non parte da solo, serve `user:` nel
-> config, serve `bpf` tra gli LSM del kernel (senza il demone si ferma di proposito) e gli hook non sono mai
-> stati agganciati in `enforce`. Prima in una VM.
+> config e serve `bpf` tra gli LSM del kernel (senza il demone si ferma di proposito). Il blocco è stato visto
+> su un solo PC: prova prima con un file finto, meglio in una VM.
 
 ### Da pacchetto
 
@@ -445,7 +445,7 @@ docs/       documentazione (vedi sotto)
 
 **Da sapere prima di `enforce`.**
 
-* Nessun hook LSM è mai stato agganciato su un kernel con BPF LSM (vedi lo stato sopra).
+* Il blocco è stato visto su un solo PC e con un file finto (vedi lo stato sopra): `file_truncate`, `deny_write` e le protezioni predefinite con i programmi veri non sono stati provati.
 * Il radar è solo IPv4 e il poisoning IPv6 dietro extension header passa.
 * Dopo un aggiornamento (apt, snap) l'inode di un browser cambia e resta fuori whitelist fino al rescan.
 * Il canary uccide dopo il tocco e non ferma scritture in-place che saltano le esche.
@@ -465,6 +465,7 @@ L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.
 |---|---|
 | [`CHANGELOG.md`](CHANGELOG.md) | Cosa cambia in ogni versione, comprese le modifiche non ancora rilasciate |
 | [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.md) | Stato, collaudi mancanti, decisioni aperte |
+| [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md) | Primo blocco reale degli hook LSM: ambiente, esiti, cosa non è provato, come ripeterlo |
 | [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md) · [`TESTING_LAB.md`](docs/TESTING_LAB.md) · [`TESTING.md`](docs/TESTING.md) | Cosa è stato provato su kernel reale; collaudo in VM isolata; collaudo pratico di LSM, XDP, FIDO2 e pentest esterno |
 | [`docs/CANARY.md`](docs/CANARY.md) · [`VPN_SETUP.md`](docs/VPN_SETUP.md) | Anti-ransomware: uso e taratura; kill-switch, auto-VPN, ProtonVPN |
 | [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md) | Ricerca TUI/GUI e architettura IPC |

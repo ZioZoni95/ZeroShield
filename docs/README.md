@@ -3,6 +3,7 @@
 | File | Cosa contiene |
 |---|---|
 | [PUNTI_APERTI.md](PUNTI_APERTI.md) | Stato, decisioni aperte, checklist, cosa il tool è / non è |
+| [COLLAUDO_LSM_2026-11-05.md](COLLAUDO_LSM_2026-11-05.md) | Primo blocco reale degli hook LSM su un PC: esiti, limiti, come ripeterlo |
 | [CANARY.md](CANARY.md) | Canary anti-ransomware: guida d'uso, taratura, design, fonti |
 | [FIX_APPLICATI.md](FIX_APPLICATI.md) | Fix applicati al codice e ancora da applicare |
 | [TESTING.md](TESTING.md) | Collaudo pratico LSM/XDP/FIDO2 + pentest esterno |
