@@ -69,7 +69,42 @@ await page.addInitScript((status) => {
     ConfigMode: async () => window.__cfgMode,
     ConfigText: async () => { await new Promise(r => setTimeout(r, window.__cfgDelay || 0)); return 'profile: home\nuser: tester\n'; },
     SetConfigMode: async (m) => { window.__setModeCalls.push(m); },
+    RulesModel: async () => JSON.parse(JSON.stringify(window.__rm)),
+    CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
+    ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
+    MakeTrusted: async (x) => { window.__trustCalls.push(x); const t = window.__trustResult[x]; if (!t) throw new Error('no'); return t; },
   } } };
+  const grp = (id, name, inProfile, allow, paths) => ({ id, name, desc: id, paths, allow, extra_allow: null, in_profile: inProfile, active: inProfile });
+  const prog = (name, path, o) => Object.assign({ input: name, name, path, found: true, trusted: true, trust_err: '', verdict_ok: true, why: '', fix: '', ok: true, alt: '' }, o || {});
+  const tool = (id, label, rules, reads, p, allowed) => Object.assign({ id, label, names: [id], rules, reads }, p, { allowed: allowed || [] });
+  window.__rm = {
+    profile: 'home', manual: false, error: '', custom: [], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
+    groups: [
+      grp('ssh', 'ssh-keys', true, ['ssh', 'ssh-add'], ['.ssh/id_*']),
+      grp('cloud', 'cloud-creds', true, ['kubectl', 'helm', 'k9s'], ['.kube/config']),
+      grp('tokens', 'dev-tokens', true, ['git', 'docker'], ['.docker/config.json']),
+      grp('gpg', 'gpg-keys', true, ['gpg'], ['.gnupg/private-keys-v1.d']),
+      grp('browsers', 'browser-secrets', false, ['/opt/google/chrome/chrome'], ['.config/google-chrome/*/Cookies']),
+    ],
+    tools: [
+      tool('k3d', 'k3d', ['dev-tokens'], 'legge ~/.docker/config.json', prog('k3d', '/usr/local/bin/k3d')),
+      tool('helm', 'Helm', ['cloud-creds', 'dev-tokens'], 'usa kubeconfig e registry', prog('helm', '/usr/local/bin/helm'), ['cloud-creds']),
+      tool('k9s', 'k9s', ['cloud-creds'], 'legge il kubeconfig', prog('k9s', '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s', { trusted: false, trust_err: 'appartiene a uid 1000', ok: false, fix: 'sudo install ...' })),
+      tool('oh-my-posh', 'oh-my-posh', ['cloud-creds'], 'il prompt legge il kubeconfig', prog('oh-my-posh', '/home/u/.local/bin/oh-my-posh', { trusted: false, trust_err: 'appartiene a uid 1000', ok: false, fix: 'sudo install ...' })),
+      tool('stern', 'stern', ['cloud-creds'], 'log dei pod', { name: 'stern', found: false, ok: false }),
+    ],
+  };
+  window.__progs = {
+    '/usr/local/bin/k3d': prog('k3d', '/usr/local/bin/k3d'),
+    '/usr/local/bin/helm': prog('helm', '/usr/local/bin/helm'),
+    '/usr/bin/cat': prog('cat', '/usr/bin/cat', { verdict_ok: false, ok: false, why: 'lettore/copiatore generico: chi lo invoca sceglie il file' }),
+    'lazygit': prog('lazygit', '/usr/local/bin/lazygit'),
+    '/usr/local/bin/lazygit': prog('lazygit', '/usr/local/bin/lazygit'),
+  };
+  window.__trustResult = {
+    '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s': prog('k9s', '/usr/local/bin/k9s'),
+  };
+  window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = '';
   window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = [];
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
@@ -84,6 +119,7 @@ await page.waitForSelector('#content h2');
 // --- versione dal binario
 const sub = await page.textContent('#content .sub');
 check('la versione arriva dal binario (Version())', sub.includes('ZeroShield 9.9.9-test'), sub.trim());
+check('la versione e sempre visibile nella barra laterale', (await page.textContent('#ver')) === 'ZeroShield v9.9.9-test', await page.textContent('#ver'));
 
 // --- ricerca eventi: focus e testo sopravvivono a un flood di eventi
 await page.evaluate(() => { for (let i = 0; i < 5; i++) window.__emit('shield:event', { time: '2026-10-05T10:00:0' + i + 'Z', action: 'audit', pid: 100 + i, comm: 'cat', exe: '/usr/bin/cat', rule: 'ssh-keys', inode: 1 }); });
@@ -348,7 +384,7 @@ async function offlinePage(svc) {
       ],
     } } };
     window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
-    localStorage.setItem('zs-onboarded-v2', '1');
+    localStorage.setItem('zs-onboarded-v2', '1'); localStorage.setItem('zs-seen-version', '0.0.4');
   }, svc);
   await pg.goto(`http://127.0.0.1:${port}/`);
   await pg.waitForSelector('.offline');
@@ -380,11 +416,196 @@ await page.waitForTimeout(100);
 const gDemo = await page.evaluate(() => [...document.querySelectorAll('#content [data-copy]')].map(b => b.dataset.copy).filter(c => /zt-mockd|zt-gui|pkill/.test(c)));
 check('guida: la demo e nella scheda "Per iniziare" con gli stessi comandi', gDemo.length === 3, gDemo.join(' | '));
 
+
+// ---------------------------------------------------------------------------
+// Schermata Regole: catalogo guidato (rules.js)
+// ---------------------------------------------------------------------------
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForSelector('#rl-root');
+const rlTxt = await page.textContent('#content');
+check('regole: 5 gruppi con nomi comprensibili', ['Chiavi SSH', 'Kubernetes e cloud', 'Token degli strumenti di sviluppo', 'Chiavi GPG', 'Cookie e password dei browser'].every(t => rlTxt.includes(t)));
+check('regole: i nomi tecnici delle regole non sono il titolo', (await page.locator('.rl-title b').allTextContents()).every(t => !/-keys|-creds|-tokens|-secrets/.test(t)));
+check('regole: i tre passi (Osserva, Autorizza, Blocca) sono visibili', ['Osserva', 'Autorizza', 'Blocca'].every(t => rlTxt.includes(t)));
+check('regole: nessuna sporcizia (undefined/null/[object)', !/undefined|\bnull\b|\[object/.test(rlTxt));
+check('regole: senza modifiche non c\'e la barra Applica', (await page.locator('#rl-apply').count()) === 0);
+check('regole: browser e una protezione facoltativa e spenta', (await page.locator('[data-grp="browsers"]').isChecked()) === false && rlTxt.includes('facoltativa'));
+check('regole: programmi trovati in cima, non installati ripiegati', (await page.locator('.rl-tool').count()) >= 4 && rlTxt.includes('Altri programmi noti non installati (1)'));
+check('regole: k9s e oh-my-posh spiegano perche serve un passo in piu', (await page.locator('[data-trust]').count()) === 2 && rlTxt.includes('una cartella che puoi modificare tu'));
+check('regole: helm risulta gia autorizzato per cloud ma non per i token', rlTxt.includes('Helm'));
+
+// Autorizzare k3d crea una bozza e la barra con il conteggio
+await page.click('[data-auth="k3d"]');
+check('regole: autorizzare mette una modifica in bozza', (await page.textContent('.rl-bar')).includes('1 modifica'));
+check('regole: nulla e stato scritto prima di Applica', (await page.evaluate(() => window.__applyCalls.length)) === 0);
+await page.click('#rl-cancel');
+check('regole: Annulla butta via la bozza', (await page.locator('.rl-bar').count()) === 0);
+
+// Bulk + passo "Rendi affidabile" + applica
+await page.click('#rl-bulk-tools');
+check('regole: "Autorizza tutti i pronti" aggiunge k3d e helm', (await page.textContent('.rl-bar')).includes('modifiche'));
+await page.click('[data-trust="k9s"]');
+check('regole: "Rendi affidabile" chiede conferma e spiega la copia in /usr/local/bin', (await page.textContent('#dlg')).includes('/usr/local/bin'));
+await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__trustCalls.length === 1);
+check('regole: la copia protetta e richiesta per il percorso giusto', (await page.evaluate(() => window.__trustCalls[0])).endsWith('/k9s'));
+await page.waitForFunction(() => document.querySelectorAll('.rl-bar').length === 1);
+await page.click('#rl-apply');
+const dlg = await page.textContent('#dlg');
+check('regole: la conferma elenca cosa cambia in italiano', dlg.includes('Autorizzi «k3d»') && dlg.includes('Token degli strumenti di sviluppo') && dlg.includes('torna da solo'));
+await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__applyCalls.length === 1);
+const applied = await page.evaluate(() => window.__applyCalls[0]);
+check('regole: ApplyRules riceve solo percorsi assoluti nella regola giusta',
+  applied.allow_extra['dev-tokens'].join() === '/usr/local/bin/helm,/usr/local/bin/k3d' && applied.allow_extra['cloud-creds'].join() === '/usr/local/bin/k9s', JSON.stringify(applied));
+await page.waitForFunction(() => !document.querySelector('.rl-bar'));
+check('regole: dopo Applica la barra sparisce e k3d risulta autorizzato', (await page.textContent('#content')).includes('✓ autorizzato'));
+
+// Accendere i browser e riapplicare
+await page.check('[data-grp="browsers"]');
+await page.click('#rl-apply'); await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__applyCalls.length === 2);
+check('regole: accendere i browser scrive enable_groups', (await page.evaluate(() => window.__applyCalls[1].enable_groups)).join() === 'browsers');
+
+// Errore dall'applicazione: si vede, e la bozza resta
+await page.uncheck('[data-grp="gpg"]');
+await page.evaluate(() => { window.__applyFail = 'il servizio non riparte: bpf'; });
+await page.click('#rl-apply'); await page.click('#dlg-ok');
+await page.waitForSelector('#toast.danger.show');
+check('regole: se l\'applicazione fallisce l\'errore e visibile e la bozza resta', (await page.textContent('#toast')).includes('bpf') && (await page.locator('#rl-apply').count()) === 1);
+await page.evaluate(() => { window.__applyFail = ''; });
+await page.click('#rl-cancel');
+
+// Visti in audit + giudizio per programma + indicatore di prontezza
+await page.evaluate(() => {
+  const ev = (exe, rule, n) => { for (let i = 0; i < n; i++) window.__emit('shield:event', { time: '2026-10-05T10:02:0' + i + 'Z', action: 'audit', pid: 500 + i, comm: exe.split('/').pop(), exe, rule, inode: 7 }); };
+  ev('/usr/bin/cat', 'cloud-creds', 2);
+  ev('/usr/local/bin/lazygit', 'dev-tokens', 3);
+});
+await page.waitForFunction(() => { const t = document.querySelector('#rl-seen').textContent; return t.includes('lazygit') && !t.includes('controllo…'); });
+const seen = await page.textContent('#rl-seen');
+const lazyRow = await page.locator('#rl-seen .rl-tool', { hasText: 'lazygit' }).first().textContent();
+check('regole: i visti dicono cosa e successo in parole semplici', lazyRow.includes('ha letto «Token degli strumenti di sviluppo» 3 volte'), lazyRow.replace(/\s+/g, ' '));
+check('regole: cat non e autorizzabile e dice perche', seen.includes('non autorizzabile') && seen.includes('lettore/copiatore generico'));
+check('regole: un programma di sistema e autorizzabile con un clic', (await page.locator('[data-seen-auth]').count()) === 1);
+const rlGuide = await page.textContent("#rl-guide");
+check('regole: l\'indicatore dice cosa manca prima di Enforce', rlGuide.includes('Mancano 1 programma') && rlGuide.includes('Autorizza i 1 pronti'), rlGuide.replace(/\s+/g, ' ').slice(0, 300));
+await page.click('#rl-bulk-seen');
+check('regole: "Autorizza i pronti" mette il programma in bozza', (await page.textContent('.rl-bar')).includes('1 modifica'));
+check('regole: con solo cat non autorizzabile non si promette il via libera', !(await page.textContent('#rl-guide')).includes('Vai a Configurazione'));
+await page.click('#rl-cancel');
+
+// Un altro programma: controllo con esito spiegato
+await page.fill('#rl-in', 'lazygit');
+await page.click('#rl-check');
+await page.waitForSelector('#rl-add-ok');
+await page.selectOption('#rl-add-rule', 'dev-tokens');
+await page.click('#rl-add-ok');
+check('regole: "un altro programma" aggiunge alla regola scelta', (await page.textContent('.rl-bar')).includes('1 modifica'));
+await page.click('#rl-cancel');
+await page.fill('#rl-in', 'non-esiste-xyz');
+await page.click('#rl-check');
+await page.waitForFunction(() => document.getElementById('rl-add-out').textContent.includes('non è stato trovato'));
+check('regole: programma inesistente -> messaggio chiaro', true);
+
+// Non deve sfarfallare: testo digitato e dettagli aperti sopravvivono a stato ed eventi in arrivo
+await page.fill('#rl-in', 'abc');
+await page.evaluate(() => { document.querySelector('.rl-det').open = true; });
+for (let i = 0; i < 6; i++) {
+  await page.evaluate((i) => { window.__status = { ...window.__status, time: '2026-10-05T10:05:0' + i + 'Z' }; window.__emit('shield:status', window.__status); window.__emit('shield:event', { time: '2026-10-05T10:05:0' + i + 'Z', action: 'audit', pid: 900 + i, comm: 'x', exe: '/usr/bin/x' + i, rule: 'ssh-keys', inode: 1 }); }, i);
+  await page.waitForTimeout(40);
+}
+check('regole: gli eventi in arrivo non cancellano il testo digitato', (await page.inputValue('#rl-in')) === 'abc');
+check('regole: ne chiudono i dettagli aperti', await page.evaluate(() => document.querySelector('.rl-det').open));
+
+// Modello con errore (servizio non installato)
+const rlErr = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+rlErr.on('pageerror', e => errors.push(String(e)));
+await rlErr.addInitScript((st) => {
+  window.go = { main: { App: { GetStatus: async () => st, SocketPath: async () => '/x', Version: async () => '1', ServiceState: async () => 'active',
+    ConfigMode: async () => 'audit', ConfigText: async () => '', RulesModel: async () => ({ error: 'config assente (/etc/zt-shield/shield.yaml): installa prima il servizio.' }) } } };
+  window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+  localStorage.setItem('zs-onboarded-v2', '1');
+}, STATUS);
+await rlErr.goto(`http://127.0.0.1:${port}/`);
+await rlErr.waitForSelector('#content h2');
+await rlErr.click('#sidebar button[data-view="rules"]');
+await rlErr.waitForFunction(() => document.getElementById('content').textContent.includes('installa prima il servizio'));
+check('regole: se il config manca spiega di partire dallo Stato', (await rlErr.textContent('#content')).includes('scheda Stato'));
+await rlErr.close();
+
+// Scelte scritte a mano nel file: sola lettura
+const rlMan = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+rlMan.on('pageerror', e => errors.push(String(e)));
+await rlMan.addInitScript((st) => {
+  window.go = { main: { App: { GetStatus: async () => st, SocketPath: async () => '/x', Version: async () => '1', ServiceState: async () => 'active',
+    ConfigMode: async () => 'audit', ConfigText: async () => '',
+    RulesModel: async () => ({ profile: 'home', manual: true, custom: ['mia'], choice: {}, tools: [], groups: [{ id: 'ssh', name: 'ssh-keys', desc: '', paths: ['.ssh/id_*'], allow: ['ssh'], in_profile: true, active: true }] }) } } };
+  window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+  localStorage.setItem('zs-onboarded-v2', '1');
+}, STATUS);
+await rlMan.goto(`http://127.0.0.1:${port}/`);
+await rlMan.waitForSelector('#content h2');
+await rlMan.click('#sidebar button[data-view="rules"]');
+await rlMan.waitForSelector('#rl-root');
+check('regole: scelte a mano -> interruttori e campo disattivati, con spiegazione', (await rlMan.locator('[data-grp="ssh"]').isDisabled()) && (await rlMan.textContent('#content')).includes('scritte a mano'));
+await rlMan.close();
+
+
+// ---------------------------------------------------------------------------
+// "Novita'": popup una sola volta per versione
+// ---------------------------------------------------------------------------
+async function wnPage(version, ls) {
+  const pg = await browser.newPage({ viewport: { width: 1100, height: 760 }, timezoneId: 'Europe/Rome' });
+  pg.on('pageerror', e => errors.push(String(e)));
+  await pg.addInitScript(([st, ver, ls0]) => {
+    window.go = { main: { App: { GetStatus: async () => st, SocketPath: async () => '/x', Version: async () => ver, ServiceState: async () => 'active', ConfigMode: async () => 'audit', ConfigText: async () => '' } } };
+    window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+    // Una sola volta per pagina: un reload non deve reimpostare lo storage di partenza.
+    if (!sessionStorage.getItem('wn-init')) { sessionStorage.setItem('wn-init', '1'); Object.entries(ls0).forEach(([k, v]) => localStorage.setItem(k, v)); }
+  }, [STATUS, version, ls]);
+  await pg.goto(`http://127.0.0.1:${port}/`);
+  await pg.waitForSelector('#content h2');
+  await pg.waitForTimeout(150);
+  return pg;
+}
+const wnUp = await wnPage('0.0.4~dev+abc1234', { 'zs-onboarded-v2': '1', 'zs-seen-version': '0.0.3' });
+check('novita: dopo un aggiornamento compare il popup con le novita', (await wnUp.locator('#dlg.wn, #dlg .wn').count()) === 1 && (await wnUp.textContent('#dlg')).includes('Novità della versione 0.0.4'));
+const wnTxt = await wnUp.textContent('#dlg');
+check('novita: voci principali presenti', ['Icona nella barra di sistema', 'Regole guidate', 'Radar più chiaro', 'ancora in alpha'].every(t => wnTxt.includes(t)));
+check('novita: il popup mette il focus sul pulsante', await wnUp.evaluate(() => document.activeElement && document.activeElement.id === 'wn-ok'));
+await wnUp.keyboard.press('Enter');
+check('novita: Invio lo chiude', (await wnUp.locator('#dlg').count()) === 0);
+check('novita: la versione vista viene ricordata', (await wnUp.evaluate(() => localStorage.getItem('zs-seen-version'))) === '0.0.4');
+await wnUp.reload(); await wnUp.waitForSelector('#content h2'); await wnUp.waitForTimeout(150);
+check('novita: al riavvio della stessa versione non riappare', (await wnUp.locator('#dlg').count()) === 0);
+await wnUp.click('#ver');
+check('novita: cliccando la versione si riapre quando vuoi', (await wnUp.locator('#dlg').count()) === 1);
+await wnUp.close();
+
+const wnNew = await wnPage('0.0.4', {});
+check('novita: alla prima installazione niente popup (c\'e il benvenuto)', (await wnNew.locator('#dlg').count()) === 0);
+check('novita: ...ma la versione viene segnata', (await wnNew.evaluate(() => localStorage.getItem('zs-seen-version'))) === '0.0.4');
+await wnNew.close();
+
+const wnOld = await wnPage('0.0.4', { 'zs-onboarded-v2': '1' });
+check('novita: chi aveva gia la GUI (senza versione salvata) le vede', (await wnOld.locator('#dlg').count()) === 1);
+await wnOld.close();
+
+const wnNone = await wnPage('9.9.9-test', { 'zs-onboarded-v2': '1', 'zs-seen-version': '0.0.3' });
+check('novita: versione senza voce -> nessun popup e nessun errore', (await wnNone.locator('#dlg').count()) === 0);
+await wnNone.close();
+
+// Ogni release deve avere la sua voce: il file VERSION e whatsnew.js non devono andare fuori passo.
+const verFile = fs.readFileSync(new URL('../../../VERSION', import.meta.url), 'utf8').trim();
+const wnSrc = fs.readFileSync(new URL('../src/whatsnew.js', import.meta.url), 'utf8');
+check('novita: la versione in VERSION (' + verFile + ') ha la sua voce in whatsnew.js', wnSrc.includes(`'${verFile}': {`));
+
 if (shots) {
   fs.mkdirSync(shots, { recursive: true });
-  for (const v of ['status', 'events', 'net', 'guide']) {
+  for (const v of ['status', 'events', 'rules', 'net', 'guide']) {
     await page.click(`#sidebar button[data-view="${v}"]`);
     await page.waitForTimeout(250);
+    await page.evaluate(() => { document.getElementById('content').scrollTop = 0; });
     await page.screenshot({ path: path.join(shots, `${label}-${v}.png`) });
   }
 }

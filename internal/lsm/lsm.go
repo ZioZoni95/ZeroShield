@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"zt-shield/internal/config"
+	"zt-shield/pkg/rules"
 )
 
 // Tetto di file per singolo path espanso, per non saturare la mappa (16384 entry)
@@ -534,31 +535,9 @@ func resolveExe(home, name string) (string, bool) {
 	return path, true
 }
 
-// trustedExe verifica che un utente non root non possa sostituire o modificare
-// il binario: il file e ogni directory padre devono essere di root, non
-// scrivibili da "others" e scrivibili dal gruppo solo se il gruppo e' root.
-// Basta un anello debole (es. una dir padre dell'utente) per rinominare o
-// riscrivere il binario e ereditarne l'autorizzazione.
-func trustedExe(path string) error {
-	for p := path; ; p = filepath.Dir(p) {
-		var st syscall.Stat_t
-		if err := syscall.Stat(p, &st); err != nil {
-			return fmt.Errorf("stat %s: %w", p, err)
-		}
-		if st.Uid != 0 {
-			return fmt.Errorf("%s appartiene a uid %d, non a root", p, st.Uid)
-		}
-		if st.Mode&0o002 != 0 {
-			return fmt.Errorf("%s scrivibile da chiunque", p)
-		}
-		if st.Mode&0o020 != 0 && st.Gid != 0 {
-			return fmt.Errorf("%s scrivibile dal gruppo %d", p, st.Gid)
-		}
-		if p == "/" || p == "." {
-			return nil
-		}
-	}
-}
+// trustedExe: la verifica sta in pkg/rules cosi' la GUI applica ESATTAMENTE la regola del demone
+// quando propone di autorizzare un programma (vedi rules.Trusted per il motivo).
+func trustedExe(path string) error { return rules.Trusted(path) }
 
 // fileKey: (dev, ino) del file, con dev nel formato del kernel.
 //

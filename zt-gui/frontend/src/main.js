@@ -1,6 +1,8 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted} from '../wailsjs/go/main/App.js';
+import {createRulesView} from './rules.js';
+import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
 
 const content = document.getElementById('content');
@@ -109,6 +111,34 @@ content.addEventListener('click', e => {
 });
 
 // Conferma con spiegazione delle conseguenze (al posto di confirm() nudo).
+// "Novita'": popup una sola volta per versione (vedi whatsnew.js). Cliccando la versione in fondo alla
+// barra laterale si riapre quando vuoi.
+function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* senza storage: si rivede a ogni avvio, nessun danno */ } }
+function showWhatsNew(manual) {
+    const w = WHATS_NEW[baseVersion(appVersion)];
+    if (!w) { if (manual) toast('Nessuna novità registrata per questa versione.'); return; }
+    if (document.getElementById('dlg')) return;
+    const ov = document.createElement('div');
+    ov.id = 'dlg';
+    ov.innerHTML = `<div class="ob-card wn" role="dialog" aria-modal="true" aria-label="${esc(w.title)}"><h2>${esc(w.title)}</h2>
+        <ul class="wn-list">${w.items.map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d)}</span></li>`).join('')}</ul>
+        ${w.note ? `<p class="wn-note">${esc(w.note)}</p>` : ''}
+        <div class="ob-btns"><button class="chip on" id="wn-ok">Ho capito</button></div></div>`;
+    document.body.appendChild(ov);
+    const done = () => { document.removeEventListener('keydown', onKey, true); ov.remove(); };
+    const onKey = e => { if (e.key === 'Escape' || e.key === 'Enter') { e.stopPropagation(); done(); } };
+    document.addEventListener('keydown', onKey, true);
+    ov.querySelector('#wn-ok').onclick = done;
+    ov.addEventListener('click', e => { if (e.target === ov) done(); });
+    ov.querySelector('#wn-ok').focus();
+}
+function maybeWhatsNew() {
+    const r = pickWhatsNew(appVersion, lsGet('zs-seen-version'), !!lsGet('zs-onboarded-v2'));
+    if (r.remember) lsSet('zs-seen-version', r.base);
+    if (r.show) showWhatsNew(false);
+}
+
 function confirmDialog({title, body, ok, danger}) {
     return new Promise(resolve => {
         const ov = document.createElement('div');
@@ -201,7 +231,7 @@ function render(force) {
     // situazione non cambiano, si salta (gli stream live passano comunque).
     // statusSeq impedisce di mangiare stati diversi con stesso timestamp.
     const key = view + '|' + (status ? statusSeq + ':' + (status.time || 'live') + ':' + appVersion : 'off:' + offlineMsg);
-    if (!force && key === lastKey && view !== 'events' && view !== 'radar') return;
+    if (!force && key === lastKey && view !== 'events' && view !== 'radar' && view !== 'rules') return;
     lastKey = key;
     paintBadge();
     cancelAnimationFrame(radarRAF);
@@ -224,7 +254,7 @@ function render(force) {
     evCount.textContent = events.length > 0 ? events.length : '';
     if (view === 'status') return renderStatus();
     if (view === 'events') return renderEvents();
-    if (view === 'rules') return renderRules();
+    if (view === 'rules') return renderRules(force);
     if (view === 'radar') return renderRadar();
     if (view === 'guide') return renderGuide();
     if (view === 'config') return renderConfig();
@@ -642,24 +672,18 @@ function wireEventLinks() {
     });
 }
 
-function renderRules() {
-    const rules = status.rules || [];
-    if (!rules.length) {
-        content.innerHTML = `${h2(ICO_KEY, 'Regole')}<div class="empty"><span class="big">🗝️</span><b>Nessuna regola caricata.</b><br>Controlla il profilo nel config.</div>`;
-        return;
-    }
-    // Accessi visti in questa sessione per regola: chi e' attiva e chi e' muta.
-    const seen = {};
-    events.forEach(e => { if (!e.canary) seen[e.rule] = (seen[e.rule] || 0) + 1; });
-    content.innerHTML = `${h2(ICO_KEY, 'Regole')}<p class="sub">${rules.length} gruppi di segreti · solo questi binari leggono questi file</p>` +
-        rules.map(r => `<div class="rule"><h3>${ICO_KEY} ${esc(r.name)}${seen[r.name] ? ` <span class="pill">${seen[r.name]} accessi</span>` : ''}</h3>
-        <div><span class="mono">file:</span> <span class="mono">${esc((r.paths || []).join(', '))}</span></div>
-        <div><span class="mono">exe:</span> <span class="mono">${esc((r.allow || []).join(', '))}</span></div>
-        <div class="links"><button class="linklike" data-goto="${esc(r.name)}">vedi eventi →</button></div></div>`).join('');
-    document.querySelectorAll('#content .linklike[data-goto]').forEach(l => {
-        l.onclick = () => gotoEvents(l.dataset.goto);
-    });
-}
+// La schermata Regole vive in rules.js (ha stato proprio: bozza, controlli asincroni, barra "Applica").
+const rulesView = createRulesView({
+    content, esc,
+    api: {RulesModel, CheckProgram, ApplyRules, MakeTrusted},
+    getStatus: () => status,
+    getEvents: () => events,
+    confirmDialog, toast,
+    icons: {key: ICO_KEY, warn: ICO_WARN},
+    active: () => view === 'rules',
+    goto: v => go(v),
+});
+function renderRules(force) { return rulesView.render(force); }
 
 // --- Radar: spazzata canvas con scia + alone + tooltip (dati eBPF) ---
 let radarRAF = 0;
@@ -1113,7 +1137,14 @@ async function boot() {
     }
     render();
     // Versione dal binario (ldflags al build): se manca il binding, nessun errore.
-    try { appVersion = await Version(); requestRender(); } catch (_) {}
+    try {
+        appVersion = await Version();
+        const ve = document.getElementById('ver');
+        if (ve && appVersion) { ve.textContent = 'ZeroShield ' + (/^\d/.test(appVersion) ? 'v' : '') + appVersion; ve.title = 'Versione di questa finestra (GUI)'; }
+        if (ve) { ve.onclick = () => showWhatsNew(true); }
+        requestRender();
+        maybeWhatsNew();
+    } catch (_) {}
     // Onboarding: se demone mai visto. Salta = solo questa sessione
     // (sessionStorage), Ho capito = per sempre (localStorage). Così chi
     // skippa per sbaglio rivede il wizard al prossimo avvio.

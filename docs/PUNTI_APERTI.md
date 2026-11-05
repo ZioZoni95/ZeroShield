@@ -72,7 +72,12 @@ finestra di rescan, preset `glab`.
   verificare in audit su una macchina con Flatpak.
 - [ ] **Browser snap/apt aggiornati**: dopo un aggiornamento l'inode del binario cambia e il
   browser resta fuori whitelist fino al rescan (inotify osserva i segreti, non i binari).
-- [ ] **GUI, configurazione editabile**: oggi la tab mostra un riepilogo e il file, ma si modifica
+- [ ] **GUI, regole editabili: collaudo vero.** La scheda Regole (catalogo guidato, «Rendi affidabile», «Applica»)
+  e il comando root `zt-shield config-apply` (valida, backup, riavvio, ripristino se non riparte) sono provati con
+  test e dischi finti, mai con pkexec e servizio veri. Da provare in VM: applicazione, ripristino dopo un riavvio
+  fallito, copia in `/usr/local/bin`. Limite noto: se il terminale lancia ancora la copia di brew/`~/.local/bin`
+  (stesso nome, PATH precedente) l'autorizzazione vale solo per la copia protetta; la GUI lo avvisa.
+- [ ] **GUI, configurazione editabile** (interfaccia, subnet, canary, VPN): oggi la tab mostra un riepilogo e il file, ma si modifica
   solo `mode`. Un editor a campi (interfaccia, subnet, canary, VPN) con validazione e anteprima
   della differenza richiede scritture sul canale privilegiato (`internal/priv` + polkit): da fare
   con il collaudo in VM, non prima.

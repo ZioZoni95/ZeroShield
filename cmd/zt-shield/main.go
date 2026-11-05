@@ -97,6 +97,11 @@ Opzioni:
 		return
 	}
 
+	// `zt-shield config-apply FILE`: valida e installa un config (usato dalla GUI via pkexec).
+	if flag.NArg() >= 1 && flag.Arg(0) == "config-apply" {
+		os.Exit(runConfigApply(flag.Args()[1:]))
+	}
+
 	// Sottocomando di controllo: stesso canale delle future UI.
 	// `zt-shield ctl ping|rescan` — da root esegue, da utente spiega il diniego.
 	if flag.NArg() >= 1 && flag.Arg(0) == "ctl" {

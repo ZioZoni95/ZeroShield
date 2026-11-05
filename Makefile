@@ -9,8 +9,8 @@
 .PHONY: all deps vmlinux generate build build-tui build-tray build-mock build-probe probe gui gui-bin test test-root test-scripts lint check package clean
 
 # Versione nei binari e nei pacchetti: dal tag git (v0.1.0 -> 0.1.0), altrimenti
-# 0.0.0~dev+<commit> (il ~ ordina le dev prima di qualsiasi release in dpkg).
-VERSION ?= $(shell v=$$(git describe --tags --exact-match 2>/dev/null); if [ -n "$$v" ]; then echo $${v#v}; else echo 0.0.0~dev+$$(git rev-parse --short HEAD 2>/dev/null || echo unknown); fi)
+# <file VERSION>~dev+<commit> (la prossima versione da rilasciare; ~ la ordina prima della release (il ~ ordina le dev prima di qualsiasi release in dpkg).
+VERSION ?= $(shell v=$$(git describe --tags --exact-match 2>/dev/null); if [ -n "$$v" ]; then echo $${v#v}; else echo $$(cat VERSION 2>/dev/null || echo 0.0.0)~dev+$$(git rev-parse --short HEAD 2>/dev/null || echo unknown); fi)
 ARCH ?= $(shell go env GOARCH)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 NFPM ?= go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0

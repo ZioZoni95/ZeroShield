@@ -17,6 +17,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -109,18 +110,22 @@ func validateVpn(v VpnConfig) error {
 
 // Config: file YAML completo. I campi non presenti nel file restano quelli del profilo.
 type Config struct {
-	Profile        string       `yaml:"profile"`
-	Mode           string       `yaml:"mode"` // audit | enforce
-	User           string       `yaml:"user"`
-	Interface      string       `yaml:"interface"`
-	BlockPoisoning bool         `yaml:"block_poisoning"`
-	BlockSubnets   []string     `yaml:"block_subnets"`
-	Rules          []Rule       `yaml:"rules"`       // sostituisce le regole del profilo
-	ExtraRules     []Rule       `yaml:"extra_rules"` // si aggiunge a quelle del profilo
-	Canary         CanaryConfig `yaml:"canary"`
-	Vpn            VpnConfig    `yaml:"vpn"`
-	LogFormat      string       `yaml:"log_format"` // text | json
-	RescanSeconds  int          `yaml:"rescan_seconds"`
+	Profile        string   `yaml:"profile"`
+	Mode           string   `yaml:"mode"` // audit | enforce
+	User           string   `yaml:"user"`
+	Interface      string   `yaml:"interface"`
+	BlockPoisoning bool     `yaml:"block_poisoning"`
+	BlockSubnets   []string `yaml:"block_subnets"`
+	Rules          []Rule   `yaml:"rules"`       // sostituisce le regole del profilo
+	ExtraRules     []Rule   `yaml:"extra_rules"` // si aggiunge a quelle del profilo
+	// Ritocchi alle regole del profilo senza riscriverle (li gestisce la GUI, ma valgono anche a mano):
+	AllowExtra    map[string][]string `yaml:"allow_extra"`   // regola -> percorsi ASSOLUTI di binari da aggiungere ad allow
+	DisableRules  []string            `yaml:"disable_rules"` // nomi di regole da togliere
+	EnableGroups  []string            `yaml:"enable_groups"` // gruppi predefiniti da aggiungere (ssh|cloud|tokens|gpg|browsers)
+	Canary        CanaryConfig        `yaml:"canary"`
+	Vpn           VpnConfig           `yaml:"vpn"`
+	LogFormat     string              `yaml:"log_format"` // text | json
+	RescanSeconds int                 `yaml:"rescan_seconds"`
 }
 
 // Gruppi di regole predefiniti.
@@ -300,7 +305,113 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("parsing config: %w", err)
 		}
 	}
+	if err := cfg.applyOverrides(); err != nil {
+		return nil, err
+	}
 	return cfg, cfg.Validate()
+}
+
+// GroupOrder: ordine di presentazione dei gruppi predefiniti.
+var GroupOrder = []string{"ssh", "cloud", "tokens", "gpg", "browsers"}
+
+// GroupDesc: a cosa serve ogni gruppo, in una riga, per le UI.
+var GroupDesc = map[string]string{
+	"ssh":      "Chiavi SSH private (id_*), anche FIDO2",
+	"cloud":    "Credenziali Kubernetes e cloud (kubeconfig, AWS, Terraform)",
+	"tokens":   "Token di registry e strumenti di sviluppo (Docker, GitHub, GitLab, Cargo)",
+	"gpg":      "Chiavi private GPG",
+	"browsers": "Cookie e password salvate dei browser (rumoroso in audit)",
+}
+
+// Group restituisce una copia profonda del gruppo predefinito (ok=false se sconosciuto).
+func Group(id string) (Rule, bool) {
+	g, ok := groups[id]
+	if !ok {
+		return Rule{}, false
+	}
+	return Rule{Name: g.Name, Paths: append([]string(nil), g.Paths...), Allow: append([]string(nil), g.Allow...)}, true
+}
+
+// ProfileGroups: gruppi inclusi di default in un profilo (nil se sconosciuto).
+func ProfileGroups(profile string) []string {
+	p, ok := profiles[profile]
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), p.groups...)
+}
+
+// applyOverrides applica enable_groups, allow_extra e disable_rules alle regole del profilo.
+// Ordine: prima si aggiungono i gruppi, poi gli allow, poi si tolgono le regole disabilitate.
+// Errori espliciti su nomi inesistenti: un refuso non deve diventare una protezione mancata.
+func (c *Config) applyOverrides() error {
+	for _, id := range c.EnableGroups {
+		g, ok := Group(id)
+		if !ok {
+			return fmt.Errorf("enable_groups: gruppo %q sconosciuto (validi: %v)", id, GroupOrder)
+		}
+		dup := false
+		for _, r := range c.AllRules() {
+			if r.Name == g.Name {
+				dup = true
+			}
+		}
+		if !dup {
+			c.Rules = append(c.Rules, g)
+		}
+	}
+	find := func(name string) *Rule {
+		for i := range c.Rules {
+			if c.Rules[i].Name == name {
+				return &c.Rules[i]
+			}
+		}
+		for i := range c.ExtraRules {
+			if c.ExtraRules[i].Name == name {
+				return &c.ExtraRules[i]
+			}
+		}
+		return nil
+	}
+	for name, exes := range c.AllowExtra {
+		r := find(name)
+		if r == nil {
+			return fmt.Errorf("allow_extra: regola %q inesistente", name)
+		}
+		for _, e := range exes {
+			// Solo percorsi assoluti puliti: un nome verrebbe risolto con il PATH del demone
+			// (diverso da quello dell'utente) e un glob non ha senso per un binario.
+			if !filepath.IsAbs(e) || filepath.Clean(e) != e || strings.ContainsAny(e, "*?[") {
+				return fmt.Errorf("allow_extra[%s]: %q deve essere un percorso assoluto pulito, senza glob", name, e)
+			}
+			if !slices.Contains(r.Allow, e) {
+				r.Allow = append(r.Allow, e)
+			}
+		}
+	}
+	if len(c.DisableRules) > 0 {
+		off := map[string]bool{}
+		for _, n := range c.DisableRules {
+			if find(n) == nil {
+				return fmt.Errorf("disable_rules: regola %q inesistente", n)
+			}
+			off[n] = true
+		}
+		keep := func(in []Rule) []Rule {
+			var out []Rule
+			for _, r := range in {
+				if !off[r.Name] {
+					out = append(out, r)
+				}
+			}
+			return out
+		}
+		c.Rules, c.ExtraRules = keep(c.Rules), keep(c.ExtraRules)
+		if len(c.AllRules()) == 0 {
+			return fmt.Errorf("disable_rules: così non resterebbe nessuna regola; per spegnere tutto ferma il servizio")
+		}
+	}
+	return nil
 }
 
 // AllRules: regole effettive, profilo + extra. L'ordine e' significativo:
