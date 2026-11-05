@@ -283,6 +283,8 @@ per mock e test: il demone root le **ignora**). Percorsi: socket di lettura `/ru
 > Installare il pacchetto **non attiva la protezione**: il servizio non parte da solo, serve `user:` nel
 > config e serve `bpf` tra gli LSM del kernel (senza il demone si ferma di proposito). Il blocco è stato visto
 > su un solo PC: prova prima con un file finto, meglio in una VM.
+> Sul sistema già configurato (`user:` presente) l'aggiornamento abilita il demone all'avvio e lo riavvia;
+> l'avvio all'accensione si cambia anche dalla GUI (Configurazione → «Avvio all'accensione»).
 
 ### Da pacchetto
 
