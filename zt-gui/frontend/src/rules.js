@@ -164,7 +164,7 @@ export function createRulesView(d) {
         const progs = r.allow.map(a => `<span class="rl-chip add" title="${esc(a)}">${esc(baseName(a))}</span>`).join('');
         return `<div class="rl-card">
           <div class="rl-head"><span class="rl-mine" aria-hidden="true">★</span>
-            <div class="rl-title"><b>${esc(r.name)}</b> <span class="rl-b ${modeOf2(r) === 'enforce' ? 'no' : 'ready'}">${MODE_TXT[modeOf2(r)]}</span>${r.deny_write ? ' <span class="rl-tag">blocca anche la scrittura</span>' : ''}
+            <div class="rl-title"><b>${esc(r.name)}</b> <span class="rl-b ${modeOf2(r) === 'enforce' ? 'no' : 'ready'}">${MODE_TXT[modeOf2(r)]}</span>${r.deny_write ? ' <span class="rl-tag">scrittura solo ai programmi in lista</span>' : ''}
               <div class="rl-mono rl-d">${r.paths.map(esc).join('<br>')}</div></div>
             <div class="rl-ta"><button class="rl-btn ghost" data-my-edit="${i}" ${model.manual_rules ? 'disabled' : ''}>Modifica</button><button class="rl-btn ghost" data-my-del="${i}" ${model.manual_rules ? 'disabled' : ''}>Elimina</button></div></div>
           <div class="rl-k">Programmi autorizzati</div><div>${progs}</div></div>`;
@@ -611,7 +611,7 @@ export function createRulesView(d) {
             <div class="rl-d" id="wz-name"></div>
             <div class="wz-row"><label class="rl-mode"><span class="rl-d">Se un programma non autorizzato prova a leggerlo</span>
               <select id="wz-mode"><option value="">Come le altre protezioni (${globalMode() === 'enforce' ? 'Blocca' : 'Solo osserva'})</option><option value="audit">Solo osserva</option><option value="enforce">Blocca</option></select></label></div>
-            <label class="wz-chk"><input type="checkbox" id="wz-dw"> <span>Blocca anche le <b>scritture</b> <span class="rl-d">(utile contro i ransomware; rompe chi aggiorna quel file di norma, per esempio un gestore di password che salva)</span></span></label></div>
+            <label class="wz-chk"><input type="checkbox" id="wz-dw"> <span>Blocca le <b>scritture</b> dei programmi non autorizzati <span class="rl-d">(utile contro i ransomware; chi è in lista scrive normalmente, ma un programma che non hai autorizzato, per esempio un gestore di password che salva, non potrà più)</span></span></label></div>
           <div class="wz-err" id="wz-err" role="alert"></div>
           <div class="ob-btns"><button class="chip" id="wz-cancel">Annulla</button><button class="chip on" id="wz-save">${i == null ? 'Aggiungi alla bozza' : 'Salva nella bozza'}</button></div></div>`;
         document.body.appendChild(ov);

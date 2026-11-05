@@ -59,7 +59,7 @@ rescan_seconds: 30
 #   - name: rootca
 #     paths: [".pki/ca.crt"]
 #     allow: ["openssl"]
-#     deny_write: true
+#     deny_write: true   # anche la scrittura solo ai programmi in "allow" (root compreso se non è in lista)
 
 # VPN: il demone MONITORA tunnel e kill-switch e li mostra in TUI/GUI (tunnel su,
 # tabella nft attiva, handshake WireGuard). NON applica niente: il kill-switch lo

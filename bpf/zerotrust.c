@@ -479,7 +479,9 @@ int BPF_PROG(zt_file_open, struct file *file) {
 
     // Write-only open: passa, A MENO che la regola abbia deny_write.
     // Default (deny_write=0): creazione chiavi e backup funzionano.
-    // Con deny_write=1: anche ssh-keygen e i backup vengono negati, anche a root.
+    // Con deny_write=1: la scrittura passa dalla stessa whitelist della lettura: un programma
+    // NON autorizzato per questa regola (ssh-keygen, un backup, anche root) viene negato; uno
+    // autorizzato scrive normalmente. Non e' "nessuno scrive": e' "scrive solo chi puo' leggere".
     // Usalo solo su segreti che non cambiano mai (es. root CA offline).
     // FIX: O_TRUNC non passa piu' come semplice scrittura: svuotare la chiave e'
     // un wipe, non un backup. Va in whitelist come la lettura.

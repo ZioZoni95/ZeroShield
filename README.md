@@ -185,7 +185,7 @@ nome con cui lo chiami.
 * **Segreti (LSM).** Hook su `open`, `unlink`, `rename`, `path_truncate` e, sui kernel ≥ 6.2, `file_truncate`
   (opzionale). Ogni regola associa file ai soli binari autorizzati; entrano in whitelist solo **binari di
   root** non scrivibili da altri. Una scrittura semplice passa, `O_TRUNC` e `truncate` passano dalla
-  whitelist, `deny_write` per regola blocca anche quelle. I file nominati dalle regole hanno precedenza
+  whitelist, `deny_write` per regola richiede un programma autorizzato anche per scrivere: chi non è in lista (root compreso) viene negato, chi è in lista scrive normalmente. I file nominati dalle regole hanno precedenza
   sulle mappe (tetto di 4096 per regola, 16384 in tutto) e un watcher **inotify** riallinea le mappe entro
   ~0,5 s da un rename; il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
   **Fail-closed**: se un hook non si aggancia il demone si ferma invece di fingersi attivo.
