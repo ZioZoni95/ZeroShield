@@ -81,7 +81,7 @@ jobs:
         # Test con fanotify vero: avvio, tocco esca, massa, kill in enforce.
         # GOCACHE separata: root non deve sporcare la cache dell'utente runner.
         run: sudo -E env "PATH=$PATH" GOCACHE=/tmp/gocache-root go test -count=1 -run Root -v ./internal/canary
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -129,7 +129,7 @@ jobs:
         # IPv4 e IPv6, troncati. Senza privilegi i test si saltano da soli.
         run: sudo -E env "PATH=$PATH" GOCACHE=/tmp/gocache-root go test -count=1 -v ./bpf
       # Il .deb e' unico e contiene anche la GUI: si costruisce nel job "GUI", che ha Node e GTK.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zt-shield-linux-amd64
           path: bin/
@@ -184,7 +184,7 @@ jobs:
           done
           dpkg-deb -f dist/zeroshield_*.deb Replaces | grep -q zeroshield-gui
           dpkg-deb -f dist/zeroshield_*.deb Recommends | grep -q libwebkit2gtk-4.1-0
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zeroshield-deb
           path: dist/
