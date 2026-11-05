@@ -460,3 +460,5 @@ kbd { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--borde
 details.tech { margin: 14px 0 4px; }
 .wz-chk { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; font-size: 13.5px; line-height: 1.45; }
 .wz-chk input { margin-top: 3px; flex: none; }
+.wn { max-height: 85vh; overflow: auto; }
+.wn-v { margin: 14px 0 4px; font-size: 14px; }

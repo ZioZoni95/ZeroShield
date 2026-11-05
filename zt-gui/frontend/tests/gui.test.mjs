@@ -706,6 +706,12 @@ await wnUp.click('#ver');
 check('novita: cliccando la versione si riapre quando vuoi', (await wnUp.locator('#dlg').count()) === 1);
 await wnUp.close();
 
+const wnSkip = await wnPage('0.0.6', { 'zs-onboarded-v2': '1', 'zs-seen-version': '0.0.4' });
+const skipTxt = await wnSkip.textContent('#dlg');
+check('novita: chi salta una versione (0.0.4 -> 0.0.6) vede le novita di entrambe', skipTxt.includes('Novità dalle ultime versioni') && skipTxt.includes('Applica chiede di nuovo la password') && skipTxt.includes('Una modalità per ogni protezione'));
+check('novita: la piu recente sta per prima', skipTxt.indexOf('0.0.6') < skipTxt.indexOf('0.0.5'));
+await wnSkip.close();
+
 const wnNew = await wnPage('0.0.4', {});
 check('novita: alla prima installazione niente popup (c\'e il benvenuto)', (await wnNew.locator('#dlg').count()) === 0);
 check('novita: ...ma la versione viene segnata', (await wnNew.evaluate(() => localStorage.getItem('zs-seen-version'))) === '0.0.4');
@@ -715,7 +721,7 @@ const wnOld = await wnPage('0.0.4', { 'zs-onboarded-v2': '1' });
 check('novita: chi aveva gia la GUI (senza versione salvata) le vede', (await wnOld.locator('#dlg').count()) === 1);
 await wnOld.close();
 
-const wnNone = await wnPage('9.9.9-test', { 'zs-onboarded-v2': '1', 'zs-seen-version': '0.0.3' });
+const wnNone = await wnPage('9.9.9-test', { 'zs-onboarded-v2': '1', 'zs-seen-version': '9.9.8' });
 check('novita: versione senza voce -> nessun popup e nessun errore', (await wnNone.locator('#dlg').count()) === 0);
 await wnNone.close();
 

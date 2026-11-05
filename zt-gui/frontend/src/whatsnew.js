@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.6': {
+        title: 'Novità della versione 0.0.6',
+        items: [
+            ['Applica chiede di nuovo la password', 'Se aprivi la finestra dall\'icona nella barra, Applica, Installa e il cambio modalità fallivano con «pkexec must be setuid root». Ora funzionano.'],
+        ],
+        note: 'Per aggiornare anche l\'icona: systemctl --user restart zeroshield-tray, poi riapri la finestra.',
+    },
     '0.0.5': {
         title: 'Novità della versione 0.0.5',
         items: [
@@ -34,13 +41,30 @@ export function baseVersion(v) {
     return String(v || '').replace(/^v/, '').split(/[~+-]/)[0];
 }
 
+// Confronto numerico X.Y.Z (le stringhe "0.0.10" e "0.0.9" non si ordinano bene alfabeticamente).
+export function cmpVersion(a, b) {
+    const pa = baseVersion(a).split('.').map(n => parseInt(n, 10) || 0), pb = baseVersion(b).split('.').map(n => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0); }
+    return 0;
+}
+
+// Le voci da mostrare: tutte quelle piu' nuove dell'ultima versione vista, fino a quella in uso (la piu'
+// recente per prima). Chi salta una versione (0.0.4 -> 0.0.6) non perde le novita' di quella di mezzo.
+export function entriesSince(version, lastSeen) {
+    const cur = baseVersion(version);
+    return Object.keys(WHATS_NEW)
+        .filter(v => cmpVersion(v, cur) <= 0 && (!lastSeen || cmpVersion(v, lastSeen) > 0))
+        .sort((a, b) => cmpVersion(b, a))
+        .map(v => [v, WHATS_NEW[v]]);
+}
+
 // Decide se mostrare le novita'. lastSeen: ultima versione di cui l'utente le ha viste ('' = mai).
 // Prima installazione (mai visto nulla e mai fatto l'onboarding): niente popup, ci pensa il
-// benvenuto; si segna solo la versione. Chi aveva gia' la GUI prima di questa funzione le vede.
+// benvenuto; si segna solo la versione. Chi aveva gia' la GUI prima di questa funzione vede la voce corrente.
 export function pickWhatsNew(version, lastSeen, onboarded) {
     const base = baseVersion(version);
-    const entry = WHATS_NEW[base];
     if (!base || lastSeen === base) return {show: null, remember: false};
     if (!lastSeen && !onboarded) return {show: null, remember: true, base};
-    return {show: entry || null, remember: true, base};
+    const list = lastSeen ? entriesSince(version, lastSeen) : (WHATS_NEW[base] ? [[base, WHATS_NEW[base]]] : []);
+    return {show: list.length ? list : null, remember: true, base};
 }
