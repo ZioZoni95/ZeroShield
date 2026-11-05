@@ -6,6 +6,10 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.10] — 2026-11-05
+
+- Icona nella barra: **blu** in enforce con hook attivo (prima verde), arancione in audit. Dopo `apt install` riavvia l'icona: `systemctl --user restart zeroshield-tray`.
+
 ## [0.0.9] — 2026-11-05
 
 Prima release dopo la 0.0.4. Raccoglie anche le versioni interne 0.0.5, 0.0.6, 0.0.7 e 0.0.8, che non sono state pubblicate: le loro novità sono qui sotto e il

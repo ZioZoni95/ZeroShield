@@ -53,7 +53,7 @@ ZeroShield lavora in due tempi, pensati per chi non vuole scrivere file di confi
 1. **Installa e avvia in `audit`.** Con il pacchetto: `sudo apt install ./zeroshield_*_amd64.deb`, poi
    `sudo /usr/share/zeroshield/scripts/configure_service.sh $USER home` (o il pulsante *Installa e attiva*
    della GUI). In `audit` ZeroShield **osserva e non blocca niente**.
-2. **Guarda l'icona nella barra.** 🟢 verde = protetto (enforce), 🟡 gialla = solo osservazione (audit),
+2. **Guarda l'icona nella barra.** 🔵 blu = protetto (enforce), 🟠 arancione = solo osservazione (audit),
    🔴 rossa = demone spento. Chiudere la finestra non ferma la protezione: è un servizio di sistema.
 3. **Lavora come al solito per qualche giorno**, poi apri la GUI → scheda **Regole**. Un percorso in tre passi
    (*Osserva → Autorizza → Blocca*) ti mostra i programmi che hanno letto i tuoi segreti e quali puoi
