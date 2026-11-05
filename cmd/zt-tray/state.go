@@ -23,7 +23,7 @@ const (
 	stDown     state = iota // demone non raggiungibile: rosso
 	stDegraded              // enforce ma senza hook LSM: giallo
 	stAudit                 // solo registra, non blocca: giallo
-	stOK                    // enforce con hook attivo: verde
+	stOK                    // enforce con hook attivo: blu
 )
 
 // classify traduce lo stato del demone in uno stato d'icona. Un errore e'
@@ -57,7 +57,7 @@ func (s state) label() string {
 func (s state) rgb() color.RGBA {
 	switch s {
 	case stOK:
-		return color.RGBA{0x2e, 0xa0, 0x43, 0xff}
+		return color.RGBA{0x1f, 0x6f, 0xeb, 0xff}
 	case stAudit, stDegraded:
 		return color.RGBA{0xd9, 0x9a, 0x06, 0xff}
 	default:

@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.10': {
+        title: 'Novità della versione 0.0.10',
+        items: [
+            ['Icona blu in enforce', 'L\'icona nella barra è blu quando ZeroShield blocca davvero (enforce) e arancione in audit, quando registra soltanto: la distingui a colpo d\'occhio.'],
+        ],
+        note: 'Per vedere il nuovo colore riavvia l\'icona: systemctl --user restart zeroshield-tray.',
+    },
     '0.0.9': {
         title: 'Novità della versione 0.0.9',
         items: [
