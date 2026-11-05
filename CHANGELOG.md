@@ -4,8 +4,15 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
-Versione in preparazione: **0.0.9** (file `VERSION`). Le 0.0.5, 0.0.6, 0.0.7 e 0.0.8 non sono state rilasciate: le loro novità sono qui sotto e il popup
-«Novità» le mostra tutte insieme a chi aggiorna dalla 0.0.4.
+_Nulla per ora._
+
+## [0.0.9] — 2026-11-05
+
+Prima release dopo la 0.0.4. Raccoglie anche le versioni interne 0.0.5, 0.0.6, 0.0.7 e 0.0.8, che non sono state pubblicate: le loro novità sono qui sotto e il
+popup «Novità» le mostra tutte insieme a chi aggiorna dalla 0.0.4. **Alpha: solo lab.**
+
+Aggiornando dalla 0.0.4: nessuna modifica al formato del config (le chiavi nuove sono facoltative). Il kernel e il demone vanno aggiornati insieme (l'evento del kernel
+è cambiato): dopo `apt install` riavvia `zt-shield` e l'icona (`systemctl --user restart zeroshield-tray`), poi riapri la GUI.
 
 ### Corretti (difetti emersi dal collaudo del 2026-11-05)
 - **`exe=` vuoto negli eventi di blocco**: l'evento del kernel ora porta (dev, inode) del binario (`audit_event` 56 byte invece di 40) e il demone ne ricava il percorso
