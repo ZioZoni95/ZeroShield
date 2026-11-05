@@ -9,7 +9,7 @@ Versione in preparazione: **0.0.9** (file `VERSION`). Le 0.0.5, 0.0.6, 0.0.7 e 0
 
 ### Corretti (difetti emersi dal collaudo del 2026-11-05)
 - **`exe=` vuoto negli eventi di blocco**: l'evento del kernel ora porta (dev, inode) del binario (`audit_event` 56 byte invece di 40) e il demone ne ricava il percorso
-  con un indice delle cartelle dei programmi quando `/proc/<pid>/exe` non c'è più. Se nemmeno l'indice lo conosce il log scrive `exe=(sconosciuto, inode N)`.
+  con un indice delle cartelle dei programmi quando `/proc/<pid>/exe` non c'è più; tra più nomi dello stesso file (coreutils in Rust è un solo binario con decine di nomi) sceglie quello con cui è stato lanciato il processo. Se nemmeno l'indice lo conosce il log scrive `exe=(sconosciuto, inode N)`.
 - **Hard link**: nuovo hook `lsm/inode_link`: creare un secondo nome di un file protetto da un programma non autorizzato è negato in enforce (prima l'alias restava
   leggibile se il nome originale veniva cancellato da un programma autorizzato e il rescan toglieva l'inode dalla mappa).
 - **Radar**: si rilegge ogni 5 secondi (prima a ogni rescan, 30 s) e mostra anche le sorgenti **IPv6** (mappa `xdp_stats6`), raggruppate per /64; IPv4 e IPv6 hanno

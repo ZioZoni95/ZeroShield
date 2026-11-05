@@ -96,7 +96,7 @@ type ParsedEvent struct {
 }
 
 // ExeResolver ricava il percorso di un binario dall'identita' (dev, inode) letta dal kernel. Nil = non disponibile.
-type ExeResolver func(dev, ino uint64) (string, bool)
+type ExeResolver func(dev, ino uint64, comm string) (string, bool)
 
 // Run legge finche' il reader non viene chiuso. ruleName traduce l'id regola in nome.
 // emit, se non nil, riceve ogni evento non soppresso dal rate-limit (per IPC UI).
@@ -169,7 +169,7 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, resolv
 		// NOTA: /proc/PID/exe e' racy, se il PID e' stato riusato punta al processo sbagliato.
 		// Non e' un problema di sicurezza (decide il kernel, non questo log), solo di affidabilita' del dato.
 		exe, _ := os.Readlink(fmt.Sprintf("/proc/%d/exe", ev.PID))
-		exe = ipc.SafeText(resolveExeFallback(exe, ev, resolve))
+		exe = ipc.SafeText(resolveExeFallback(exe, ev, comm, resolve))
 		action := "audit"
 		if ev.Action == 1 {
 			action = "blocked"
@@ -204,11 +204,11 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, resolv
 
 // resolveExeFallback: /proc/PID/exe e' la fonte migliore, ma sparisce se il processo e' gia' uscito (un cat negato
 // termina prima che il demone legga l'evento). Allora si usa l'identita' (dev, inode) portata dal kernel.
-func resolveExeFallback(exe string, ev Event, resolve ExeResolver) string {
+func resolveExeFallback(exe string, ev Event, comm string, resolve ExeResolver) string {
 	if exe != "" || resolve == nil || ev.ExeIno == 0 {
 		return exe
 	}
-	if p, ok := resolve(ev.ExeDev, ev.ExeIno); ok {
+	if p, ok := resolve(ev.ExeDev, ev.ExeIno, comm); ok {
 		return p
 	}
 	return ""

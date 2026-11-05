@@ -47,7 +47,7 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
   e giorni di uso continuo in `audit` prima di `enforce`.
 - [x] ~~**`exe=` vuoto negli eventi `[BLOCCATO]`**~~ — corretto in 0.0.9: il kernel porta nell'evento (dev, inode) del binario e il demone ne ricava il percorso
   da un indice delle cartelle dei programmi (`internal/lsm/exeindex.go`) quando `/proc/<pid>/exe` non c'è più; se nemmeno l'indice lo conosce
-  (una copia in `/tmp`) il log dice `exe=(sconosciuto, inode N)`. **Da verificare sul PC** con lo stesso `cat` negato.
+  (una copia in `/tmp`) il log dice `exe=(sconosciuto, inode N)`. **Visto sul PC (2026-11-05)**: `cat` e `ln` negati con il percorso nel log; per i binari multi-call (coreutils in Rust) si sceglie il nome uguale a `comm`.
 - [x] ~~**Indicizzatori e programmi di sistema**~~ — nella procedura «Proteggi un mio file» compare il suggerimento «Indicizzatore di GNOME (localsearch)», che aggiunge
   in un clic i suoi percorsi (solo se presenti e di root). Gli altri programmi in background (backup) restano da autorizzare uno a uno.
 - [x] ~~**Creazione di hard link non bloccata**~~ — nuovo hook `lsm/inode_link` (0.0.9): `ln` su un file protetto da un programma non autorizzato è negato in
