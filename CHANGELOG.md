@@ -11,6 +11,7 @@ _Nulla per ora._
 - **Avvio all'accensione**: interruttore in Configurazione (`systemctl enable/disable zt-shield` via pkexec, senza avviare/fermare adesso; spegnerlo chiede conferma).
 - Il pacchetto, se `/etc/zt-shield/shield.yaml` ha già `user:`, abilita il demone all'avvio e lo riavvia (`try-restart`) dopo l'aggiornamento. Su una prima installazione non fa nulla (senza `user:` il demone si fermerebbe).
 - Icona nella barra: reimpostata ogni 30 s anche a stato invariato (restava invisibile dopo due riavvii ravvicinati).
+- Regole → guida: in enforce anche il passo 3 «Blocca» risulta completato (prima restava «in corso») e la guida si aggiorna al cambio di modalità.
 
 ## [0.0.10] — 2026-11-05
 

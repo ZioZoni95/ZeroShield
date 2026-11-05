@@ -258,7 +258,7 @@ export function createRulesView(d) {
     function paintSeen(force) {
         const el = document.getElementById('rl-seen');
         if (!el || !model || !draft) return;
-        const sig = JSON.stringify(seenList().map(s => [s.rule, s.exe, s.n])) + norm(draft);
+        const sig = JSON.stringify(seenList().map(s => [s.rule, s.exe, s.n])) + norm(draft) + ((getStatus() || {}).mode || '');
         if (!force && sig === seenSig) return;
         seenSig = sig;
         el.innerHTML = seenHtml();
@@ -312,7 +312,7 @@ export function createRulesView(d) {
     function guideHtml() {
         const st = getStatus() || {}, r = readiness();
         const enforce = st.mode === 'enforce';
-        const step = enforce ? 3 : (r.total === 0 ? 1 : (r.ready.length + r.fixable.length + r.impossible.length > 0 ? 2 : 3));
+        const step = enforce ? 4 : (r.total === 0 ? 1 : (r.ready.length + r.fixable.length + r.impossible.length > 0 ? 2 : 3));
         const s = (n, t, dsc) => `<li class="${n < step ? 'done' : n === step ? 'now' : ''}"><span class="rl-n">${n < step ? '✓' : n}</span><div><b>${t}</b><div class="rl-d">${dsc}</div></div></li>`;
         let msg = '';
         if (enforce) {

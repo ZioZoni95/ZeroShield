@@ -296,6 +296,14 @@ await page.click('#dlg-ok');
 await page.waitForFunction(() => document.getElementById('boot-toggle')?.textContent.includes('Spento'));
 check('avvio: confermato, chiama SetBootEnabled(false)', (await page.evaluate(() => window.__bootCalls.join(','))) === 'true,false');
 
+// Guida delle Regole: in enforce tutti e tre i passi risultano fatti (prima il 3 restava «in corso»)
+await page.click('#sidebar button[data-view="rules"]');
+await page.waitForSelector('.rl-steps');
+await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { mode: 'enforce' }); window.__emit('shield:status', window.__status); });
+await page.waitForFunction(() => document.querySelectorAll('.rl-steps li.done').length === 3);
+check('regole: in enforce i tre passi della guida sono tutti completati', await page.evaluate(() => document.querySelectorAll('.rl-steps li.done').length === 3 && !document.querySelector('.rl-steps li.now')));
+await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { mode: 'audit' }); window.__emit('shield:status', window.__status); });
+
 // race: lettura config lenta + cambio tab subito dopo non deve sovrascrivere la pagina nuova
 await page.evaluate(() => { window.__cfgDelay = 250; });
 await page.click('#sidebar button[data-view="config"]');
