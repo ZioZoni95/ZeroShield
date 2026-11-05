@@ -21,7 +21,13 @@
 // toolchain Go, che non compila mai i .c.
 
 //go:build ignore
+// vmlinux.h e' generato da bpftool dal BTF del kernel di build (non versionato) e, con i kernel recenti,
+// contiene dichiarazioni anticipate come `struct aes_enckey;` che clang segnala (-Wmissing-declarations).
+// Il rumore non e' nostro e nasconderebbe un warning vero in questo file: si silenzia solo per l'include.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 #include "vmlinux.h"
+#pragma clang diagnostic pop
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_core_read.h>
