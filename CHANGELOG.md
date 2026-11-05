@@ -7,6 +7,16 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 Versione in preparazione: **0.0.9** (file `VERSION`). Le 0.0.5, 0.0.6, 0.0.7 e 0.0.8 non sono state rilasciate: le loro novità sono qui sotto e il popup
 «Novità» le mostra tutte insieme a chi aggiorna dalla 0.0.4.
 
+### Corretti (difetti emersi dal collaudo del 2026-11-05)
+- **`exe=` vuoto negli eventi di blocco**: l'evento del kernel ora porta (dev, inode) del binario (`audit_event` 56 byte invece di 40) e il demone ne ricava il percorso
+  con un indice delle cartelle dei programmi quando `/proc/<pid>/exe` non c'è più. Se nemmeno l'indice lo conosce il log scrive `exe=(sconosciuto, inode N)`.
+- **Hard link**: nuovo hook `lsm/inode_link`: creare un secondo nome di un file protetto da un programma non autorizzato è negato in enforce (prima l'alias restava
+  leggibile se il nome originale veniva cancellato da un programma autorizzato e il rescan toglieva l'inode dalla mappa).
+- **Radar**: si rilegge ogni 5 secondi (prima a ogni rescan, 30 s) e mostra anche le sorgenti **IPv6** (mappa `xdp_stats6`), raggruppate per /64; IPv4 e IPv6 hanno
+  ciascuna la propria «rete delle altre sorgenti».
+- **Aggancio del filtro di rete**: si riallinea subito a ogni evento di rete (netlink) oltre che ogni 2 secondi.
+- **Indicizzatore di GNOME**: la procedura «Proteggi un mio file» lo suggerisce (un clic) quando è presente e affidabile.
+
 ### Aggiunte
 - **Il filtro di rete segue le interfacce a caldo** (`internal/xdp/manager.go`): ogni 2 secondi il demone riallinea l'aggancio XDP. Un adattatore USB collegato,
   il Wi-Fi acceso o un'interfaccia ricollegata (indice nuovo) vengono filtrati senza riavviare; una scomparsa rilascia il link. In **automatico** (`interface` vuota)

@@ -8,9 +8,13 @@ export const WHATS_NEW = {
     '0.0.9': {
         title: 'Novità della versione 0.0.9',
         items: [
-            ['Radar collaudato dal vivo', 'Una sorgente che manda tanti pacchetti compare come «da verificare» (pallino ambra) nel giro di mezzo minuto: provato sul computer vero mandando pacchetti a se stessi.'],
+            ['Radar più vivo, anche IPv6', 'Si aggiorna ogni 5 secondi (prima 30) e mostra anche le sorgenti IPv6. Provato con 250 pacchetti a se stessi: compare come «da verificare» (pallino ambra).'],
+            ['Il programma bloccato ha sempre un nome', 'Nei blocchi vedi quale programma è stato fermato anche se è già terminato (prima il campo poteva restare vuoto).'],
+            ['Più difficile aggirare un file protetto', 'Non si può più creare un secondo nome (hard link) di un file protetto con un programma non autorizzato.'],
+            ['Il filtro di rete si aggancia subito', 'Collegando un adattatore USB o accendendo il Wi-Fi, il filtro parte subito, non dopo qualche secondo.'],
+            ['Indicizzatore suggerito', 'Quando proteggi una cartella di documenti, un clic autorizza l\'indicizzatore di GNOME (localsearch) che la scansiona in background.'],
         ],
-        note: 'Il Radar si aggiorna a ogni controllo del demone, circa ogni 30 secondi.',
+        note: 'Il blocco sugli hard link e il nome dei programmi bloccati richiedono il demone nuovo: dopo l\'aggiornamento riavvia il servizio.',
     },
     '0.0.8': {
         title: 'Novità della versione 0.0.8',

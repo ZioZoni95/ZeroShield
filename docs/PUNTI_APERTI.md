@@ -45,12 +45,14 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
   [`TESTING_LAB.md`](TESTING_LAB.md) in `enforce`. Il blocco di base è già stato visto su un PC (vedi sopra): in VM servono le protezioni
   predefinite con i programmi veri (`ssh`, `kubectl`, `git`), `deny_write`, `file_truncate`, l'aggiornamento di un binario autorizzato (inode che cambia)
   e giorni di uso continuo in `audit` prima di `enforce`.
-- [ ] **`exe=` vuoto negli eventi `[BLOCCATO]`** (visto con `cat`): il processo negato esce prima che il demone legga `/proc/<pid>/exe`. Il kernel
-  potrebbe portare nell'evento il percorso del binario invece di lasciarlo risolvere dopo.
-- [ ] **Indicizzatori e altri programmi di sistema** (`localsearch`, backup) vengono negati come gli altri: proteggere cartelle di documenti comuni
-  in `enforce` li rompe. Servono suggerimenti nella GUI e/o un elenco di programmi di sistema da autorizzare con un clic.
-- [ ] **Creazione di hard link non bloccata**: si può creare un secondo nome di un file protetto, ma resta protetto (la chiave è l'inode). Da valutare
-  un hook `inode_link` se serve impedire anche l'alias.
+- [x] ~~**`exe=` vuoto negli eventi `[BLOCCATO]`**~~ — corretto in 0.0.9: il kernel porta nell'evento (dev, inode) del binario e il demone ne ricava il percorso
+  da un indice delle cartelle dei programmi (`internal/lsm/exeindex.go`) quando `/proc/<pid>/exe` non c'è più; se nemmeno l'indice lo conosce
+  (una copia in `/tmp`) il log dice `exe=(sconosciuto, inode N)`. **Da verificare sul PC** con lo stesso `cat` negato.
+- [x] ~~**Indicizzatori e programmi di sistema**~~ — nella procedura «Proteggi un mio file» compare il suggerimento «Indicizzatore di GNOME (localsearch)», che aggiunge
+  in un clic i suoi percorsi (solo se presenti e di root). Gli altri programmi in background (backup) restano da autorizzare uno a uno.
+- [x] ~~**Creazione di hard link non bloccata**~~ — nuovo hook `lsm/inode_link` (0.0.9): `ln` su un file protetto da un programma non autorizzato è negato in
+  enforce. Motivo: se il nome originale spariva (un programma autorizzato lo cancellava), il rescan toglieva l'inode dalla mappa e l'alias restava
+  leggibile. **Da verificare sul PC** (`ln` su `~/zs-test/segreto.txt` deve dare *Permission denied*).
 - [x] ~~**Avviare il demone end-to-end** con `bpf` attivo~~ — fatto il 2026-11-05 su un PC (IPC con GUI e icona, porte in ascolto, hook, canary). Resta da rifare in una VM isolata e con VPN reale.
 - [ ] **VPN in VM con snapshot**, con un tunnel vero: kill-switch (tunnel killato → `tcpdump`
   muto 60 s), `portal`, auto-VPN con NetworkManager, helper Proton. Procedura in
@@ -77,8 +79,8 @@ Chiusi il 2026-10-26 (dettagli in [`FIX_APPLICATI.md`](FIX_APPLICATI.md)): canar
 doppio tag, IPv6 in XDP, `ftruncate` ≥ 6.2, tetto per regola sulle mappe, inotify contro la
 finestra di rescan, preset `glab`.
 
-- [ ] **IPv6 nel radar**: XDP droppa il poisoning v6 ma il radar delle UI è IPv4 (chiave a 4
-  byte); per v6 c'è solo un totale nel log. Richiede una seconda mappa e un campo nuovo in IPC.
+- [x] ~~**IPv6 nel radar**~~ — 0.0.9: seconda mappa `xdp_stats6` (chiave a 16 byte), le sorgenti IPv6 compaiono nel radar e si raggruppano per /64
+  (ogni famiglia ha la sua «rete delle altre sorgenti»). **Da verificare dal vivo** con traffico IPv6 vero.
 - [ ] **IPv6 con extension header**: il poisoning dietro extension header passa (si guarda solo
   il next-header diretto).
 - [ ] **Flatpak** nel preset `browsers`: serve il percorso del binario visto dal kernel, da
@@ -93,8 +95,7 @@ finestra di rescan, preset `glab`.
   Configurazione mostra un riepilogo e il file e si cambia solo `mode`. Un editor a campi (interfaccia, subnet, canary, VPN) con validazione e anteprima
   della differenza richiede scritture sul canale privilegiato (`internal/priv` + polkit): da fare
   con il collaudo in VM, non prima.
-- [x] ~~**GUI/IPC, interfacce non coperte**~~ — `ipc.Status.interfaces` e la scelta nella scheda Rete (0.0.7). Il **seguire a caldo** è in 0.0.8 (ogni 2 secondi, `internal/xdp/manager.go`): provato con interfacce finte, **non** con un adattatore vero collegato mentre il demone gira come root (da fare sul PC: collegare/scollegare l'USB e guardare il journal).
-  Limite: il controllo è a intervalli di 2 secondi (non su eventi netlink), quindi dopo il collegamento c'è una finestra di un paio di secondi senza filtro.
+- [x] ~~**GUI/IPC, interfacce non coperte**~~ — `ipc.Status.interfaces` e la scelta nella scheda Rete (0.0.7). Il **seguire a caldo** è in 0.0.8 (`internal/xdp/manager.go`) e dalla 0.0.9 si riallinea **subito** a ogni evento di rete del kernel (netlink), con il controllo ogni 2 secondi come rete di sicurezza. Provato con interfacce finte e con un evento netlink reale (spegnendo e riaccendendo il Wi-Fi); **non** con un adattatore vero collegato mentre il demone gira come root.
 - [x] ~~**GUI, audit → enforce**: azione «autorizza questo exe»~~ — nella scheda Regole, «Visti da quando hai aperto la finestra» con *Autorizza*, *Rendi affidabile* e l'indicatore di prontezza per Blocca.
 - [ ] **Radar, richieste contro risposte**: la mappa del kernel conta solo `poison` per IP. XDP scarta
   sia le richieste degli altri host (porta di destinazione 5355/5353/137/138, sottofondo normale) sia le

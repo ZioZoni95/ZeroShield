@@ -605,7 +605,7 @@ export function createRulesView(d) {
           <div class="wz-sec"><b>2 · Chi può usarlo</b>
             <p class="rl-d">Solo questi programmi potranno aprire quei file: aggiungi quelli che usi davvero (per esempio il tuo gestore di password).</p>
             <div class="rl-add"><input id="wz-prog" type="text" placeholder="nome o percorso del programma, es. keepassxc" aria-label="Programma"><button class="rl-btn" id="wz-progcheck">Controlla</button></div>
-            <div id="wz-prog-out"></div><div id="wz-allow"></div></div>
+            <div id="wz-prog-out"></div><div id="wz-allow"></div><div id="wz-helpers"></div></div>
           <div class="wz-sec"><b>3 · Nome e comportamento</b>
             <div class="wz-row"><input id="wz-title" type="text" placeholder="es. Wallet crypto" aria-label="Nome" value="${esc(wiz.title)}"></div>
             <div class="rl-d" id="wz-name"></div>
@@ -628,7 +628,24 @@ export function createRulesView(d) {
         };
         const paintAllow = () => {
             $('wz-allow').innerHTML = wiz.allow.map((a, k) => `<span class="rl-chip add" title="${esc(a)}">${esc(baseName(a))}<button class="rl-x" data-wz-rma="${k}" aria-label="Togli ${esc(baseName(a))}">✕</button></span>`).join('') || '<span class="rl-d">Nessun programma ancora.</span>';
-            $('wz-allow').querySelectorAll('[data-wz-rma]').forEach(b => { b.onclick = () => { wiz.allow.splice(+b.dataset.wzRma, 1); paintAllow(); }; });
+            $('wz-allow').querySelectorAll('[data-wz-rma]').forEach(b => { b.onclick = () => { wiz.allow.splice(+b.dataset.wzRma, 1); paintAllow(); paintHelpers(); }; });
+        };
+        // Programmi di sistema che leggono i file in background (indicizzatori): senza, ogni loro scansione compare tra i blocchi.
+        const paintHelpers = () => {
+            const hs = (model.helpers || []).filter(h => (h.found || []).length);
+            const box = $('wz-helpers');
+            if (!hs.length) { box.innerHTML = ''; return; }
+            box.innerHTML = `<div class="rl-d" style="margin-top:8px">Suggeriti se proteggi una cartella di documenti:</div>` + hs.map(h => {
+                const added = h.found.every(p => wiz.allow.includes(p));
+                return `<div class="wz-row"><button class="rl-btn ghost" data-helper="${esc(h.id)}" ${added ? 'disabled' : ''}>${added ? '✓ ' : '+ '}${esc(h.label)}</button><span class="rl-d">${esc(h.why)}</span></div>`;
+            }).join('');
+            box.querySelectorAll('[data-helper]').forEach(b => {
+                b.onclick = () => {
+                    const h = hs.find(x => x.id === b.dataset.helper);
+                    h.found.forEach(p => { if (!wiz.allow.includes(p)) wiz.allow.push(p); });
+                    paintAllow(); paintHelpers();
+                };
+            });
         };
         const paintName = () => { const nm = wzName(); $('wz-name').innerHTML = nm.n ? `Nome tecnico (compare nei log): <span class="rl-mono">${esc(nm.n)}</span>${nm.bad ? ` <span class="bad" style="color:var(--red)">· ${esc(nm.bad)}</span>` : ''}` : ''; };
         const preview = async () => {
@@ -692,7 +709,7 @@ export function createRulesView(d) {
             done();
             render(true);
         };
-        paintPaths(); paintAllow(); paintName(); preview();
+        paintPaths(); paintAllow(); paintHelpers(); paintName(); preview();
         $('wz-file').focus();
     }
 

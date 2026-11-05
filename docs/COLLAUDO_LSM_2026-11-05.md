@@ -42,7 +42,7 @@ Il demone ha registrato ogni tentativo: `🚨 [BLOCCATO] regola=prova PID=… co
 - il comportamento dopo un aggiornamento del binario autorizzato (inode che cambia);
 - una VM isolata con snapshot e il resto di [`TESTING_LAB.md`](TESTING_LAB.md) (pentest, VPN, hardening, FIDO2).
 
-## Difetti emersi
+## Difetti emersi (corretti in 0.0.9, da riverificare sul PC)
 
 - Nella riga `[BLOCCATO]` il campo `exe=` è a volte vuoto (visto con `cat`, non con `rm`, `mv`, `truncate`, `bash`): il processo negato
   esce prima che il demone legga `/proc/<pid>/exe`. Non incide sulla protezione, ma l'evento non dice sempre *quale* programma è stato bloccato.

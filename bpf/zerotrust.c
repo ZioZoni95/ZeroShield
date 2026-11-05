@@ -218,6 +218,40 @@ static __always_inline void count_v6_drop(void) {
         __sync_fetch_and_add(v, 1);
 }
 
+// Radar IPv6: stesso schema di xdp_stats ma con chiave a 16 byte (saddr grezzo). LRU da 1024: gli indirizzi
+// vecchi escono da soli. Serve perche' su una LAN reale il rumore mDNS/LLMNR arriva molto spesso su IPv6
+// (fe80::...) e un radar solo IPv4 non lo mostrava.
+struct v6_key {
+    __u8 addr[16];
+};
+struct xdp_stat6 {
+    __u32 poison_drops;
+    __u32 pad;
+    __u64 last_ns;
+};
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 1024);
+    __type(key, struct v6_key);
+    __type(value, struct xdp_stat6);
+} xdp_stats6 SEC(".maps");
+
+static __always_inline void count_drop6(const struct in6_addr *saddr) {
+    struct v6_key k = {};
+    __builtin_memcpy(k.addr, saddr, 16);
+    struct xdp_stat6 *st = bpf_map_lookup_elem(&xdp_stats6, &k);
+    __u64 now = bpf_ktime_get_ns();
+    if (st) {
+        st->poison_drops++;
+        st->last_ns = now;
+    } else {
+        struct xdp_stat6 init = {};
+        init.poison_drops = 1;
+        init.last_ns = now;
+        bpf_map_update_elem(&xdp_stats6, &k, &init, BPF_ANY);
+    }
+}
+
 // Porte di poisoning: LLMNR (5355), mDNS (5353), NBT-NS (137), NetBIOS-DGM (138).
 // Condiviso da IPv4 e IPv6. sport E dport: la risposta avvelenata viaggia con
 // sport=5355 e dport effimera.
@@ -243,7 +277,12 @@ struct audit_event {
     __u32 rule;
     __u64 ino;
     __u32 action; // 1 = bloccato, 0 = solo audit
-    __u32 pad;    // allinea sizeof a 40/8
+    __u32 pad;    // allinea a 8
+    // Identita' del binario che ha aperto il file (0 se il kernel non l'ha potuta leggere). Il demone la usa
+    // per ricavare il percorso anche quando il processo e' gia' uscito (un `cat` negato sparisce prima che
+    // userspace legga /proc/PID/exe). Layout: ... pad@36, exe_ino@40, exe_dev@48, sizeof=56.
+    __u64 exe_ino;
+    __u64 exe_dev;
 };
 
 // Ring buffer: coda circolare lock-free tra producer (il kernel) e consumer (Go).
@@ -322,6 +361,7 @@ int xdp_shield(struct xdp_md *ctx) {
             return XDP_PASS;
         if (is_poison_port(bpf_ntohs(udp6->source), bpf_ntohs(udp6->dest))) {
             count_v6_drop();
+            count_drop6(&ip6->saddr);
             return XDP_DROP;
         }
         return XDP_PASS;
@@ -478,6 +518,7 @@ static __always_inline int check_access(struct file_key fk, __u32 rule) {
     if (!exe_file)
         return 0;
     struct inode *exe = BPF_CORE_READ(exe_file, f_inode);
+    __u64 exe_ino = 0, exe_dev = 0;
     if (exe) {
         struct allow_key ak = {};
         ak.ino = BPF_CORE_READ(exe, i_ino);
@@ -485,6 +526,8 @@ static __always_inline int check_access(struct file_key fk, __u32 rule) {
         ak.rule = rule; // la stessa chiave privata puo' valere solo per regole diverse
         if (bpf_map_lookup_elem(&allowed_exes, &ak))
             return 0; // binario autorizzato per questa regola
+        exe_ino = ak.ino;
+        exe_dev = ak.dev;
     }
 
     // -- Audit + decisione ----------------------------------------------------------------
@@ -509,6 +552,8 @@ static __always_inline int check_access(struct file_key fk, __u32 rule) {
         event->ino = fk.ino;
         event->action = enforce ? 1 : 0; // 0 = osservato ma consentito (audit)
         event->pad = 0;
+        event->exe_ino = exe_ino;
+        event->exe_dev = exe_dev;
         bpf_ringbuf_submit(event, 0);
     }
 
@@ -534,6 +579,24 @@ static __always_inline int check_access(struct file_key fk, __u32 rule) {
 SEC("lsm/inode_unlink")
 int BPF_PROG(zt_file_unlink, struct inode *dir, struct dentry *dentry) {
     struct inode *victim = BPF_CORE_READ(dentry, d_inode);
+    if (!victim)
+        return 0;
+    struct file_key fk = {};
+    fk.ino = BPF_CORE_READ(victim, i_ino);
+    fk.dev = BPF_CORE_READ(victim, i_sb, s_dev);
+    __u32 *rp = bpf_map_lookup_elem(&protected_files, &fk);
+    if (!rp)
+        return 0;
+    return check_access(fk, *rp & 0x7FFFFFFF);
+}
+
+// Creare un hard link a un file protetto con un altro nome: il file resterebbe leggibile dall'alias se il nome originale
+// sparisce (un programma autorizzato lo cancella o lo rimpiazza) e il rescan lo toglie dalla mappa. Si nega la creazione del
+// link con la stessa whitelist delle altre operazioni: `ln ~/.ssh/id_ed25519 /tmp/x` da un programma non autorizzato
+// viene negato in enforce. old_dentry e' il file esistente, new_dentry il nome da creare.
+SEC("lsm/inode_link")
+int BPF_PROG(zt_inode_link, struct dentry *old_dentry, struct inode *dir, struct dentry *new_dentry) {
+    struct inode *victim = BPF_CORE_READ(old_dentry, d_inode);
     if (!victim)
         return 0;
     struct file_key fk = {};

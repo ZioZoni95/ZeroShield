@@ -79,6 +79,35 @@ func ReadStats(m *ebpf.Map) []SourceStat {
 	return out
 }
 
+// xdpStat6 rispecchia struct xdp_stat6 in zerotrust.c (16 byte: 4+4+8).
+type xdpStat6 struct {
+	Poison uint32
+	_      uint32
+	LastNs uint64
+}
+
+// SourceStat6: una sorgente IPv6 che XDP ha scartato.
+type SourceStat6 struct {
+	IP     [16]byte
+	Poison uint32
+	LastNs uint64
+}
+
+// ReadStats6 legge la LRU per sorgente IPv6 (chiave a 16 byte, network order).
+func ReadStats6(m *ebpf.Map) []SourceStat6 {
+	var out []SourceStat6
+	var k [16]byte
+	var v xdpStat6
+	it := m.Iterate()
+	for it.Next(&k, &v) {
+		out = append(out, SourceStat6{IP: k, Poison: v.Poison, LastNs: v.LastNs})
+	}
+	return out
+}
+
+// IPString6 formatta un indirizzo IPv6 (compresso, es. fe80::1).
+func IPString6(ip [16]byte) string { return net.IP(ip[:]).String() }
+
 // ReadV6Drops: totale dei pacchetti di poisoning IPv6 scartati (contatore aggregato,
 // il radar per-IP e' solo IPv4). 0 se la mappa non si legge.
 func ReadV6Drops(m *ebpf.Map) uint64 {

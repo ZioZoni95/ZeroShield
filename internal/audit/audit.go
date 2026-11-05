@@ -26,7 +26,7 @@ import (
 
 // Event ha lo stesso layout di audit_event in zerotrust.c.
 //
-//	pid@0 (4) | comm@4 (16) | rule@20 (4) | ino@24 (8) | action@32 (4) | pad@36 (4) = 40 byte
+//	pid@0 (4) | comm@4 (16) | rule@20 (4) | ino@24 (8) | action@32 (4) | pad@36 (4) | exe_ino@40 (8) | exe_dev@48 (8) = 56 byte
 //
 // L'allineamento e' quello della struct C, non quello che il compilatore Go
 // sceglierebbe per comodo: per questo c'e' `Pad` esplicito. Se i due layout
@@ -39,6 +39,10 @@ type Event struct {
 	Inode  uint64
 	Action uint32 // 1 = bloccato, 0 = solo audit
 	Pad    uint32
+	// ExeIno/ExeDev: identita' del binario che ha aperto il file (0 = non letta). Permette di ricavare il percorso
+	// anche quando il processo e' gia' uscito.
+	ExeIno uint64
+	ExeDev uint64
 }
 
 // jsonEntry e' la forma in log_format: json.
@@ -52,13 +56,15 @@ type jsonEntry struct {
 	Exe    string `json:"exe,omitempty"`
 	Rule   string `json:"rule"`
 	Inode  uint64 `json:"inode"`
+	ExeIno uint64 `json:"exe_inode,omitempty"`
 }
 
 // decodeEvent legge il payload con offset espliciti little-endian.
 // FIX: prima si usava binary.Read sulla struct Go, che funziona solo perche'
 // il padding Go coincide per fortuna con quello C (24%8==0). Aggiungere un campo
 // o cambiare ordine avrebbe sfasato tutto in silenzio. Ora il layout e' fissato
-// qui: pid@0, comm@4(16), rule@20, ino@24(8), action@32, pad@36, sizeof=40.
+// qui: pid@0, comm@4(16), rule@20, ino@24(8), action@32, pad@36, exe_ino@40(8), exe_dev@48(8), sizeof=56.
+// Un payload piu' corto (40 byte, kernel vecchio) si decodifica comunque, senza identita' del binario.
 func decodeEvent(raw []byte) (Event, bool) {
 	var ev Event
 	if len(raw) < 40 {
@@ -70,6 +76,10 @@ func decodeEvent(raw []byte) (Event, bool) {
 	ev.Inode = binary.LittleEndian.Uint64(raw[24:32])
 	ev.Action = binary.LittleEndian.Uint32(raw[32:36])
 	ev.Pad = binary.LittleEndian.Uint32(raw[36:40])
+	if len(raw) >= 56 {
+		ev.ExeIno = binary.LittleEndian.Uint64(raw[40:48])
+		ev.ExeDev = binary.LittleEndian.Uint64(raw[48:56])
+	}
 	return ev, true
 }
 
@@ -82,13 +92,17 @@ type ParsedEvent struct {
 	Exe    string
 	Rule   string
 	Inode  uint64
+	ExeIno uint64
 }
+
+// ExeResolver ricava il percorso di un binario dall'identita' (dev, inode) letta dal kernel. Nil = non disponibile.
+type ExeResolver func(dev, ino uint64) (string, bool)
 
 // Run legge finche' il reader non viene chiuso. ruleName traduce l'id regola in nome.
 // emit, se non nil, riceve ogni evento non soppresso dal rate-limit (per IPC UI).
 //
 // Va eseguito in una goroutine: il loop e' bloccante per costruzione.
-func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, emit func(ParsedEvent)) {
+func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, resolve ExeResolver, emit func(ParsedEvent)) {
 	// Encoder riusabile: non va ricreato per ogni evento, altrimenti si perde
 	// il buffer interno. Su stdout perche' il log di testo va su stderr (log) e
 	// il JSON su stdout: cosi' `zt-shield | jq` funziona senza miscelare i due.
@@ -155,20 +169,20 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, emit f
 		// NOTA: /proc/PID/exe e' racy, se il PID e' stato riusato punta al processo sbagliato.
 		// Non e' un problema di sicurezza (decide il kernel, non questo log), solo di affidabilita' del dato.
 		exe, _ := os.Readlink(fmt.Sprintf("/proc/%d/exe", ev.PID))
-		exe = ipc.SafeText(exe)
+		exe = ipc.SafeText(resolveExeFallback(exe, ev, resolve))
 		action := "audit"
 		if ev.Action == 1 {
 			action = "blocked"
 		}
 		rule := ruleName(ev.Rule)
 		if emit != nil {
-			emit(ParsedEvent{Action: action, PID: ev.PID, Comm: comm, Exe: exe, Rule: rule, Inode: ev.Inode})
+			emit(ParsedEvent{Action: action, PID: ev.PID, Comm: comm, Exe: exe, Rule: rule, Inode: ev.Inode, ExeIno: ev.ExeIno})
 		}
 
 		if format == "json" {
 			enc.Encode(jsonEntry{
 				Time: time.Now().UTC().Format(time.RFC3339), Action: action, PID: ev.PID,
-				Comm: comm, Exe: exe, Rule: rule, Inode: ev.Inode,
+				Comm: comm, Exe: exe, Rule: rule, Inode: ev.Inode, ExeIno: ev.ExeIno,
 			})
 			continue
 		}
@@ -180,6 +194,22 @@ func Run(rd *ringbuf.Reader, format string, ruleName func(uint32) string, emit f
 		}
 		// `exe` e' il path del binario autoreale; vuoto se il processo e' gia' sparito.
 		// Comunque compare, perche' e' la pista che dice quale regola va allargata.
+		if exe == "" && ev.ExeIno != 0 {
+			// Ne' /proc ne' l'indice hanno dato un percorso: resta l'identita' per cercarlo a mano (find / -xdev -inum N).
+			exe = fmt.Sprintf("(sconosciuto, inode %d)", ev.ExeIno)
+		}
 		log.Printf("%s regola=%s PID=%d comm='%s' exe=%s inode=%d", icon, rule, ev.PID, comm, exe, ev.Inode)
 	}
+}
+
+// resolveExeFallback: /proc/PID/exe e' la fonte migliore, ma sparisce se il processo e' gia' uscito (un cat negato
+// termina prima che il demone legga l'evento). Allora si usa l'identita' (dev, inode) portata dal kernel.
+func resolveExeFallback(exe string, ev Event, resolve ExeResolver) string {
+	if exe != "" || resolve == nil || ev.ExeIno == 0 {
+		return exe
+	}
+	if p, ok := resolve(ev.ExeDev, ev.ExeIno); ok {
+		return p
+	}
+	return ""
 }

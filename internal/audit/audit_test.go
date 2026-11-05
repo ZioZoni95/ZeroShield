@@ -37,3 +37,45 @@ func TestDecodeEventShort(t *testing.T) {
 		t.Error("payload nil accettato")
 	}
 }
+
+func TestDecodeEventWithExeIdentity(t *testing.T) {
+	raw := append(sampleRaw(), make([]byte, 16)...)
+	binary.LittleEndian.PutUint64(raw[40:48], 1234567)
+	binary.LittleEndian.PutUint64(raw[48:56], 0x10301)
+	ev, ok := decodeEvent(raw)
+	if !ok || ev.ExeIno != 1234567 || ev.ExeDev != 0x10301 || ev.Inode != 9740993 {
+		t.Fatalf("identita' del binario non letta: %+v", ev)
+	}
+	// Il payload vecchio (40 byte) resta valido, senza identita'.
+	old, ok := decodeEvent(sampleRaw())
+	if !ok || old.ExeIno != 0 || old.ExeDev != 0 {
+		t.Fatalf("payload a 40 byte: %+v", old)
+	}
+}
+
+func TestResolveExeFallback(t *testing.T) {
+	res := func(dev, ino uint64) (string, bool) {
+		if dev == 7 && ino == 42 {
+			return "/usr/bin/cat", true
+		}
+		return "", false
+	}
+	// /proc ha risposto: vale lui, l'indice non si consulta.
+	if got := resolveExeFallback("/proc/risposta", Event{ExeIno: 42, ExeDev: 7}, res); got != "/proc/risposta" {
+		t.Errorf("deve vincere /proc: %q", got)
+	}
+	// /proc vuoto (processo uscito): si usa l'identita' del kernel.
+	if got := resolveExeFallback("", Event{ExeIno: 42, ExeDev: 7}, res); got != "/usr/bin/cat" {
+		t.Errorf("fallback sull'indice: %q", got)
+	}
+	// Identita' sconosciuta o assente: vuoto, mai un percorso inventato.
+	if got := resolveExeFallback("", Event{ExeIno: 99, ExeDev: 7}, res); got != "" {
+		t.Errorf("inode sconosciuto: %q", got)
+	}
+	if got := resolveExeFallback("", Event{}, res); got != "" {
+		t.Errorf("senza identita': %q", got)
+	}
+	if got := resolveExeFallback("", Event{ExeIno: 42, ExeDev: 7}, nil); got != "" {
+		t.Errorf("senza resolver: %q", got)
+	}
+}
