@@ -1,0 +1,28 @@
+# Copyright (c) 2026 ZioZoni95
+# SPDX-License-Identifier: MIT
+# Icona di stato di ZeroShield, come servizio UTENTE di systemd: parte con la sessione grafica,
+# riparte da sola se si ferma e il pacchetto la riavvia dopo un aggiornamento (il processo
+# vecchio continuerebbe a girare con il vecchio binario). Non e' root e non protegge niente:
+# fermarla non spegne ZeroShield, che e' il servizio di sistema zt-shield.
+#
+# Pacchetto .deb: abilitata per tutti gli utenti (systemctl --global enable).
+# Da sorgenti:   install -Dm644 packaging/zeroshield-tray.service ~/.config/systemd/user/zeroshield-tray.service
+#                systemctl --user enable --now zeroshield-tray
+[Unit]
+Description=ZeroShield — icona di stato nella barra
+Documentation=file:///usr/share/doc/zeroshield/README.md
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# env cerca zt-tray nel PATH dell'utente: va bene sia /usr/bin (pacchetto) sia /usr/local/bin (sorgenti).
+ExecStart=/usr/bin/env zt-tray
+# Esce con 0 se un'altra icona e' gia' attiva (singola istanza): non va rilanciata.
+Restart=on-failure
+RestartSec=3
+# Niente ProtectSystem/ProtectHome/PrivateTmp: con il filesystem in sola lettura la connessione al
+# socket /run/zt-shield non riesce e l'icona direbbe sempre «demone spento» (provato).
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

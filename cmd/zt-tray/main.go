@@ -193,12 +193,23 @@ func (t *tray) openGUI() {
 	if guiRunning("/proc") {
 		return
 	}
-	cmd := exec.Command("zt-gui")
+	cmd := guiCommand()
 	if err := cmd.Start(); err != nil {
 		notify("ZeroShield", "La finestra non è installata (zt-gui). Lo stato resta visibile dall'icona e con zt-tui.")
 		return
 	}
 	go func() { _ = cmd.Wait() }() // evita lo zombie
+}
+
+// guiCommand: sotto systemd la GUI parte in uno scope proprio. Come figlia del servizio finirebbe
+// nello stesso cgroup e chiuderebbe con lui a ogni riavvio dell'icona (aggiornamento incluso).
+func guiCommand() *exec.Cmd {
+	if os.Getenv("INVOCATION_ID") != "" {
+		if p, err := exec.LookPath("systemd-run"); err == nil {
+			return exec.Command(p, "--user", "--scope", "--quiet", "--collect", "zt-gui") //nolint:gosec // percorsi fissi
+		}
+	}
+	return exec.Command("zt-gui")
 }
 
 // notify usa direttamente org.freedesktop.Notifications: niente dipendenza in piu'.
