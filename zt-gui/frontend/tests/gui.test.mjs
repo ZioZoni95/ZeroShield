@@ -331,6 +331,55 @@ const tb = await page.evaluate(() => ({ n: document.querySelectorAll('.faq detai
 check('guida: problemi comuni con comandi copiabili (permission denied, bpf, interfacce)', tb.n >= 6 && tb.copy >= 5 && tb.txt.includes('permission denied') && tb.txt.includes('bpf') && tb.txt.includes('interface:'), `domande=${tb.n} copia=${tb.copy}`);
 await page.click('[data-gtab="start"]');
 
+
+// --- Senza demone: primo avvio e demone spento (demo con comandi copiabili, preflight nuovo)
+async function offlinePage(svc) {
+  const pg = await browser.newPage({ viewport: { width: 1100, height: 760 }, timezoneId: 'Europe/Rome' });
+  pg.on('pageerror', e => errors.push(String(e)));
+  await pg.addInitScript((svcState) => {
+    window.go = { main: { App: {
+      GetStatus: async () => { throw new Error('dial unix /run/zt-shield/api.sock: no such file or directory'); },
+      SocketPath: async () => '/run/zt-shield/api.sock', Version: async () => '0.0.4',
+      ServiceState: async () => svcState,
+      Preflight: async () => [
+        { name: 'Kernel ≥ 5.15 (7.0.0)', ok: true },
+        { name: 'Servizio zt-shield (installato o installabile)', ok: true },
+        { name: 'Utente protetto (user:) nel config', ok: false, hint: 'lo imposta l\'installazione guidata, oppure: sudoedit /etc/zt-shield/shield.yaml' },
+      ],
+    } } };
+    window.runtime = { EventsOnMultiple: () => () => {}, EventsOff: () => {} };
+    localStorage.setItem('zs-onboarded-v2', '1');
+  }, svc);
+  await pg.goto(`http://127.0.0.1:${port}/`);
+  await pg.waitForSelector('.offline');
+  await pg.waitForSelector('#preflight .check');
+  return pg;
+}
+const first = await offlinePage('missing');
+const frTxt = await first.textContent('#content');
+check('primo avvio: propone la demo con dati finti', frTxt.includes('Prova con dati finti') && frTxt.includes('Benvenuto'));
+const frCopy = await first.evaluate(() => [...document.querySelectorAll('.offline details [data-copy]')].map(b => b.dataset.copy));
+check('primo avvio: i tre comandi della demo sono copiabili (mockd, gui, pkill)', frCopy.length === 3 && frCopy[0] === 'ZT_SOCKET=/tmp/z.sock zt-mockd &' && frCopy[1] === 'ZT_SOCKET=/tmp/z.sock zt-gui' && frCopy[2] === 'pkill zt-mockd', frCopy.join(' | '));
+const frPre = await first.textContent('#preflight');
+check('preflight: mostra servizio e utente protetto, con il suggerimento quando manca user:', frPre.includes('Servizio zt-shield') && frPre.includes('Utente protetto') && frPre.includes('sudoedit') && !frPre.includes('install_service.sh'), frPre.replace(/\s+/g, ' ').slice(0, 120));
+check('preflight: il controllo mancante e rosso, gli altri verdi', (await first.locator('#preflight .check.ko').count()) === 1 && (await first.locator('#preflight .check.ok').count()) === 2);
+await first.close();
+
+const off = await offlinePage('inactive');
+const offTxt = await off.textContent('#content');
+check('demone spento: spiega cosa manca e offre installa/attiva', offTxt.includes('PROTEZIONE DISATTIVA') && offTxt.includes('Installa e attiva'));
+await off.click('.offline details summary');
+const offCopy = await off.evaluate(() => [...document.querySelectorAll('.offline [data-copy]')].map(b => b.dataset.copy));
+check('demone spento: stessa demo, stessi comandi copiabili', offCopy.includes('ZT_SOCKET=/tmp/z.sock zt-mockd &') && offCopy.includes('ZT_SOCKET=/tmp/z.sock zt-gui') && offCopy.includes('pkill zt-mockd'));
+check('demone spento: "Solo avvia" avverte che serve user: nel config', (await off.textContent('.offline')).includes('Serve user: nel config'));
+await off.close();
+
+// Guida con demone acceso: la demo e in fondo alla scheda "Per iniziare"
+await page.click('#sidebar button[data-view="guide"]');
+await page.waitForTimeout(100);
+const gDemo = await page.evaluate(() => [...document.querySelectorAll('#content [data-copy]')].map(b => b.dataset.copy).filter(c => /zt-mockd|zt-gui|pkill/.test(c)));
+check('guida: la demo e nella scheda "Per iniziare" con gli stessi comandi', gDemo.length === 3, gDemo.join(' | '));
+
 if (shots) {
   fs.mkdirSync(shots, { recursive: true });
   for (const v of ['status', 'events', 'net', 'guide']) {

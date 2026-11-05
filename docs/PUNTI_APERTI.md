@@ -89,6 +89,12 @@ finestra di rescan, preset `glab`.
   `ipc.SourceStat`, da collaudare in VM.
 - [ ] **Journal, rumore**: i warning «regola X: binario Y non risolto» escono a ogni rescan (ogni
   30 s) e coprono i messaggi utili. Basta avvisare una volta per binario.
+- [ ] **`configure_service.sh` da provare con un `.deb` vero**: i test usano percorsi e `systemctl` finti. Va
+  provato in una VM con il pacchetto installato (utente, profilo, avvio in audit, dropin del canary, fallimento
+  se `bpf` manca tra gli LSM) e dalla GUI con `pkexec`.
+- [ ] **Installazione da sorgente e da pacchetto non si mescolano**: su una macchina con la unit del
+  pacchetto, `install_service.sh` creerebbe una seconda copia in `/usr/local/sbin`. La GUI sceglie lo script
+  giusto, ma a mano nulla lo impedisce: valutare un controllo nello script.
 - [ ] **Falso positivo in audit**: il prompt `oh-my-posh` legge i file della regola `cloud-creds`
   (compare come `[AUDIT]` a ogni prompt). In enforce verrebbe bloccato a ogni comando: capire se
   va nei binari consentiti del preset o se il prompt va configurato per non leggerli.

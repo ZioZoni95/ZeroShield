@@ -80,20 +80,24 @@ func Stop() error {
 	return nil
 }
 
-// InstallScript cerca install_service.sh: prima installato di sistema
+// packagedUnit: la unit che installa il pacchetto .deb. Se c'e', il servizio e' gia' sul
+// sistema con binario e unit del pacchetto: resta solo da configurare (utente e profilo).
+const packagedUnit = "/usr/lib/systemd/system/zt-shield.service"
+
+// findScript cerca uno script del progetto: prima installato di sistema
 // (/usr/share/zeroshield, da .deb), poi sorgente accanto al binario GUI/TUI.
 // Ritorna "" se assente: il chiamante mostra il comando manuale.
-func InstallScript() string {
+func findScript(name string) string {
 	cands := []string{
-		"/usr/share/zeroshield/scripts/install_service.sh",
-		"/usr/local/share/zeroshield/scripts/install_service.sh",
+		"/usr/share/zeroshield/scripts/" + name,
+		"/usr/local/share/zeroshield/scripts/" + name,
 	}
 	// Dev: risali dall'eseguibile (es. zt-gui/build/bin/zt-gui o bin/zt-tui)
-	// fino a trovare scripts/install_service.sh nel tree sorgente.
+	// fino a trovare scripts/<name> nel tree sorgente.
 	if exe, err := os.Executable(); err == nil {
 		d := filepath.Dir(exe)
 		for i := 0; i < 5; i++ {
-			cands = append(cands, filepath.Join(d, "scripts/install_service.sh"))
+			cands = append(cands, filepath.Join(d, "scripts", name))
 			d = filepath.Dir(d)
 		}
 	}
@@ -105,12 +109,39 @@ func InstallScript() string {
 	return ""
 }
 
-// Install esegue install_service.sh <utente> <profilo> via pkexec.
-// Crea config, unit e abilita: dopo, Start() non serve (già enable --now? no:
-// install abilita; lo start segue). Ritorna output per debug.
+// InstallScript: install_service.sh, per chi compila dai sorgenti (copia il binario in
+// /usr/local/sbin e scrive una propria unit).
+func InstallScript() string { return findScript("install_service.sh") }
+
+// ConfigureScript: configure_service.sh, per chi ha installato il .deb (scrive solo
+// user/profile nel config e avvia il servizio del pacchetto).
+func ConfigureScript() string { return findScript("configure_service.sh") }
+
+// pickInstaller sceglie lo script giusto. Con la unit del pacchetto si usa SOLO
+// configure_service.sh: install_service.sh sovrascriverebbe binario e unit del pacchetto
+// con una seconda copia in /usr/local/sbin. Senza unit del pacchetto vale il percorso da sorgente.
+func pickInstaller(packaged bool, configure, install string) string {
+	if packaged {
+		return configure
+	}
+	return install
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
+}
+
+// Install configura e avvia il servizio via pkexec: configure_service.sh se il servizio e'
+// quello del pacchetto .deb, install_service.sh se si compila dai sorgenti. In entrambi i casi
+// scrive utente e profilo nel config e parte in audit. Ritorna l'output per debug.
 func Install(user, profile string) error {
-	script := InstallScript()
+	packaged := fileExists(packagedUnit)
+	script := pickInstaller(packaged, ConfigureScript(), InstallScript())
 	if script == "" {
+		if packaged {
+			return fmt.Errorf("configure_service.sh non trovato: imposta user: in %s e lancia: sudo systemctl enable --now %s", ConfigPath, Unit)
+		}
 		return fmt.Errorf("install_service.sh non trovato: da sorgente lancia scripts/install_service.sh nel repo")
 	}
 	if user == "" {
@@ -182,8 +213,54 @@ func Preflight() []Check {
 		{Name: "BTF (/sys/kernel/btf/vmlinux)", OK: btfOK, Hint: ifThen(!btfOK, "kernel senza debug info: cambia kernel")},
 		{Name: "BPF negli LSM attivi", OK: lsmOK, Hint: ifThen(!lsmOK, "append lsm=...,bpf in GRUB + reboot (README)")},
 		{Name: "ufw (firewall)", OK: ufwErr == nil, Hint: ifThen(ufwErr != nil, "sudo apt install ufw (opzionale ma consigliato)")},
-		{Name: "Script install_service.sh", OK: InstallScript() != "", Hint: ifThen(InstallScript() == "", "manca nei path noti")},
+		serviceCheck(),
+		userCheck(),
 	}
+}
+
+// serviceCheck: il servizio c'e' gia' (unit del pacchetto o di una installazione precedente)
+// oppure si puo' installare da uno script. Prima controllava solo install_service.sh, che il
+// .deb non contiene: su una macchina installata dal pacchetto risultava rosso a torto.
+func serviceCheck() Check {
+	installed := fileExists(packagedUnit) || fileExists("/etc/systemd/system/"+Unit)
+	installable := InstallScript() != "" || ConfigureScript() != ""
+	return Check{
+		Name: "Servizio zt-shield (installato o installabile)",
+		OK:   installed || installable,
+		Hint: ifThen(!(installed || installable), "installa il pacchetto .deb, o da sorgente lancia scripts/install_service.sh"),
+	}
+}
+
+// userCheck: senza user: nel config il demone, come servizio, si ferma (sotto systemd non
+// esiste SUDO_USER). Il config e' leggibile da tutti (0644): niente root per controllarlo.
+func userCheck() Check {
+	data, err := os.ReadFile(ConfigPath)
+	u := ""
+	if err == nil {
+		u = ParseUser(string(data))
+	}
+	return Check{
+		Name: "Utente protetto (user:) nel config",
+		OK:   u != "",
+		Hint: ifThen(u == "", "lo imposta l'installazione guidata, oppure: sudoedit "+ConfigPath),
+	}
+}
+
+// ParseUser rende il valore della riga attiva "user:" (ignora le righe commentate),
+// "" se manca o e' vuoto (user: "").
+func ParseUser(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "user:") {
+			continue
+		}
+		v := strings.TrimSpace(strings.TrimPrefix(line, "user:"))
+		if i := strings.Index(v, " #"); i >= 0 { // commento a fine riga
+			v = strings.TrimSpace(v[:i])
+		}
+		return strings.Trim(v, `"'`)
+	}
+	return ""
 }
 
 func ifThen(c bool, s string) string {

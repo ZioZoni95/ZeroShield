@@ -21,11 +21,22 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 - GUI, Guida a schede (Per iniziare, Le schermate, Glossario, Problemi comuni), con punti di controllo
   dal vivo (demone, hook LSM, XDP, modalità, VPN).
 
+- `scripts/configure_service.sh <utente> [profilo]`, incluso nel pacchetto: scrive `user:` e `profile:` nel
+  config (con copia di sicurezza, senza perdere i commenti), parte sempre in `audit` e avvia il servizio
+  del pacchetto, senza copiare binari né scrivere un'altra unit. La GUI lo usa al posto di
+  `install_service.sh` quando la unit del pacchetto esiste (`install_service.sh` resta per chi compila dai
+  sorgenti). Test con comandi finti in `scripts/test_configure.sh`.
+- GUI: sezione demo unica e con comandi copiabili (mock, GUI collegata al mock, arresto), uguale al primo
+  avvio, a demone spento e nella Guida.
+
 ### Cambiati
 - **Un solo pacchetto `.deb`**, `zeroshield`, con demone, TUI e GUI. Sostituisce `zeroshield-gui`
   (`Replaces`/`Conflicts`); GTK e WebKit sono `Recommends` (server: `--no-install-recommends`).
   **Migrazione:** chi ha `zeroshield-gui` installa il nuovo `zeroshield_*.deb` e apt lo sostituisce;
   la config in `/etc/zt-shield/shield.yaml` non viene toccata. `make package-gui` non esiste più.
+- Controlli preliminari della GUI: il vecchio «Script install_service.sh» (assente dal `.deb`, quindi rosso
+  a torto sulle macchine installate dal pacchetto) è sostituito da «Servizio zt-shield (installato o
+  installabile)» e «Utente protetto (`user:`) nel config».
 - La CI costruisce e verifica il `.deb` unico nel job GUI (contiene demone, TUI e GUI).
 - README riscritto da zero e allineato alla repo: stato verificato per componente, contenuto e
   indipendenza di ogni release, configurazione, test e CI.

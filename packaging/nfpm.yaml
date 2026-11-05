@@ -73,6 +73,10 @@ contents:
   - src: scripts/check_prereqs.sh
     dst: /usr/share/zeroshield/scripts/check_prereqs.sh
     file_info: { mode: 0755 }
+  # Imposta utente e profilo nel config e avvia il servizio del pacchetto (usato anche dalla GUI).
+  - src: scripts/configure_service.sh
+    dst: /usr/share/zeroshield/scripts/configure_service.sh
+    file_info: { mode: 0755 }
   # VPN: kill-switch nftables, auto-VPN per NetworkManager, helper Proton.
   # Nessuno parte da solo (vedi docs/VPN_SETUP.md): li lanci tu, in VM la prima volta.
   - src: scripts/vpn_killswitch.sh

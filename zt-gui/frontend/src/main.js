@@ -282,6 +282,17 @@ async function renderConfig() {
     if (be) be.onclick = target('enforce');
 }
 
+// Demo: un finto demone con dati inventati, per vedere la GUI senza root, senza installare e
+// senza toccare il demone vero. E' lo stesso blocco ovunque si proponga la demo (primo avvio,
+// demone spento, Guida), cosi' i comandi sono sempre gli stessi e copiabili.
+function demoBlock() {
+    return `<p class="sub">Mostra le schermate con dati inventati (compreso un canary finto ogni pochi secondi): non prova la protezione e non tocca il demone vero.</p>
+    ${codeRow('ZT_SOCKET=/tmp/z.sock zt-mockd &')}
+    <div style="margin-top:6px">${codeRow('ZT_SOCKET=/tmp/z.sock zt-gui')}</div>
+    <div style="margin-top:6px">${codeRow('pkill zt-mockd')}</div>
+    <p class="sub" style="margin:6px 0 0">Il secondo comando apre una seconda finestra collegata al finto demone; l'ultimo lo ferma. Dai sorgenti: <span class="mono">./bin/zt-mockd</span> e <span class="mono">./zt-gui/build/bin/zt-gui</span>.</p>`;
+}
+
 // Prima apertura vera: non "offline", ma setup. Mai-configurato (servizio
 // missing) = percorso guidato; demone spento ma installato = riattiva.
 // Distinguerli è tutta la differenza tra prodotto e demo.
@@ -308,8 +319,8 @@ async function renderFirstRun() {
       <div class="card"><div class="k">2 · Osserva</div><div class="sub">Tab Eventi: cosa toccherebbe bloccare.</div></div>
       <div class="card"><div class="k">3 · Stringi</div><div class="sub">Passa a enforce solo a log puliti.</div></div>
     </div>
-    <details><summary>Demo finta senza installare</summary>
-    <div class="card" style="margin-top:10px"><div><code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code></div><div class="sub">riapri la GUI con stesso socket</div></div></details>
+    <details><summary>Prova con dati finti (senza installare)</summary>
+    <div style="margin-top:10px">${demoBlock()}</div></details>
     </div>`;
     const wire = (id, fn) => {
         const b = document.getElementById(id);
@@ -360,9 +371,9 @@ function renderOffline() {
     <div id="preflight"><span class="sub">Verifica prerequisiti…</span></div>
     <details><summary>Altri modi (terminale, demo finta)</summary>
     <div class="cards" style="margin-top:10px">
-      <div class="card"><div class="k">Solo avvia (già installato)</div><div><button class="chip on" id="svc-start">▶ Attiva protezione</button></div><div class="sub">enable --now via pkexec</div></div>
+      <div class="card"><div class="k">Solo avvia (già installato)</div><div><button class="chip on" id="svc-start">▶ Attiva protezione</button></div><div class="sub">enable --now via pkexec. Serve <code>user:</code> nel config (vedi i controlli sopra).</div></div>
       <div class="card"><div class="k">A mano (VM)</div><div><code>sudo systemctl enable --now zt-shield</code></div><div class="sub">prima <code>user:</code> in shield.yaml · audit</div></div>
-      <div class="card"><div class="k">Demo finta</div><div><code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code></div><div class="sub">riapri la GUI con stesso socket</div></div>
+      <div class="card"><div class="k">Prova con dati finti</div>${demoBlock()}</div>
     </div></details>${guide}</div>`;
     const wire = (id, fn) => {
         const b = document.getElementById(id);
@@ -943,7 +954,7 @@ function guideStart() {
     return `${sec('Il tuo stato')}${guideChecklist()}
     <p><button class="chip on" id="guide-replay">↺ Rivedi l'introduzione guidata</button></p>
     ${renderGuideBody()}
-    <p class="sub">Solo per provare l'interfaccia, senza root: <code>ZT_SOCKET=/tmp/z.sock zt-mockd &amp;</code> e la GUI con lo stesso socket (dati finti).</p>`;
+    ${sec('Prova con dati finti')}${demoBlock()}`;
 }
 
 const GUIDE_SCREENS = [

@@ -11,11 +11,13 @@ fi
 cat <<'MSG'
 ZeroShield installato (NON avviato).
 
-  1. Imposta l'utente da proteggere:  sudoedit /etc/zt-shield/shield.yaml   (user: ...)
-  2. Verifica il kernel:              sudo zt-probe -xdp-lo
+  1. Verifica il kernel:              sudo zt-probe -xdp-lo
      e che /sys/kernel/security/lsm contenga "bpf"
-  3. Avvia in audit:                  sudo systemctl enable --now zt-shield
-  4. Log / interfaccia:               journalctl -u zt-shield -f   |   zt-tui   |   zt-gui (menu applicazioni)
+  2. Imposta l'utente e avvia in audit (un solo comando):
+       sudo /usr/share/zeroshield/scripts/configure_service.sh $USER home
+     oppure dalla GUI (zt-gui): «Installa e attiva».
+     A mano: sudoedit /etc/zt-shield/shield.yaml (user: ...) e sudo systemctl enable --now zt-shield
+  3. Log / interfaccia:               journalctl -u zt-shield -f   |   zt-tui   |   zt-gui (menu applicazioni)
 
 VPN (facoltativa, provala prima in VM): /usr/share/doc/zeroshield/VPN_SETUP.md
   script in /usr/share/zeroshield/scripts/ (vpn_killswitch.sh, nm_vpn.sh, proton_*.sh)
