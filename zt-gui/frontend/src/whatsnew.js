@@ -11,6 +11,7 @@ export const WHATS_NEW = {
             ['Chi manda dove, dopo aver letto un segreto', 'In Eventi trovi le connessioni in uscita dei programmi che hanno appena letto un tuo segreto: programma, destinazione e se è la rete locale o Internet. Si segnala la prima volta che compare una destinazione nuova. Usa il filtro «uscita».'],
         ],
         note: 'È solo un registro: non blocca niente e non vede il contenuto. Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.19': {
         title: 'Novità della versione 0.0.19',
         items: [
