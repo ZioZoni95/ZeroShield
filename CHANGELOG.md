@@ -6,6 +6,12 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.17] — 2026-11-06
+
+- **XDP, IPv6 con extension header**: prima un pacchetto con una extension header passava senza controllo (aggirabile di proposito). Ora si attraversano fino a 6 header noti (hop-by-hop, routing, destination options, fragment solo se primo frammento, AH) fino all'UDP; ESP, header sconosciute, catene più lunghe e frammenti non-primi passano. Test `TestXDPIPv6ExtensionHeaders` (14 casi, sul vero programma, in CI come root). **Non ancora visto con il verifier del kernel in questa sessione: lo esegue la CI (`zt-probe`).**
+- **Watcher**: test di stress (300 sostituzioni atomiche in 2 s → 3 rescan, e sempre un rescan dopo l'ultima).
+- **Docs**: `docs/COLLAUDO_HARDENING.md`, procedura per VM (rename ZS-005, `deny_write`, truncate, frammenti, IPv6, fd ereditati).
+
 ## [0.0.16] — 2026-11-06
 
 Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul sorgente.

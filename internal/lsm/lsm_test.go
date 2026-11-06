@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -260,4 +261,57 @@ func TestWatcherFiresOnRenameIntoPlace(t *testing.T) {
 	if w.Watched() != 0 {
 		t.Error("Set(nil) deve togliere le watch")
 	}
+}
+
+// Stress: tante sostituzioni atomiche in rapida successione. Il watcher non deve perdere l'ultima
+// (dopo l'ultimo rename scatta sempre un rescan, che allinea le mappe) e non deve fare un rescan per file.
+func TestWatcherStressRapidRenames(t *testing.T) {
+	dir := t.TempDir()
+	var mu sync.Mutex
+	var fires []time.Time
+	w, err := NewWatcher(func() { mu.Lock(); fires = append(fires, time.Now()); mu.Unlock() })
+	if err != nil {
+		t.Skipf("inotify non disponibile: %v", err)
+	}
+	defer w.Close()
+	w.Set([]string{dir})
+
+	final := filepath.Join(dir, "id_ed25519")
+	start := time.Now()
+	var last time.Time
+	for i := 0; i < 300; i++ {
+		tmp := filepath.Join(dir, fmt.Sprintf(".id.%d.tmp", i))
+		if err := os.WriteFile(tmp, []byte(fmt.Sprintf("v%d", i)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, final); err != nil {
+			t.Fatal(err)
+		}
+		last = time.Now()
+		time.Sleep(5 * time.Millisecond)
+	}
+	// Dopo l'ultimo rename deve esserci almeno un rescan entro il tempo massimo previsto.
+	deadline := time.Now().Add(watchMinGap + 2*watchDebounce + 500*time.Millisecond)
+	var afterLast bool
+	for time.Now().Before(deadline) && !afterLast {
+		mu.Lock()
+		for _, f := range fires {
+			if f.After(last) {
+				afterLast = true
+			}
+		}
+		mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !afterLast {
+		t.Fatal("nessun rescan dopo l'ultima sostituzione: le mappe resterebbero disallineate")
+	}
+	mu.Lock()
+	n := len(fires)
+	mu.Unlock()
+	maxFires := int(time.Since(start)/watchMinGap) + 3
+	if n > maxFires {
+		t.Errorf("%d rescan per 300 rename in %v: troppi (max %d), manca il debounce", n, time.Since(start).Round(time.Millisecond), maxFires)
+	}
+	t.Logf("300 rename in %v -> %d rescan", time.Since(start).Round(time.Millisecond), n)
 }

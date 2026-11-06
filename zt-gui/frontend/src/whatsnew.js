@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.17': {
+        title: 'Novità della versione 0.0.17',
+        items: [
+            ['Filtro di rete: IPv6 con extension header', 'I pacchetti IPv6 di poisoning con una o più intestazioni aggiuntive (hop-by-hop, routing, frammento, AH) non passano più senza controllo.'],
+            ['Procedura di collaudo per la VM', 'Nuovo documento con i comandi e gli esiti attesi per provare sul kernel rename, scritture, truncate, frammenti e descrittori ereditati.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.16': {
         title: 'Novità della versione 0.0.16',
         items: [

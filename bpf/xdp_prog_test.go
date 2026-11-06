@@ -201,6 +201,57 @@ func TestXDPFragments(t *testing.T) {
 	}
 }
 
+// ZS (revisione 2026-11-05): un pacchetto IPv6 con extension header passava senza controllo. Ora XDP le
+// attraversa (hop-by-hop, routing, destination options, fragment primo, AH) fino all'UDP.
+func TestXDPIPv6ExtensionHeaders(t *testing.T) {
+	objs := loadXDP(t)
+	// ext: header di tipo "len8" (hop-by-hop/routing/dest opts): nexthdr, hdrlen, poi 6 + 8*hdrlen byte di padding.
+	len8 := func(next byte, hdrlen int) []byte {
+		b := []byte{next, byte(hdrlen)}
+		return append(b, make([]byte, 6+8*hdrlen)...)
+	}
+	frag := func(next byte, off uint16) []byte { // nexthdr, riservato, offset(13 bit)<<3 | M, id (4 byte)
+		return append([]byte{next, 0}, append(u16(off<<3|1), 0, 0, 0, 1)...)
+	}
+	ah := func(next byte, hdrlen int) []byte { // (hdrlen+2)*4 byte in tutto
+		b := []byte{next, byte(hdrlen)}
+		return append(b, make([]byte, (hdrlen+2)*4-2)...)
+	}
+	cat := func(parts ...[]byte) []byte {
+		var out []byte
+		for _, p := range parts {
+			out = append(out, p...)
+		}
+		return out
+	}
+	mdns, dns := udp(5353, 5353), udp(40000, 53)
+	cases := []struct {
+		name string
+		pkt  []byte
+		want uint32
+	}{
+		{"nessuna extension header (riferimento)", vlanFrame(nil, 0x86DD, ip6(17, mdns)), xdpDrop},
+		{"hop-by-hop + mDNS", vlanFrame(nil, 0x86DD, ip6(0, cat(len8(17, 0), mdns))), xdpDrop},
+		{"hop-by-hop lungo (hdrlen 2) + mDNS", vlanFrame(nil, 0x86DD, ip6(0, cat(len8(17, 2), mdns))), xdpDrop},
+		{"routing + destination options + LLMNR", vlanFrame(nil, 0x86DD, ip6(43, cat(len8(60, 0), len8(17, 0), udp(49152, 5355)))), xdpDrop},
+		{"fragment, primo frammento (offset 0) + mDNS", vlanFrame(nil, 0x86DD, ip6(44, cat(frag(17, 0), mdns))), xdpDrop},
+		{"fragment, frammento non-primo: niente UDP, passa", vlanFrame(nil, 0x86DD, ip6(44, cat(frag(17, 100), mdns))), xdpPass},
+		{"AH + mDNS", vlanFrame(nil, 0x86DD, ip6(51, cat(ah(17, 1), mdns))), xdpDrop},
+		{"hop-by-hop + traffico normale", vlanFrame(nil, 0x86DD, ip6(0, cat(len8(17, 0), dns))), xdpPass},
+		{"ESP (cifrato): passa", vlanFrame(nil, 0x86DD, ip6(50, make([]byte, 32))), xdpPass},
+		{"header sconosciuta: passa", vlanFrame(nil, 0x86DD, ip6(135, cat(len8(17, 0), mdns))), xdpPass},
+		{"TCP dopo hop-by-hop: passa", vlanFrame(nil, 0x86DD, ip6(0, cat(len8(6, 0), mdns))), xdpPass},
+		{"catena entro il limite (6 header) + mDNS", vlanFrame(nil, 0x86DD, ip6(0, cat(len8(60, 0), len8(60, 0), len8(60, 0), len8(60, 0), len8(60, 0), len8(17, 0), mdns))), xdpDrop},
+		{"catena oltre il limite (7 header): passa", vlanFrame(nil, 0x86DD, ip6(0, cat(len8(60, 0), len8(60, 0), len8(60, 0), len8(60, 0), len8(60, 0), len8(60, 0), len8(17, 0), mdns))), xdpPass},
+		{"troncato dentro l'extension header: passa", vlanFrame(nil, 0x86DD, ip6(0, []byte{17})), xdpPass},
+	}
+	for _, c := range cases {
+		if got := run(t, objs.XdpShield, c.pkt); got != c.want {
+			t.Errorf("%s: XDP=%d, atteso %d", c.name, got, c.want)
+		}
+	}
+}
+
 func TestXDPPoisoningOffPassesEverything(t *testing.T) {
 	objs := loadXDP(t)
 	if err := objs.Settings.Put(uint32(1), uint32(0)); err != nil {

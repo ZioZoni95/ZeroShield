@@ -456,7 +456,7 @@ docs/       documentazione (vedi sotto)
 **Da sapere prima di `enforce`.**
 
 * Il blocco è stato visto su un solo PC e con un file finto (vedi lo stato sopra): `file_truncate`, `deny_write` e le protezioni predefinite con i programmi veri non sono stati provati.
-* Il poisoning IPv6 dietro extension header passa. Il radar si aggiorna ogni ~5 secondi.
+* Il poisoning IPv6 con più di 6 extension header, con ESP o con un header sconosciuto passa (le catene fino a 6 header noti sono ora attraversate: 0.0.17). Il radar si aggiorna ogni ~5 secondi.
 * Il bypass del filtro di rete con pacchetti UDP IPv4 frammentati di proposito (primo frammento con MF) è corretto in 0.0.12: coperto da un test che esegue il vero programma XDP, non ancora provato con traffico frammentato vero su un kernel reale.
 * Se usi un programma da una cartella tua (es. `~/.local/bin/oh-my-posh`) e hai autorizzato la copia in `/usr/local/bin`, il blocco continua finché la shell non lancia **quella**
   copia (attenzione agli script di init in cache e ai terminali già aperti, che ricordano il vecchio percorso: `exec bash`). Dalla 0.0.12 la GUI lo segnala e propone l'alias.
@@ -478,6 +478,7 @@ L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.
 |---|---|
 | [`CHANGELOG.md`](CHANGELOG.md) | Cosa cambia in ogni versione, comprese le modifiche non ancora rilasciate |
 | [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.md) | Stato, collaudi mancanti, decisioni aperte |
+| [`docs/COLLAUDO_HARDENING.md`](docs/COLLAUDO_HARDENING.md) | Procedura per VM: rename tra regole, `deny_write`, truncate, frammenti e IPv6 con traffico vero, fd ereditati |
 | [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md) | Primo blocco reale degli hook LSM: ambiente, esiti, cosa non è provato, come ripeterlo |
 | [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md) · [`TESTING_LAB.md`](docs/TESTING_LAB.md) · [`TESTING.md`](docs/TESTING.md) | Cosa è stato provato su kernel reale; collaudo in VM isolata; collaudo pratico di LSM, XDP, FIDO2 e pentest esterno |
 | [`docs/CANARY.md`](docs/CANARY.md) · [`VPN_SETUP.md`](docs/VPN_SETUP.md) | Anti-ransomware: uso e taratura; kill-switch, auto-VPN, ProtonVPN |

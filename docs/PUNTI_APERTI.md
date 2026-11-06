@@ -89,6 +89,10 @@ Da fare dopo la revisione del codice (2026-11-05, analisi statica del commit `63
 - [x] ~~**ZS-005 — `inode_rename` non controllava la destinazione dopo aver autorizzato il sorgente (medio, confermato).**~~ **Corretto in 0.0.16.** Da collaudare su kernel reale: due regole A e B, un programma autorizzato solo per A che sposta un file di A sopra uno di B deve avere *Permission denied*; autorizzato per entrambe passa; sorgente non protetto verso destinazione protetta negato; sorgente protetto verso non protetto consentito se autorizzato (anche con `RENAME_EXCHANGE`).
 - [x] ~~**Errori `Put` sulle mappe solo loggati (medio, confermato).**~~ **Corretto in 0.0.16** (conteggi reali + avviso di protezione parziale); senza test unitario.
 - [ ] **Descrittori di file già aperti, ereditati o passati (`SCM_RIGHTS`) (alto come limite, strutturale).** `lsm/file_open` controlla solo l'apertura: un fd ottenuto prima, da un programma autorizzato e poi ereditato da un figlio o inviato via socket, continua a leggere. Non c'è una correzione economica; da documentare e, se serve, da attenuare con `file_permission`.
+- [x] ~~**IPv6 con extension header non analizzate da XDP (medio).**~~ **Corretto in 0.0.17** (fino a 6 header noti); test sul vero programma in CI; da provare con traffico vero (`docs/COLLAUDO_HARDENING.md`, sezione 4).
+- [x] ~~**Stress test del watcher.**~~ Fatto in 0.0.17 (`TestWatcherStressRapidRenames`).
+- [ ] **Collaudo su kernel reale degli hook** (rename ZS-005, `deny_write`, truncate, `file_truncate`): procedura pronta in `docs/COLLAUDO_HARDENING.md`, da eseguire in VM.
+- [ ] **Polkit con un utente non-root**: la firma della chiamata è verificata con il polkit vero (risposta `challenge`), manca la concessione interattiva.
 - [ ] **Aree da approfondire** (dalla stessa revisione, non vulnerabilità confermate): tetto di sicurezza di io_uring fail-open, IPv6 con extension header, ptrace, btrfs/overlayfs,
   descrittori di file ereditati o trasferiti, servizio fermo = nessuna protezione (già segnalata in Stato). Tre livelli di maturità da usare nelle tabelle: *implementato → verificato → resistente (test avversariali)*.
 
