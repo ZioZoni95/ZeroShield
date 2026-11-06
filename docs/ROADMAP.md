@@ -54,14 +54,14 @@ reale; i 4 programmi LSM passano il verifier (kernel dei runner GitHub).
 
 ## Fase 3 — Kernel avanzato e postura (solo dopo Fase 0, una voce alla volta)
 
-- [ ] **`zt-shield doctor`** (proposta, costo basso): controlli di postura che non richiedono
+- [~] **`zt-shield doctor`** (proposta, costo basso). **Fatto in 0.0.21 per ptrace e io_uring** (`internal/posture`, voce in «Da fare» e journal); restano lockdown, lista LSM, `unprivileged_bpf_disabled` e CFI. Proposta originale: controlli di postura che non richiedono
   codice kernel: `kernel.yama.ptrace_scope`, modalità lockdown, lista LSM,
   `kernel.unprivileged_bpf_disabled`, CFI della CPU/kernel (`ibt`, `user_shstk`,
   `CONFIG_CFI_CLANG`), e **`kernel.io_uring_disabled=2`** (kernel ≥ 6.6, da verificare sul
   tuo): chiude con una riga di sysctl il bypass `io_uring` documentato nei limiti.
 - [x] IPv6 + QinQ in XDP (poisoning UDP diretto; radar solo IPv4, per IPv6 un totale). Provato con pacchetti sintetici.
 - [ ] Hook `ptrace` anti-memory-scrape. **Valore medio** con `yama.ptrace_scope≥1` (default
-  Ubuntu): prima il controllo in `doctor`, l'hook dopo.
+  Ubuntu): il controllo di `ptrace_scope` c'è dalla 0.0.21, l'hook dopo.
 - [ ] btrfs `st_dev`↔`s_dev`, SIGHUP reload, hardening unit completo.
 
 ## Fase 4 — Egress e AV (ultimi, costosi)

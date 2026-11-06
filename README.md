@@ -78,7 +78,7 @@ Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stat
 
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` è alla **0.0.14**, non ancora rilasciata. Il numero che vedi in fondo alla barra laterale della
+Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` sul remoto è alla **0.0.17**; le versioni **0.0.18–0.0.21** (pagina Funzioni, hardening e kill-switch dalla GUI, audit delle connessioni in uscita, controlli di postura) sono ancora solo in locale, in attesa del push. Il numero che vedi in fondo alla barra laterale della
 GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`. Cosa cambia in ogni versione:
 [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -449,10 +449,18 @@ docs/       documentazione (vedi sotto)
 * **Whitelist per binario, non per catena.** Ogni binario in lista legge i suoi file per chiunque lo invochi.
   Il segreto forte resta la chiave FIDO2.
 * **`io_uring` = fail-open** (scelta per evitare falsi blocchi) e **niente hook `ptrace`**: un processo con lo
-  stesso UID legge la memoria di `ssh` (mitigato da `kernel.yama.ptrace_scope=1`).
+  stesso UID legge la memoria di `ssh`. Dalla 0.0.21 la GUI (Stato → «Da fare») e il journal dicono se
+  `kernel.yama.ptrace_scope` e `kernel.io_uring_disabled` sono aperti e mostrano il comando per chiuderli;
+  ZeroShield non li cambia da solo, quindi finché non lo fai il limite resta.
 * **btrfs e overlayfs: protezione inerte** (avviso all'avvio): solo ext4 e xfs.
 * **Servizio fermo = zero protezione**: nessun pinning degli hook, di proposito.
 * **Descrittori di file già aperti**: l'hook controlla l'`open`, non l'uso. Un fd ottenuto da un programma autorizzato (o prima dell'avvio del demone) e poi ereditato da un figlio o passato su un socket continua a leggere il segreto.
+
+**Quali si possono chiudere e quali no:** tabella completa in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.md#limiti-accettati). In breve: IPv6 oltre 6 header, btrfs/overlayfs, descrittori ereditati e il collaudo in VM si chiudono con lavoro; io_uring e ptrace con una scelta dell'utente; ESP, root, whitelist per binario e servizio fermo restano per natura.
+
+**Cosa è stato fatto di questi limiti (0.0.21).** Nessuno è chiuso dal codice: ptrace e io_uring sono resi visibili (con il rimedio),
+i descrittori di file ereditati, IPv6 oltre 6 header o con ESP e btrfs/overlayfs restano com'erano. Non sono stati toccati senza un kernel
+di prova: scrivere un hook in più su `file_permission` o cambiare la chiave dei file senza provarli rischierebbe nuovi falsi blocchi.
 
 **Da sapere prima di `enforce`.**
 

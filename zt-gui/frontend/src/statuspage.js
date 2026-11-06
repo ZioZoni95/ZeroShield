@@ -70,6 +70,9 @@ export function todo(status, events, svcOk = true) {
         {ok: un.length === 0, t: 'Programmi controllati', d: un.length ? `${un.length} da rivedere nelle Regole.` : 'Nessun programma sconosciuto ha letto i segreti.', go: 'rules'},
         {ok: ms.all, t: 'Protezioni in Blocca', d: ms.all ? 'Tutte.' : (ms.enf ? `${ms.enf} su ${ms.total}.` : 'Ancora in sola osservazione.'), go: 'rules'},
     ];
+    // Impostazioni del kernel che cambiano l'efficacia dello scudo (ptrace, io_uring): non dipendono da
+    // ZeroShield, ma se restano aperte aggirano i controlli. `fix` e' il comando da eseguire con sudo.
+    (status.posture || []).forEach(p => items.push({ok: !!p.ok, t: p.title, d: p.detail, fix: p.fix || ''}));
     if (!v.enabled) items.push({ok: null, t: 'VPN', d: 'Non monitorata (facoltativa).', go: 'net'});
     return items;
 }
@@ -113,7 +116,7 @@ export function statusHtml({status, events, esc, fmtTime, icons, appVersion, dae
     </div>
     <h3 class="sec">Da fare <span class="rl-d">· ${doneN} su ${countN}</span></h3>
     <ul class="todo">${items.map(i => `<li class="${i.ok === true ? 'ok' : i.ok === false ? 'no' : 'na'}"><span class="todo-i" aria-hidden="true">${i.ok === true ? '✓' : i.ok === false ? '!' : '–'}</span>
-      <span><b>${esc(i.t)}</b> <span class="rl-d">${esc(i.d)}</span>${i.ok === false && i.go ? ` <button class="linklike" data-go="${i.go}">vai →</button>` : ''}</span></li>`).join('')}</ul>
+      <span><b>${esc(i.t)}</b> <span class="rl-d">${esc(i.d)}</span>${i.ok === false && i.go ? ` <button class="linklike" data-go="${i.go}">vai →</button>` : ''}${i.ok === false && i.fix ? `<br><span class="rl-d">Per chiuderlo, in un terminale:</span> <code class="mono todo-fix">${esc(i.fix)}</code>` : ''}</span></li>`).join('')}</ul>
     <h3 class="sec">Ultimi eventi</h3>
     ${recent.length ? `<ul class="recent">${recent.map(e => sentence(e, esc, fmtTime)).join('')}</ul><button class="linklike" data-go="events">Tutti gli eventi →</button>`
         : '<div class="rl-empty">Nessun evento da quando hai aperto la finestra.</div>'}

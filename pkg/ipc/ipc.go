@@ -138,6 +138,18 @@ type Status struct {
 	Interfaces     []IfaceInfo   `json:"interfaces"`
 	IfaceAuto      bool          `json:"iface_auto"` // nessuna `interface` nel config: si filtra la rete in uso
 	Canary         CanaryState   `json:"canary"`
+	// Posture: impostazioni del kernel che cambiano l'efficacia dello scudo (ptrace, io_uring).
+	Posture []PostureItem `json:"posture,omitempty"`
+}
+
+// PostureItem: un controllo di postura del sistema. OK=true: nessuna azione consigliata.
+// Fix e' un comando da eseguire con sudo (vuoto se non c'e' nulla da fare da qui).
+type PostureItem struct {
+	ID     string `json:"id"`
+	OK     bool   `json:"ok"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+	Fix    string `json:"fix,omitempty"`
 }
 
 // WireEvent: un evento di audit serializzato (stessi campi del log JSON).

@@ -95,6 +95,7 @@ Da fare dopo la revisione del codice (2026-11-05, analisi statica del commit `63
 - [ ] **Polkit con un utente non-root**: la firma della chiamata è verificata con il polkit vero (risposta `challenge`), manca la concessione interattiva.
 - [x] ~~**Audit delle connessioni in uscita dai programmi che toccano i segreti**~~ — fatto in 0.0.20 (solo registro, `docs/EGRESS.md`). Da collaudare su un kernel reale (`docs/COLLAUDO_HARDENING.md`, sezione 7); i figli dei processi non sono seguiti.
 - [ ] **Hardening e kill-switch dalla GUI (0.0.19): collaudo in VM.** I pulsanti usano gli script già esistenti; mai provati su un sistema vero (anteprima, applicazione, ripristino dopo `off`, comportamento con NetworkManager). Da fare con snapshot prima di togliere l'etichetta «sperimentale».
+- [x] ~~**ptrace e io_uring aperti in silenzio**~~ — **resi visibili in 0.0.21** (`internal/posture`: avviso nel journal, voce in «Da fare» nella GUI, comando sysctl persistente). Non sono chiusi: lo decide l'utente. Il bypass io_uring e la lettura della memoria restano possibili finché il sysctl non è applicato.
 - [ ] **Aree da approfondire** (dalla stessa revisione, non vulnerabilità confermate): tetto di sicurezza di io_uring fail-open, IPv6 con extension header, ptrace, btrfs/overlayfs,
   descrittori di file ereditati o trasferiti, servizio fermo = nessuna protezione (già segnalata in Stato). Tre livelli di maturità da usare nelle tabelle: *implementato → verificato → resistente (test avversariali)*.
 
@@ -185,6 +186,33 @@ hook `ptrace`, egress, AV). Il controllo di postura CFI (CPU, kernel, binari) è
   installa).
 
 ## Limiti accettati
+
+Aggiornato in 0.0.21 — ogni limite, se si può chiudere e come:
+
+**Si possono chiudere con lavoro**
+
+| Limite | Come | Costo e rischio |
+|---|---|---|
+| IPv6 oltre 6 extension header | alzare `MAX_V6_EXT` a 8–10 in XDP | basso; la CI fa verificare il programma al kernel. Un massimo ci sarà sempre |
+| btrfs / overlayfs | leggere il dispositivo giusto per i file di quel filesystem | medio; serve un disco btrfs vero |
+| fd già aperti, ereditati o passati con `SCM_RIGHTS` | hook `file_permission` che ricontrolla a ogni lettura | alto: costo su ogni lettura e rischio di falsi blocchi; prima in sola osservazione, in VM |
+| hook mai provati su kernel reale | collaudo in VM (`docs/COLLAUDO_HARDENING.md`) | nessun codice, solo tempo |
+
+**Si chiudono con una scelta dell'utente** (visibili dalla 0.0.21 in Stato → «Da fare»)
+
+| Limite | Rimedio |
+|---|---|
+| io_uring fail-open | `kernel.io_uring_disabled=2`; può rompere pochi programmi |
+| ptrace | `kernel.yama.ptrace_scope=1` (sul PC di prova è già a 1) |
+
+**Non si chiudono, per natura**
+
+| Limite | Perché |
+|---|---|
+| IPv6 con ESP | traffico cifrato: il filtro non può leggerne il contenuto |
+| Root = game over | chi è root può scaricare qualunque hook; si mitiga con disco cifrato e backup |
+| Whitelist per binario, non per catena | un programma autorizzato legge per chiunque lo lanci; si attenua con la chiave FIDO2 |
+| Servizio fermo = nessuna protezione | scelta voluta (niente pinning, hook orfani peggio); l'icona diventa rossa |
 
 - Root locale può scaricare gli hook eBPF.
 - Tool interpretati (npm, pip, gcloud, az) non whitelistabili in modo sicuro.

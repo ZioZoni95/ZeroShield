@@ -56,6 +56,10 @@ func main() {
 		HookLSM: true, XDP: []string{"enp0s3 (mock)"},
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
+		Posture: []ipc.PostureItem{
+			{ID: "ptrace", Title: "Memoria dei programmi protetta da ptrace", Detail: "Dato di prova (mock).", Fix: "echo 'kernel.yama.ptrace_scope = 1' | sudo tee /etc/sysctl.d/60-zeroshield-ptrace.conf && sudo sysctl --system"},
+			{ID: "io_uring", OK: true, Title: "Percorso io_uring chiuso", Detail: "Dato di prova (mock)."},
+		},
 		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: false, KillSwitch: true, HandshakeAge: -1},
 		Listening: []ipc.ListenEntry{
 			{Proto: "tcp", Addr: "127.0.0.1", Port: 631, PID: 1234, Exe: "/usr/sbin/cupsd"},

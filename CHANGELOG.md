@@ -6,6 +6,11 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.21] — 2026-11-06
+
+- **Postura del sistema** (`internal/posture`): il demone legge `kernel.yama.ptrace_scope` e `kernel.io_uring_disabled`, due impostazioni del kernel che non dipendono da ZeroShield ma ne aggirano i controlli se restano aperte (ptrace: un programma dello stesso utente legge la memoria di `ssh`; io_uring: i thread di lavoro non passano dall'hook dei file). Sono limiti già dichiarati: ora sono **visibili**. Un avviso nel journal all'avvio, il campo `posture` nello stato IPC e, nella GUI, due voci nella lista «Da fare» con il comando per chiuderli (sysctl persistente in `/etc/sysctl.d/`). **Non cambia nulla da solo.**
+- Limiti che **restano** (strutturali o da provare su un kernel reale): fd già aperti/ereditati/`SCM_RIGHTS` (servirebbe `file_permission` su ogni lettura, con costo e rischio di falsi blocchi), IPv6 oltre 6 extension header o con ESP, btrfs/overlayfs (la chiave dev+inode non coincide; già con avviso). Vedi `docs/PUNTI_APERTI.md`.
+
 ## [0.0.20] — 2026-11-06
 
 - **Audit delle connessioni in uscita** (`docs/EGRESS.md`): nuovo hook `lsm/socket_connect`, **solo registro, non blocca mai**. Il kernel ricorda per 60 s i processi che hanno letto un segreto (mappa `touched`, scritta da `check_access`); a ogni `connect()` IPv4/IPv6 non loopback di uno di essi scrive un evento in un ring buffer dedicato (`egress_logs`, 64 byte per evento). Il demone segnala la **prima volta** di ogni coppia (programma, destinazione), con tetto di 20/s, e la classifica `lan`/`internet`. Evento IPC `action: "egress"` con `dest` e `scope`; GUI: tag «uscita», filtro dedicato, Internet in evidenza; TUI: riga «📤 USCITA».

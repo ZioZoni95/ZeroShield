@@ -49,6 +49,7 @@ import (
 	"zt-shield/internal/lsm"
 	"zt-shield/internal/netif"
 	"zt-shield/internal/netstat"
+	"zt-shield/internal/posture"
 	"zt-shield/internal/priv"
 	"zt-shield/internal/vpn"
 	"zt-shield/internal/watchdog"
@@ -369,6 +370,22 @@ Opzioni:
 	// Stato VPN osservato (tunnel, kill-switch nft, handshake). Il demone non applica
 	// nulla: misura e avvisa. Proprieta' della goroutine di rescan dopo l'avvio.
 	curVpn := vpn.Check(cfg.Vpn, vpn.ExecRunner)
+	// postureItems rilegge ptrace/io_uring a ogni fotografia: se l'utente applica il rimedio il
+	// controllo diventa verde al prossimo aggiornamento, senza riavviare il demone.
+	postureItems := func() []ipc.PostureItem {
+		var out []ipc.PostureItem
+		for _, it := range posture.Check(posture.ProcSys) {
+			out = append(out, ipc.PostureItem{ID: it.ID, OK: it.OK, Title: it.Title, Detail: it.Detail, Fix: it.Fix})
+		}
+		return out
+	}
+	// Avvisi una volta sola all'avvio (i limiti sono noti: qui diventano visibili nel journal).
+	for _, it := range posture.Check(posture.ProcSys) {
+		if !it.OK {
+			log.Printf("⚠️ %s: %s", it.Title, it.Detail)
+		}
+	}
+
 	// publishStatus fotografa demone per le UI. Chiamata a ogni cambio rilevante
 	// (avvio, rescan) perche' il protocollo ritrasmette ai connessi.
 	// canaryActive: il watcher fanotify e' davvero partito (la config puo' chiederlo e l'avvio fallire,
@@ -397,7 +414,8 @@ Opzioni:
 			Listening: listening, ListeningTotal: listeningTotal, Rules: rules,
 			Version:    version,
 			Interfaces: ifs, IfaceAuto: strings.TrimSpace(cfg.Interface) == "",
-			Canary: ipc.CanaryState{Enabled: cfg.Canary.Enabled, Active: canaryActive.Load(), Dirs: len(cfg.Canary.Dirs)},
+			Canary:  ipc.CanaryState{Enabled: cfg.Canary.Enabled, Active: canaryActive.Load(), Dirs: len(cfg.Canary.Dirs)},
+			Posture: postureItems(),
 		})
 	}
 	publishStatus()

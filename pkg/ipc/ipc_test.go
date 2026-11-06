@@ -36,6 +36,26 @@ func TestStatusRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStatusCarriesPosture(t *testing.T) {
+	withTempSocket(t)
+	srv, err := NewServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	srv.UpdateStatus(Status{Profile: "home", Posture: []PostureItem{
+		{ID: "ptrace", OK: false, Title: "t", Detail: "d", Fix: "sudo sysctl -w x=1"},
+		{ID: "io_uring", OK: true, Title: "u", Detail: "ok"},
+	}})
+	st, err := GetStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Posture) != 2 || st.Posture[0].Fix != "sudo sysctl -w x=1" || st.Posture[0].OK || !st.Posture[1].OK {
+		t.Errorf("postura alterata: %+v", st.Posture)
+	}
+}
+
 func TestEventStream(t *testing.T) {
 	withTempSocket(t)
 	srv, err := NewServer()

@@ -42,6 +42,10 @@ const STATUS = {
   block_poisoning: true, block_subnets: [], time: '2026-10-05T10:00:00Z',
   vpn: { enabled: false, up: false, killswitch: false, handshake_age: -1 },
   top_sources: [], listening: [], listening_total: 0, rules: [{ name: 'ssh-keys', paths: ['.ssh/id_*'], allow: ['ssh'] }],
+  posture: [
+    { id: 'ptrace', ok: false, title: 'Memoria dei programmi protetta da ptrace', detail: 'Qualunque programma con il tuo stesso utente può leggere la memoria.', fix: "echo 'kernel.yama.ptrace_scope = 1' | sudo tee /etc/sysctl.d/60-zeroshield-ptrace.conf && sudo sysctl --system" },
+    { id: 'io_uring', ok: true, title: 'Percorso io_uring chiuso', detail: 'io_uring è limitato o spento.' },
+  ],
 };
 
 const results = [];
@@ -327,6 +331,8 @@ check('stato: in audit la scheda in alto dice cosa fare (osservi, non blocchi)',
 check('stato: un solo pulsante principale in alto', (await page.locator('.hero .hero-btn').count()) === 1);
 check('stato: tre tessere in linguaggio semplice (Segreti, Rete, Attività)', ['Segreti', 'Rete', 'Attività'].every(t => stTxt.includes(t)));
 check('stato: lista "Da fare" con avanzamento', stTxt.includes('Da fare') && /\d su \d/.test(stTxt) && stTxt.includes('Servizio attivo'));
+check('stato: la postura del kernel compare in "Da fare" con il comando per chiuderla', stTxt.includes('Memoria dei programmi protetta da ptrace') && (await page.locator('.todo-fix').count()) === 1 && (await page.textContent('.todo-fix')).includes('sysctl --system'));
+check('stato: un controllo di postura già a posto non mostra comandi', stTxt.includes('Percorso io_uring chiuso') && !stTxt.includes('io_uring_disabled = 2'));
 check('stato: ultimi eventi in una frase leggibile', stTxt.includes('Ultimi eventi') && stTxt.includes('ha letto «'));
 check('stato: i dettagli tecnici sono ripiegati', (await page.evaluate(() => document.querySelector('details.tech') && !document.querySelector('details.tech').open)) === true);
 check('stato: nomi tecnici delle regole non compaiono nelle frasi', !/ha letto «(ssh-keys|cloud-creds)/.test(stTxt));

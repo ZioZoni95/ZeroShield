@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.21': {
+        title: 'Novità della versione 0.0.21',
+        items: [
+            ['Due falle del sistema ora si vedono', 'Nella pagina Stato, sotto «Da fare», compaiono due controlli: se un programma può leggere la memoria di ssh (ptrace) e se esiste il percorso io_uring che aggira il blocco dei file. Se uno è aperto trovi il comando da copiare in un terminale per chiuderlo.'],
+        ],
+        note: 'ZeroShield non cambia nulla da solo: ti dice cosa è aperto e come chiuderlo. Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.20': {
         title: 'Novità della versione 0.0.20',
         items: [
