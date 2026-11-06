@@ -6,6 +6,12 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.19] — 2026-11-06
+
+- **Pagina Funzioni**: schede per **hardening del sistema** (profilo a scelta; l'anteprima è `harden_system.sh <profilo> --dry-run` senza privilegi, mostrata prima di ogni applicazione; annullare non cambia nulla), **kill-switch VPN** (acceso/spento con endpoint e tunnel letti dal demone, solo se `vpn:` è nel config; conferma che avvisa che la rete si ferma se il tunnel cade) e **chiave FIDO2** (solo istruzioni: è interattiva).
+- `pkg/svc`: `HardenPreview/HardenApply/KillSwitchOn/KillSwitchOff`; argomenti validati (profilo noto, endpoint `IPv4:porta` o `[IPv6]:porta` mai un nome host, interfaccia, CIDR) e passati uno per uno, mai in una stringa di shell; azioni sul sistema via `pkexec`. Test di validazione, anteprima (comando e troncamento) e rifiuto prima di eseguire.
+- **Non provato su un sistema vero**: gli script restano `--dry-run` + comandi finti, e il kill-switch solo in un network namespace. Vale per i pulsanti.
+
 ## [0.0.18] — 2026-11-06
 
 - **Pagina «Funzioni»** (tasto 4; Regole, Rete, Configurazione e Guida scalano a 5-8): una scheda con pulsante per ogni funzione — protezione dei segreti (solo osserva/blocca), filtro di rete (`block_poisoning`), **anti-ransomware (canary)**, avvio all'accensione, icona nella barra — più il monitor VPN solo in lettura. Ogni scheda mostra lo stato **reale** del demone, non solo quello del file.

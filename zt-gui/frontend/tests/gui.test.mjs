@@ -74,6 +74,10 @@ await page.addInitScript((status) => {
     TrayEnabled: async () => window.__tray,
     SetTrayEnabled: async (on) => { window.__trayCalls.push(on); window.__tray = on; },
     ApplyFeatures: async (poison, canary, dirs) => { window.__featCalls.push([poison, canary, dirs]); },
+    HardenPreview: async (p) => { window.__hardPrev.push(p); return 'diff finto per ' + p + '\n+ ufw default deny incoming'; },
+    HardenApply: async (p) => { window.__hardApply.push(p); },
+    KillSwitchOn: async (e, t) => { window.__ksCalls.push(['on', e, t]); },
+    KillSwitchOff: async () => { window.__ksCalls.push(['off']); },
     RulesModel: async () => JSON.parse(JSON.stringify(window.__rm)),
     CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
     ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
@@ -115,7 +119,7 @@ await page.addInitScript((status) => {
     '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s': prog('k9s', '/usr/local/bin/k9s'),
   };
   window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = ''; window.__ifCalls = []; window.__ifFail = '';
-  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = []; window.__tray = true; window.__trayCalls = []; window.__featCalls = [];
+  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = []; window.__tray = true; window.__trayCalls = []; window.__featCalls = []; window.__hardPrev = []; window.__hardApply = []; window.__ksCalls = [];
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
     EventsOff: () => {},
@@ -957,7 +961,7 @@ for (const v of ['guide', 'config']) {
   await page.click('#sidebar button[data-view="features"]');
   await page.waitForSelector('#fn-root .fn-card');
   const titles = await page.evaluate(() => [...document.querySelectorAll('#fn-root .fn-head b')].map(b => b.textContent));
-  check('funzioni: sei schede (segreti, rete, canary, avvio, icona, VPN)', titles.length === 6 && titles.some(t => t.includes('Anti-ransomware')) && titles.some(t => t.includes('Filtro di rete')), titles.join(' | '));
+  check('funzioni: otto schede (segreti, rete, canary, avvio, icona, hardening, VPN, FIDO2)', titles.length === 8 && titles.some(t => t.includes('Anti-ransomware')) && titles.some(t => t.includes('Filtro di rete')), titles.join(' | '));
   check('funzioni: il canary spento mostra le cartelle da scegliere', (await page.locator('#fn-root [data-dir]').count()) === 2);
   check('funzioni: l\'icona (accesa) risulta Attiva', (await page.textContent('#fn-tray')).includes('Attiva'));
 
@@ -982,6 +986,33 @@ for (const v of ['guide', 'config']) {
   await page.click('#fn-tray');
   await page.waitForFunction(() => window.__trayCalls.length === 1);
   check('funzioni: l\'icona si spegne con SetTrayEnabled(false)', await page.evaluate(() => window.__trayCalls[0] === false));
+
+  // Hardening: prima l'anteprima, poi la conferma; annullare non applica nulla
+  await page.click('#fn-harden');
+  await page.waitForSelector('#dlg .fn-pre');
+  const prevTxt = await page.textContent('#dlg');
+  check('funzioni: l\'hardening mostra l\'anteprima e dice che non ha cambiato nulla', prevTxt.includes('diff finto per home') && prevTxt.includes('non è stato cambiato nulla'), prevTxt.slice(0, 120));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  check('funzioni: annullare l\'anteprima non applica nulla', await page.evaluate(() => window.__hardApply.length === 0 && window.__hardPrev.length === 1));
+  await page.selectOption('#fn-hprof', 'public-wifi');
+  await page.click('#fn-harden');
+  await page.waitForSelector('#dlg .fn-pre');
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__hardApply.length === 1);
+  check('funzioni: confermando si applica il profilo scelto', await page.evaluate(() => window.__hardApply[0] === 'public-wifi'));
+
+  // Kill-switch VPN: senza VPN configurata non c'e' il pulsante; con la VPN si accende dopo una conferma che avvisa
+  check('funzioni: senza VPN configurata niente pulsante kill-switch', (await page.locator('#fn-ks').count()) === 0);
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { vpn: { enabled: true, endpoint: '203.0.113.7:51820', tunnel: 'wg0', up: true, killswitch: false, handshake_age: 5 } }); window.__emit('shield:status', window.__status); });
+  await page.waitForSelector('#fn-ks');
+  await page.click('#fn-ks');
+  await page.waitForSelector('#dlg');
+  check('funzioni: la conferma del kill-switch avvisa che la rete si ferma', (await page.textContent('#dlg')).includes('si ferma') && (await page.textContent('#dlg')).includes('wg0'));
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__ksCalls.length === 1);
+  check('funzioni: il kill-switch si accende con endpoint e tunnel del demone', await page.evaluate(() => JSON.stringify(window.__ksCalls[0]) === JSON.stringify(['on', '203.0.113.7:51820', 'wg0'])), JSON.stringify(await page.evaluate(() => window.__ksCalls)));
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { vpn: undefined }); window.__emit('shield:status', window.__status); });
 
   // Stato reale: canary attivo secondo il demone
   await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: { enabled: true, active: true, dirs: 1 } }); window.__emit('shield:status', window.__status); });

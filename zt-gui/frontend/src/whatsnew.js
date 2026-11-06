@@ -5,6 +5,15 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.19': {
+        title: 'Novità della versione 0.0.19',
+        items: [
+            ['Hardening dalla GUI, con anteprima', 'Nella pagina Funzioni scegli il profilo e vedi esattamente cosa cambierebbe (firewall, resolver, parametri di rete) prima di applicare. Annullare non cambia nulla.'],
+            ['Kill-switch VPN con un pulsante', 'Se nel file hai configurato la VPN, lo accendi e lo spegni da Funzioni. Ti avvisa che, se il tunnel cade, la rete si ferma.'],
+            ['Chiave FIDO2', 'Una scheda ti dice come configurarla dal terminale (serve la chiave fisica, il PIN e un tocco).'],
+        ],
+        note: 'Hardening e kill-switch sono sperimentali: gli script non sono mai stati provati su un sistema vero. Provali in una macchina virtuale.',
+    },
     '0.0.18': {
         title: 'Novità della versione 0.0.18',
         items: [

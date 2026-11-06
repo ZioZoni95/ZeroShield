@@ -31,6 +31,14 @@ export function ServiceInstallAs(arg1:string,arg2:string):Promise<void>;
 
 export function ServiceStart():Promise<void>;
 
+export function HardenPreview(arg1:string):Promise<string>;
+
+export function HardenApply(arg1:string):Promise<void>;
+
+export function KillSwitchOn(arg1:string,arg2:string):Promise<void>;
+
+export function KillSwitchOff():Promise<void>;
+
 export function ApplyFeatures(arg1:boolean,arg2:boolean,arg3:Array<string>):Promise<void>;
 
 export function TrayEnabled():Promise<boolean>;

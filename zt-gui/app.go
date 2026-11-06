@@ -252,6 +252,26 @@ func (a *App) ApplyRules(c rules.Choice) error {
 
 // ApplyInterfaces salva le interfacce su cui filtrare (vuoto = automatica) e riavvia il servizio (auth di
 // sistema). Le altre scelte (regole, modalita') restano com'erano.
+// HardenPreview mostra cosa cambierebbe harden_system.sh per un profilo (dry-run, senza privilegi).
+func (a *App) HardenPreview(profile string) (string, error) {
+	return svc.HardenPreview(profile)
+}
+
+// HardenApply applica l'hardening del sistema (pkexec). La UI deve aver mostrato prima l'anteprima.
+func (a *App) HardenApply(profile string) error {
+	return svc.HardenApply(profile)
+}
+
+// KillSwitchOn accende il kill-switch VPN (pkexec). Endpoint e tunnel li valida svc.
+func (a *App) KillSwitchOn(endpoint, tunnel string) error {
+	return svc.KillSwitchOn(endpoint, tunnel, nil)
+}
+
+// KillSwitchOff toglie il kill-switch VPN (pkexec).
+func (a *App) KillSwitchOff() error {
+	return svc.KillSwitchOff()
+}
+
 // ApplyFeatures accende o spegne le funzioni della pagina Funzioni: filtro anti-poisoning e canary anti-ransomware
 // (con le cartelle delle esche). Scrive il config con config-apply (pkexec): backup, riavvio e ripristino se non riparte.
 func (a *App) ApplyFeatures(blockPoisoning bool, canary bool, canaryDirs []string) error {

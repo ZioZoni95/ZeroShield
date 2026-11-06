@@ -93,6 +93,7 @@ Da fare dopo la revisione del codice (2026-11-05, analisi statica del commit `63
 - [x] ~~**Stress test del watcher.**~~ Fatto in 0.0.17 (`TestWatcherStressRapidRenames`).
 - [ ] **Collaudo su kernel reale degli hook** (rename ZS-005, `deny_write`, truncate, `file_truncate`): procedura pronta in `docs/COLLAUDO_HARDENING.md`, da eseguire in VM.
 - [ ] **Polkit con un utente non-root**: la firma della chiamata è verificata con il polkit vero (risposta `challenge`), manca la concessione interattiva.
+- [ ] **Hardening e kill-switch dalla GUI (0.0.19): collaudo in VM.** I pulsanti usano gli script già esistenti; mai provati su un sistema vero (anteprima, applicazione, ripristino dopo `off`, comportamento con NetworkManager). Da fare con snapshot prima di togliere l'etichetta «sperimentale».
 - [ ] **Aree da approfondire** (dalla stessa revisione, non vulnerabilità confermate): tetto di sicurezza di io_uring fail-open, IPv6 con extension header, ptrace, btrfs/overlayfs,
   descrittori di file ereditati o trasferiti, servizio fermo = nessuna protezione (già segnalata in Stato). Tre livelli di maturità da usare nelle tabelle: *implementato → verificato → resistente (test avversariali)*.
 

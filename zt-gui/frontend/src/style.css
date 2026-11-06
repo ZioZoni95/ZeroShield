@@ -512,3 +512,8 @@ details.tech { margin: 14px 0 4px; }
 .fn-dir { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .chip.big { padding: 7px 16px; font-size: 13.5px; }
 .chip[disabled] { opacity: .55; cursor: default; }
+
+/* anteprima dell'hardening nella conferma */
+.fn-pre { max-height: 46vh; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin: 0 0 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; text-align: left; }
+#fn-hprof { font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
