@@ -622,13 +622,21 @@ int BPF_PROG(zt_file_rename, struct inode *old_dir, struct dentry *old_dentry,
         fk.ino = BPF_CORE_READ(victim, i_ino);
         fk.dev = BPF_CORE_READ(victim, i_sb, s_dev);
         rp = bpf_map_lookup_elem(&protected_files, &fk);
-        if (rp)
-            return check_access(fk, *rp & 0x7FFFFFFF);
+        if (rp) {
+            // Il sorgente e' protetto: se NON e' autorizzato si nega subito. Se lo e' NON si esce:
+            // la destinazione puo' appartenere a un'altra regola (ZS-005, revisione 2026-11-05), per
+            // cui il processo potrebbe non essere autorizzato. Prima qui c'era `return check_access(...)`
+            // e un rename A -> B passava con il solo permesso per A.
+            int ret = check_access(fk, *rp & 0x7FFFFFFF);
+            if (ret)
+                return ret;
+        }
     }
 
     // FIX: anche la DESTINAZIONE. `mv junk ~/.ssh/id_ed25519` sostituisce il
     // segreto (il vecchio inode viene sganciato) senza passare da inode_unlink.
-    // new_dentry->d_inode e' non-NULL solo se il target esiste gia'.
+    // new_dentry->d_inode e' non-NULL solo se il target esiste gia'. Ha il suo controllo indipendente:
+    // identita' e regola della destinazione, autorizzazione del processo per QUELLA regola.
     struct inode *target = BPF_CORE_READ(new_dentry, d_inode);
     if (!target)
         return 0;

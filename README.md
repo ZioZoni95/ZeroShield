@@ -451,6 +451,7 @@ docs/       documentazione (vedi sotto)
   stesso UID legge la memoria di `ssh` (mitigato da `kernel.yama.ptrace_scope=1`).
 * **btrfs e overlayfs: protezione inerte** (avviso all'avvio): solo ext4 e xfs.
 * **Servizio fermo = zero protezione**: nessun pinning degli hook, di proposito.
+* **Descrittori di file già aperti**: l'hook controlla l'`open`, non l'uso. Un fd ottenuto da un programma autorizzato (o prima dell'avvio del demone) e poi ereditato da un figlio o passato su un socket continua a leggere il segreto.
 
 **Da sapere prima di `enforce`.**
 

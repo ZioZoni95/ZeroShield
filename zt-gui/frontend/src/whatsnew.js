@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.16': {
+        title: 'Novità della versione 0.0.16',
+        items: [
+            ['Rinominare un file sopra un altro segreto', 'Spostare un file sopra un segreto protetto da un\'altra regola ora viene controllato anche sulla destinazione: prima bastava il permesso sul file di partenza.'],
+            ['Errori sulle mappe del kernel non più nascosti', 'Se qualche voce non viene scritta, il demone lo dice e i numeri mostrati sono quelli davvero attivi (protezione parziale invece di «attiva»).'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.15': {
         title: 'Novità della versione 0.0.15',
         items: [

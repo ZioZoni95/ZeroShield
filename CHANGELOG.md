@@ -6,6 +6,13 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.16] — 2026-11-06
+
+Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul sorgente.
+
+- **ZS-005 (medio) — `inode_rename`**: se il sorgente era protetto e il processo autorizzato per la sua regola, l'hook usciva senza controllare la destinazione, che può appartenere a un'altra regola. Ora il sorgente nega subito se non autorizzato; se autorizzato si controlla comunque la destinazione, con la **sua** regola. Compila e passa i test Go; **non provato a runtime su un kernel** (gli hook LSM non si eseguono con `BPF_PROG_TEST_RUN`): resta da collaudare (vedi `PUNTI_APERTI.md`).
+- **Mappe eBPF**: gli errori di scrittura (`Put`) erano solo loggati e il demone annunciava comunque «File protetti: N». Ora `Sync` restituisce i conteggi davvero scritti e logga `⚠️ mappe eBPF incomplete … la protezione è parziale`. Non coperto da un test unitario (servono privilegi BPF).
+
 ## [0.0.15] — 2026-11-06
 
 - **Falsi blocchi**: `seahorse` («Password e chiavi», lanciato anche dalla ricerca del menu applicazioni) e `/usr/libexec/gcr-ssh-agent` entrano nella lista di base di `ssh-keys`. Visto il 2026-11-06: in enforce venivano negati mentre leggevano `~/.ssh/id_*` (log: `Error reading file … to check for SSH key`). Compromesso dichiarato: due programmi di sistema di root in più possono leggere le chiavi. Se mancano (KDE, server) nessun avviso «non risolto».
