@@ -4,7 +4,29 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 ## [Non rilasciato]
 
-_Nulla per ora._
+- **Release**: la pagina di ogni tag mostra le «Novità» prese dalla sezione del `CHANGELOG.md` per quella versione (prima era un testo fisso, fermo alla 0.0.9). Nessuna modifica al prodotto.
+
+## [0.0.17] — 2026-11-06
+
+- **XDP, IPv6 con extension header**: prima un pacchetto con una extension header passava senza controllo (aggirabile di proposito). Ora si attraversano fino a 6 header noti (hop-by-hop, routing, destination options, fragment solo se primo frammento, AH) fino all'UDP; ESP, header sconosciute, catene più lunghe e frammenti non-primi passano. Test `TestXDPIPv6ExtensionHeaders` (14 casi, sul vero programma, in CI come root). **Non ancora visto con il verifier del kernel in questa sessione: lo esegue la CI (`zt-probe`).**
+- **Watcher**: test di stress (300 sostituzioni atomiche in 2 s → 3 rescan, e sempre un rescan dopo l'ultima).
+- **Docs**: `docs/COLLAUDO_HARDENING.md`, procedura per VM (rename ZS-005, `deny_write`, truncate, frammenti, IPv6, fd ereditati).
+
+## [0.0.16] — 2026-11-06
+
+Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul sorgente.
+
+- **ZS-005 (medio) — `inode_rename`**: se il sorgente era protetto e il processo autorizzato per la sua regola, l'hook usciva senza controllare la destinazione, che può appartenere a un'altra regola. Ora il sorgente nega subito se non autorizzato; se autorizzato si controlla comunque la destinazione, con la **sua** regola. Compila e passa i test Go; **non provato a runtime su un kernel** (gli hook LSM non si eseguono con `BPF_PROG_TEST_RUN`): resta da collaudare (vedi `PUNTI_APERTI.md`).
+- **Mappe eBPF**: gli errori di scrittura (`Put`) erano solo loggati e il demone annunciava comunque «File protetti: N». Ora `Sync` restituisce i conteggi davvero scritti e logga `⚠️ mappe eBPF incomplete … la protezione è parziale`. Non coperto da un test unitario (servono privilegi BPF).
+
+## [0.0.15] — 2026-11-06
+
+- **Falsi blocchi**: `seahorse` («Password e chiavi», lanciato anche dalla ricerca del menu applicazioni) e `/usr/libexec/gcr-ssh-agent` entrano nella lista di base di `ssh-keys`. Visto il 2026-11-06: in enforce venivano negati mentre leggevano `~/.ssh/id_*` (log: `Error reading file … to check for SSH key`). Compromesso dichiarato: due programmi di sistema di root in più possono leggere le chiavi. Se mancano (KDE, server) nessun avviso «non risolto».
+- **Eventi**: il demone ricorda gli ultimi 200 eventi e alert canary e li rilegge a chi si collega (campo `replay`, compatibile con i client vecchi). Prima la GUI aperta dopo una notifica non mostrava il blocco. Tray: i replay non notificano; GUI: scarta i replay già presenti. Test di storico, limite e assenza di doppioni.
+
+## [0.0.14] — 2026-11-06
+
+- **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
 ## [0.0.21] — 2026-11-06
 

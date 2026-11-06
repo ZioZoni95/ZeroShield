@@ -48,7 +48,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         # Pre-release finche' gli hook LSM non sono collaudati in enforce (TEST_SANDBOX.md).
         run: |
-          cat > /tmp/notes.md <<'EOF'
+          # Novita' = la sezione del CHANGELOG per la versione del tag (nessun testo da aggiornare a mano).
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v v="$VER" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md > /tmp/changes.md
+          if ! grep -q '[^[:space:]]' /tmp/changes.md; then
+            echo "Nessuna voce $VER nel CHANGELOG: vedi il file CHANGELOG.md del repository." > /tmp/changes.md
+          fi
+          {
+            cat <<'HEAD'
           # ⚠️ ALPHA — SOLO LAB, NON USO REALE ⚠️
 
           > **Il blocco dei segreti è stato visto funzionare una sola volta, su un solo PC
@@ -59,9 +66,15 @@ jobs:
           > In enforce può negarti i tuoi stessi file: usalo in audit e metti in Blocca
           > una protezione alla volta.**
 
-          Prima release dopo la v0.0.4: raccoglie le versioni interne 0.0.5-0.0.8 (modalità per protezione, regole
-          guidate con «Proteggi un mio file», scelta e aggancio a caldo delle interfacce di rete, radar IPv4/IPv6).
-          Aggiornando dalla 0.0.4: riavvia `zt-shield` e l'icona (`systemctl --user restart zeroshield-tray`).
+          HEAD
+            echo "## Novità della $VER"
+            echo
+            cat /tmp/changes.md
+            echo
+            echo "Cronologia completa: [CHANGELOG](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md)."
+            cat <<'TAIL'
+
+          ## Installazione
 
           Un solo pacchetto: `zeroshield_*_amd64.deb` contiene demone, TUI, GUI desktop e icona nella barra.
           Le librerie grafiche (GTK/WebKit) sono *consigliate*: apt le installa da solo sul
@@ -73,11 +86,14 @@ jobs:
           sudo apt install ./zeroshield_*_amd64.deb
           ```
 
-          Ogni release e' un'istantanea del codice al suo tag, non cumulativa.
+          Aggiornando: chiudi la GUI prima e riaprila dopo; riavvia l'icona con
+          `systemctl --user restart zeroshield-tray`. Ogni release è un'istantanea del codice al
+          suo tag, non cumulativa.
 
           Uso consentito: VM usa-e-getta con snapshot, dati finti, profilo audit.
           Prima accensione reale solo dopo riga enforce verde in TEST_SANDBOX.md.
-          EOF
+          TAIL
+          } > /tmp/notes.md
           gh release create "$GITHUB_REF_NAME" dist/*.deb dist/SHA256SUMS \
             --title "ZeroShield $GITHUB_REF_NAME" --prerelease \
             --notes-file /tmp/notes.md
