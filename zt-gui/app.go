@@ -168,6 +168,16 @@ func (a *App) ServiceStart() error {
 	return svc.Start()
 }
 
+// TrayEnabled: l'icona nella barra parte da sola a ogni sessione?
+func (a *App) TrayEnabled() bool {
+	return svc.TrayEnabled()
+}
+
+// SetTrayEnabled accende o spegne l'icona nella barra (servizio utente, senza password).
+func (a *App) SetTrayEnabled(on bool) error {
+	return svc.SetTrayEnabled(on)
+}
+
 // BootEnabled: il demone parte da solo all'accensione?
 func (a *App) BootEnabled() bool {
 	return svc.BootEnabled()
@@ -225,8 +235,10 @@ func (a *App) ApplyRules(c rules.Choice) error {
 		return fmt.Errorf("config di sistema assente: installa prima il servizio")
 	}
 	// La scelta delle interfacce non e' di questa schermata: si conserva quella gia' salvata.
+	// Stesso discorso per le funzioni accese dalla pagina Funzioni (filtro di rete, canary).
 	if have, perr := rules.Parse(cur); perr == nil {
 		c.Interface = have.Interface
+		c.BlockPoisoning, c.Canary = have.BlockPoisoning, have.Canary
 	}
 	next, err := rules.Apply(cur, c)
 	if err != nil {
@@ -240,6 +252,38 @@ func (a *App) ApplyRules(c rules.Choice) error {
 
 // ApplyInterfaces salva le interfacce su cui filtrare (vuoto = automatica) e riavvia il servizio (auth di
 // sistema). Le altre scelte (regole, modalita') restano com'erano.
+// ApplyFeatures accende o spegne le funzioni della pagina Funzioni: filtro anti-poisoning e canary anti-ransomware
+// (con le cartelle delle esche). Scrive il config con config-apply (pkexec): backup, riavvio e ripristino se non riparte.
+func (a *App) ApplyFeatures(blockPoisoning bool, canary bool, canaryDirs []string) error {
+	cur := svc.ReadConfig()
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	have, err := rules.Parse(cur)
+	if err != nil {
+		return err
+	}
+	if blockPoisoning {
+		have.BlockPoisoning = nil // acceso = default del demone
+	} else {
+		off := false
+		have.BlockPoisoning = &off
+	}
+	if canary {
+		have.Canary = &rules.CanaryChoice{Enabled: true, Dirs: canaryDirs}
+	} else {
+		have.Canary = nil
+	}
+	next, err := rules.Apply(cur, have)
+	if err != nil {
+		return err
+	}
+	if err := rules.Validate(next); err != nil {
+		return fmt.Errorf("il demone rifiuterebbe questa configurazione: %w", err)
+	}
+	return svc.ApplyConfig(next)
+}
+
 func (a *App) ApplyInterfaces(names []string) error {
 	cur := svc.ReadConfig()
 	if _, err := os.Stat(svc.ConfigPath); err != nil {

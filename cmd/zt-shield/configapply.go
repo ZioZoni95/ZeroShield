@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +15,57 @@ import (
 )
 
 const unitName = "zt-shield.service"
+
+// canaryDropinPath: drop-in che apre in scrittura le cartelle delle esche (la unit ha ProtectHome=read-only).
+const canaryDropinPath = "/etc/systemd/system/zt-shield.service.d/canary.conf"
+
+// dropinMarker: prima riga di un drop-in generato da noi; un file diverso (scritto a mano) non si tocca mai.
+const dropinMarker = "# Generato da `zt-shield dropin`"
+
+// syncCanaryDropin allinea il drop-in al config installato: con il canary acceso apre le cartelle delle esche
+// in scrittura (altrimenti il watcher non parte: «sotto systemd la home e' in sola lettura»), spento lo toglie.
+// Senza questo passo i pulsanti della GUI accenderebbero un canary che non parte. Ritorna se qualcosa e' cambiato.
+func syncCanaryDropin(cfgPath, dropinPath string) (bool, error) {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return false, err
+	}
+	acct, err := cfg.Account()
+	if err != nil {
+		return false, err
+	}
+	want := cfg.SystemdDropin(acct.HomeDir)
+	cur, rerr := os.ReadFile(dropinPath)
+	if rerr == nil && !strings.HasPrefix(string(cur), dropinMarker) {
+		return false, nil // scritto a mano da qualcuno: non si tocca
+	}
+	if want == string(cur) {
+		return false, nil
+	}
+	if want == "" {
+		if err := os.Remove(dropinPath); err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+		return rerr == nil, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dropinPath), 0o755); err != nil { //nolint:gosec // directory di systemd, leggibile da tutti
+		return false, err
+	}
+	return true, os.WriteFile(dropinPath, []byte(want), 0o644) //nolint:gosec // come un file di unit: leggibile da tutti
+}
+
+// reloadCanaryDropin: sync + daemon-reload se serve. Un errore non e' fatale (si scrive un avviso): il resto del config e' gia' installato.
+func reloadCanaryDropin() {
+	changed, err := syncCanaryDropin(config.DefaultPath, canaryDropinPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config-apply: drop-in del canary non aggiornato:", err)
+		return
+	}
+	if changed {
+		_ = exec.Command("systemctl", "daemon-reload").Run()
+		fmt.Println("drop-in del canary aggiornato")
+	}
+}
 
 // runConfigApply: `zt-shield config-apply [-no-restart] FILE` (root).
 //
@@ -57,6 +109,7 @@ func runConfigApply(args []string) int {
 	if backup != "" {
 		fmt.Println("copia di sicurezza:", backup)
 	}
+	reloadCanaryDropin()
 	if noRestart {
 		return 0
 	}
@@ -87,6 +140,7 @@ func rollback(backup string, wasActive bool, why string) int {
 		fmt.Fprintln(os.Stderr, "ripristino fallito:", err, "— copia di sicurezza in", backup)
 		return 1
 	}
+	reloadCanaryDropin() // il drop-in segue il config ripristinato
 	_ = exec.Command("systemctl", "restart", unitName).Run()
 	fmt.Fprintln(os.Stderr, "ripristinato il config precedente e riavviato il servizio. Dettagli: journalctl -u", unitName, "-n 30")
 	return 1

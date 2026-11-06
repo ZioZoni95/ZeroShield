@@ -6,6 +6,14 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.18] — 2026-11-06
+
+- **Pagina «Funzioni»** (tasto 4; Regole, Rete, Configurazione e Guida scalano a 5-8): una scheda con pulsante per ogni funzione — protezione dei segreti (solo osserva/blocca), filtro di rete (`block_poisoning`), **anti-ransomware (canary)**, avvio all'accensione, icona nella barra — più il monitor VPN solo in lettura. Ogni scheda mostra lo stato **reale** del demone, non solo quello del file.
+- **Canary dalla GUI**: nuovo campo `canary` nello stato (`enabled`, `active`, `dirs`): «voluto ma non partito» è un avviso, non un finto «attivo». Le cartelle si scelgono tra quelle comuni che esistono nella home. La scelta finisce nel blocco gestito del config (`block_poisoning: false` solo se spento, `canary:` solo se acceso); se le stesse chiavi sono scritte a mano la GUI non le tocca.
+- **`config-apply` e il drop-in systemd**: con il canary acceso crea `/etc/systemd/system/zt-shield.service.d/canary.conf` (`ReadWritePaths=` solo per le cartelle delle esche, perché la unit ha `ProtectHome=read-only`) e fa `daemon-reload`; spento lo toglie; un drop-in scritto a mano non si tocca; dopo un ripristino il drop-in segue il config. Prima il canary andava abilitato a mano con `zt-shield dropin | sudo install …`.
+- **Icona nella barra** attivabile da GUI (`systemctl --user enable/disable --now`, senza password). `ApplyRules` conserva ora anche `block_poisoning` e `canary`.
+- Test: scrittura/lettura della scelta, chiavi manuali, modello, drop-in, e 13 controlli nel browser per la pagina.
+
 ## [0.0.17] — 2026-11-06
 
 - **XDP, IPv6 con extension header**: prima un pacchetto con una extension header passava senza controllo (aggirabile di proposito). Ora si attraversano fino a 6 header noti (hop-by-hop, routing, destination options, fragment solo se primo frammento, AH) fino all'UDP; ESP, header sconosciute, catene più lunghe e frammenti non-primi passano. Test `TestXDPIPv6ExtensionHeaders` (14 casi, sul vero programma, in CI come root). **Non ancora visto con il verifier del kernel in questa sessione: lo esegue la CI (`zt-probe`).**

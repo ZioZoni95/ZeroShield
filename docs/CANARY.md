@@ -1,5 +1,7 @@
 # Canary anti-ransomware — guida d'uso e design
 
+> **Dalla GUI (0.0.18):** pagina *Funzioni* → «Anti-ransomware (canary)»: scegli le cartelle, conferma, e ZeroShield scrive il config e prepara il drop-in systemd da solo (il resto di questa pagina descrive i parametri e il funzionamento). Parte in base alla modalità globale: in *Solo osserva* avvisa soltanto.
+
 Il canary è il terzo livello di ZeroShield accanto a LSM (segreti) e XDP (rete):
 file-esca piazzati dove un ransomware guarda per primo, sorvegliati con
 **fanotify**. Chi tocca un'esca viene segnalato (audit) o ucciso (enforce).

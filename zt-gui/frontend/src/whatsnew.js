@@ -5,6 +5,15 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.18': {
+        title: 'Novità della versione 0.0.18',
+        items: [
+            ['Nuova pagina «Funzioni»', 'Un pulsante per ogni funzione, da accendere o spegnere una per una: protezione dei segreti (solo osserva o blocca), filtro di rete, anti-ransomware, avvio all\'accensione e icona nella barra. Ogni scheda spiega cosa fa e mostra lo stato reale del demone.'],
+            ['Anti-ransomware dalla GUI', 'Il canary si accende scegliendo le cartelle (Documenti, Scrivania…) e parte da solo avvisando: l\'aggiornamento prepara anche il permesso di sistema che gli serve per creare le esche.'],
+            ['Scorciatoie 1-8', 'Con la nuova pagina Funzioni (tasto 4) Regole passa a 5, Rete a 6, Configurazione a 7, Guida a 8.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento. Il canary conviene lasciarlo una settimana in «Solo osserva».',
+    },
     '0.0.17': {
         title: 'Novità della versione 0.0.17',
         items: [

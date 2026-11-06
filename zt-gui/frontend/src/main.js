@@ -1,7 +1,8 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
+import {createFeaturesView} from './features.js';
 import {statusHtml} from './statuspage.js';
 import {createIfaceView} from './ifaces.js';
 import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
@@ -14,9 +15,9 @@ const viewTitle = document.getElementById('view-title');
 const conn = document.getElementById('conn');
 const evCount = document.getElementById('ev-count');
 const buttons = [...document.querySelectorAll('#sidebar button')];
-const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida', config: 'Configurazione'};
+const TITLES = {status: 'Stato', events: 'Eventi', features: 'Funzioni', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida', config: 'Configurazione'};
 // Stesso ordine della sidebar: i numeri accanto alle voci sono anche le scorciatoie da tastiera.
-const VIEW_ORDER = ['status', 'events', 'radar', 'rules', 'net', 'config', 'guide'];
+const VIEW_ORDER = ['status', 'events', 'radar', 'features', 'rules', 'net', 'config', 'guide'];
 
 let view = 'status';
 
@@ -71,14 +72,14 @@ let prevMode = '';
 
 buttons.forEach(b => b.onclick = () => go(b.dataset.view));
 
-// Scorciatoie 1-7. Mai mentre si scrive in un campo o c'e' una finestra aperta:
+// Scorciatoie 1-8. Mai mentre si scrive in un campo o c'e' una finestra aperta:
 // la ricerca eventi non deve cambiare tab digitando un numero.
 document.addEventListener('keydown', e => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target && e.target.tagName;
     if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
     if (document.getElementById('onboard') || document.getElementById('dlg')) return;
-    const i = '1234567'.indexOf(e.key);
+    const i = '12345678'.indexOf(e.key);
     if (i >= 0 && e.key.length === 1) go(VIEW_ORDER[i]);
 });
 
@@ -285,6 +286,7 @@ function render(force) {
     evCount.textContent = events.length > 0 ? events.length : '';
     if (view === 'status') return renderStatus();
     if (view === 'events') return renderEvents();
+    if (view === 'features') return featuresView.render();
     if (view === 'rules') return renderRules(force);
     if (view === 'radar') return renderRadar();
     if (view === 'guide') return renderGuide();
@@ -676,6 +678,15 @@ function wireEventLinks() {
         l.onclick = () => { evSearch = l.dataset.rule; evType = 'all'; render(); };
     });
 }
+
+// La pagina Funzioni (un pulsante per funzione) vive in features.js.
+const featuresView = createFeaturesView({
+    content, esc,
+    api: {RulesModel, ApplyFeatures, BootEnabled, SetBootEnabled, TrayEnabled, SetTrayEnabled},
+    getStatus: () => status, confirmDialog, toast,
+    goto: v => go(v),
+    switchMode: next => switchMode(next),
+});
 
 // La schermata Regole vive in rules.js (ha stato proprio: bozza, controlli asincroni, barra "Applica").
 const rulesView = createRulesView({

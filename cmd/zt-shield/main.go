@@ -371,6 +371,9 @@ Opzioni:
 	curVpn := vpn.Check(cfg.Vpn, vpn.ExecRunner)
 	// publishStatus fotografa demone per le UI. Chiamata a ogni cambio rilevante
 	// (avvio, rescan) perche' il protocollo ritrasmette ai connessi.
+	// canaryActive: il watcher fanotify e' davvero partito (la config puo' chiederlo e l'avvio fallire,
+	// per esempio senza CAP_SYS_ADMIN): la GUI mostra lo stato reale, non solo quello voluto.
+	var canaryActive atomic.Bool
 	publishStatus := func() {
 		if srv == nil {
 			return
@@ -394,6 +397,7 @@ Opzioni:
 			Listening: listening, ListeningTotal: listeningTotal, Rules: rules,
 			Version:    version,
 			Interfaces: ifs, IfaceAuto: strings.TrimSpace(cfg.Interface) == "",
+			Canary: ipc.CanaryState{Enabled: cfg.Canary.Enabled, Active: canaryActive.Load(), Dirs: len(cfg.Canary.Dirs)},
 		})
 	}
 	publishStatus()
@@ -592,6 +596,7 @@ Opzioni:
 			}
 		} else {
 			defer w.Close()
+			canaryActive.Store(true)
 			log.Println("🐤 Watcher canary attivo.")
 		}
 	}

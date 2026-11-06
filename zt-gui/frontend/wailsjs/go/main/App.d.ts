@@ -31,6 +31,12 @@ export function ServiceInstallAs(arg1:string,arg2:string):Promise<void>;
 
 export function ServiceStart():Promise<void>;
 
+export function ApplyFeatures(arg1:boolean,arg2:boolean,arg3:Array<string>):Promise<void>;
+
+export function TrayEnabled():Promise<boolean>;
+
+export function SetTrayEnabled(arg1:boolean):Promise<void>;
+
 export function BootEnabled():Promise<boolean>;
 
 export function SetBootEnabled(arg1:boolean):Promise<void>;

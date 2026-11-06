@@ -71,6 +71,9 @@ await page.addInitScript((status) => {
     SetConfigMode: async (m) => { window.__setModeCalls.push(m); },
     BootEnabled: async () => window.__boot,
     SetBootEnabled: async (on) => { window.__bootCalls.push(on); window.__boot = on; },
+    TrayEnabled: async () => window.__tray,
+    SetTrayEnabled: async (on) => { window.__trayCalls.push(on); window.__tray = on; },
+    ApplyFeatures: async (poison, canary, dirs) => { window.__featCalls.push([poison, canary, dirs]); },
     RulesModel: async () => JSON.parse(JSON.stringify(window.__rm)),
     CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
     ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
@@ -83,7 +86,7 @@ await page.addInitScript((status) => {
   const prog = (name, path, o) => Object.assign({ input: name, name, path, found: true, trusted: true, trust_err: '', verdict_ok: true, why: '', fix: '', ok: true, alt: '' }, o || {});
   const tool = (id, label, rules, reads, p, allowed) => Object.assign({ id, label, names: [id], rules, reads }, p, { allowed: allowed || [] });
   window.__rm = {
-    profile: 'home', manual: false, manual_rules: false, global_mode: 'audit', error: '', custom: [], helpers: [{ id: 'localsearch', label: 'Indicizzatore di GNOME (localsearch)', why: 'scansiona i file in background', found: ['/usr/libexec/localsearch-extractor-3'] }, { id: 'altro', label: 'Non presente', why: 'x', found: [] }], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
+    profile: 'home', features: { block_poisoning: true, manual_block_poisoning: false, canary_enabled: false, canary_dirs: [], manual_canary: false, canary_candidates: ['Documents', 'Scrivania'] },  manual: false, manual_rules: false, global_mode: 'audit', error: '', custom: [], helpers: [{ id: 'localsearch', label: 'Indicizzatore di GNOME (localsearch)', why: 'scansiona i file in background', found: ['/usr/libexec/localsearch-extractor-3'] }, { id: 'altro', label: 'Non presente', why: 'x', found: [] }], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
     groups: [
       grp('ssh', 'ssh-keys', true, ['ssh', 'ssh-add'], ['.ssh/id_*']),
       grp('cloud', 'cloud-creds', true, ['kubectl', 'helm', 'k9s'], ['.kube/config']),
@@ -112,7 +115,7 @@ await page.addInitScript((status) => {
     '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s': prog('k9s', '/usr/local/bin/k9s'),
   };
   window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = ''; window.__ifCalls = []; window.__ifFail = '';
-  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = [];
+  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = []; window.__tray = true; window.__trayCalls = []; window.__featCalls = [];
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
     EventsOff: () => {},
@@ -217,13 +220,13 @@ check('Guida: nessun cp che sovrascrive la config', !/sudo cp configs\/shield\.e
 // --- Correzioni UX (2026-11-04): menu, tastiera, ora locale, configurazione, eventi, guida.
 await page.click('#sidebar button[data-view="status"]');
 const nav = await page.evaluate(() => [...document.querySelectorAll('#sidebar button')].map(b => b.dataset.view + ':' + b.querySelector('kbd').textContent));
-check('menu: ordine e numeri coerenti (1..7 in sequenza)', nav.join(',') === 'status:1,events:2,radar:3,rules:4,net:5,config:6,guide:7', nav.join(','));
+check('menu: ordine e numeri coerenti (1..8 in sequenza)', nav.join(',') === 'status:1,events:2,radar:3,features:4,rules:5,net:6,config:7,guide:8', nav.join(','));
 
 await page.evaluate(() => document.activeElement && document.activeElement.blur());
-await page.keyboard.press('4');
-check('tastiera: il tasto 4 apre Regole', (await page.textContent('#view-title')) === 'Regole');
-await page.keyboard.press('6');
-check('tastiera: il tasto 6 apre Configurazione', (await page.textContent('#view-title')) === 'Configurazione');
+await page.keyboard.press('5');
+check('tastiera: il tasto 5 apre Regole', (await page.textContent('#view-title')) === 'Regole');
+await page.keyboard.press('7');
+check('tastiera: il tasto 7 apre Configurazione', (await page.textContent('#view-title')) === 'Configurazione');
 await page.keyboard.press('2');
 await page.waitForSelector('#ev-q');
 await page.focus('#ev-q');
@@ -949,13 +952,57 @@ for (const v of ['guide', 'config']) {
   check(`riquadri: in ${v} richiuderlo a mano lo mantiene chiuso`, closedAfter === false);
 }
 
+// Pagina Funzioni: un pulsante per funzione, con lo stato reale del demone
+{
+  await page.click('#sidebar button[data-view="features"]');
+  await page.waitForSelector('#fn-root .fn-card');
+  const titles = await page.evaluate(() => [...document.querySelectorAll('#fn-root .fn-head b')].map(b => b.textContent));
+  check('funzioni: sei schede (segreti, rete, canary, avvio, icona, VPN)', titles.length === 6 && titles.some(t => t.includes('Anti-ransomware')) && titles.some(t => t.includes('Filtro di rete')), titles.join(' | '));
+  check('funzioni: il canary spento mostra le cartelle da scegliere', (await page.locator('#fn-root [data-dir]').count()) === 2);
+  check('funzioni: l\'icona (accesa) risulta Attiva', (await page.textContent('#fn-tray')).includes('Attiva'));
+
+  // Filtro di rete: spegnerlo chiede conferma e chiama ApplyFeatures(false, canary, dirs)
+  await page.click('#fn-poison');
+  await page.waitForSelector('#dlg');
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__featCalls.length === 1);
+  check('funzioni: spegnere il filtro chiama ApplyFeatures(false, false, …)', await page.evaluate(() => window.__featCalls[0][0] === false && window.__featCalls[0][1] === false), JSON.stringify(await page.evaluate(() => window.__featCalls)));
+
+  // Canary: acceso con le cartelle scelte
+  await page.waitForSelector('#fn-canary:not([disabled])');
+  await page.check('[data-dir="Scrivania"]');
+  await page.click('#fn-canary');
+  await page.waitForSelector('#dlg');
+  check('funzioni: la conferma del canary elenca le cartelle e spiega che in audit avvisa soltanto', (await page.textContent('#dlg')).includes('Scrivania') && (await page.textContent('#dlg')).includes('Solo osserva'));
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__featCalls.length === 2);
+  check('funzioni: accendere il canary chiama ApplyFeatures(…, true, [cartelle])', await page.evaluate(() => window.__featCalls[1][1] === true && window.__featCalls[1][2].includes('Scrivania')), JSON.stringify(await page.evaluate(() => window.__featCalls[1])));
+
+  // Icona: si accende e si spegne senza password (nessun dialogo per accenderla)
+  await page.click('#fn-tray');
+  await page.waitForFunction(() => window.__trayCalls.length === 1);
+  check('funzioni: l\'icona si spegne con SetTrayEnabled(false)', await page.evaluate(() => window.__trayCalls[0] === false));
+
+  // Stato reale: canary attivo secondo il demone
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: { enabled: true, active: true, dirs: 1 } }); window.__emit('shield:status', window.__status); });
+  await page.waitForFunction(() => [...document.querySelectorAll('.fn-card')].find(c => c.textContent.includes('Anti-ransomware'))?.querySelector('.fn-state')?.textContent === 'Attivo');
+  const cardTxt = await page.locator('.fn-card', { hasText: 'Anti-ransomware' }).textContent();
+  check('funzioni: il canary risulta Attivo dallo stato del demone', cardTxt.includes('Attivo'), cardTxt.slice(0, 120));
+
+  // Voluto ma non partito: avviso, non un finto «attivo»
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: { enabled: true, active: false, dirs: 1 } }); window.__emit('shield:status', window.__status); });
+  await page.waitForFunction(() => document.querySelector('#fn-root').textContent.includes('non partito'));
+  check('funzioni: canary voluto ma non partito = avviso', true);
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: undefined }); window.__emit('shield:status', window.__status); });
+}
+
 // Layout fluido: ogni componente segue la larghezza della finestra (stretta, normale, molto larga)
 {
   const sizes = [[480, 700], [760, 700], [1100, 760], [1900, 1000]];
   const seenW = {};
   for (const [w, h] of sizes) {
     await page.setViewportSize({ width: w, height: h });
-    for (const v of ['status', 'events', 'radar', 'rules', 'net', 'config', 'guide']) {
+    for (const v of ['status', 'events', 'radar', 'features', 'rules', 'net', 'config', 'guide']) {
       await page.click(`#sidebar button[data-view="${v}"]`);
       await page.waitForTimeout(60);
       const m = await page.evaluate(() => ({

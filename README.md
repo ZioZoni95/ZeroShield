@@ -196,7 +196,7 @@ nome con cui lo chiami.
   sulle mappe (tetto di 4096 per regola, 16384 in tutto) e un watcher **inotify** riallinea le mappe entro
   ~0,1 s da un rename (al massimo 1 s sotto una raffica); il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
   **Fail-closed**: se un hook non si aggancia il demone si ferma invece di fingersi attivo.
-* **Anti-ransomware (canary + fanotify).** File esca nascosti nelle cartelle scelte: chi li tocca viene
+* **Anti-ransomware (canary + fanotify).** Si accende dalla pagina **Funzioni** della GUI (sceglie le cartelle, prepara anche il drop-in systemd) o a mano nel config. File esca nascosti nelle cartelle scelte: chi li tocca viene
   ucciso in `enforce` (mai PID ≤ 1 né il demone). Una raffica di scritture, cancellazioni o rinomine genera
   solo un allarme. `exclude_exe` e `allow_exe` esentano indicizzatori e backup. Spento di default: si tara una
   settimana in `audit` ([`docs/CANARY.md`](docs/CANARY.md)).
@@ -390,7 +390,7 @@ sanificato nel demone (`ipc.SafeText`) prima di raggiungere TUI e GUI.
 |---|---|
 | `zt-shield` | Il demone (`sudo zt-shield` o servizio). Sottocomandi: `ctl ping\|rescan`, `dropin` (drop-in systemd per il canary), `config-apply FILE` (root: valida un config, copia di sicurezza, sostituzione atomica, riavvio e ripristino se non riparte; lo usa la GUI) |
 | `zt-tui` | Terminale con sei schede (Stato, Eventi, Regole, Rete, Radar, Config), filtro eventi, azioni (`i` installa, `s` avvia, `X` ferma, `m` mode, `R` rescan) e `--dump` |
-| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, **regole guidate** (catalogo, «Rendi affidabile», bozza e *Applica*), rete e VPN, configurazione con cambio audit/enforce, guida a schede, primo avvio con controlli preliminari, interruttore **Avvio all'accensione** e popup **Novità** a ogni nuova versione. **Finestra adattiva**: il contenuto segue la larghezza (fino a 480 px, con la barra laterale a sole icone sotto i 900 px). Scorciatoie `1`-`7`; la versione è in fondo alla barra laterale |
+| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, **pagina Funzioni** (un pulsante per ogni funzione: segreti, filtro di rete, anti-ransomware, avvio, icona), **regole guidate** (catalogo, «Rendi affidabile», bozza e *Applica*), rete e VPN, configurazione con cambio audit/enforce, guida a schede, primo avvio con controlli preliminari, interruttore **Avvio all'accensione** e popup **Novità** a ogni nuova versione. **Finestra adattiva**: il contenuto segue la larghezza (fino a 480 px, con la barra laterale a sole icone sotto i 900 px). Scorciatoie `1`-`8`; la versione è in fondo alla barra laterale |
 | `zt-tray` | Icona nella barra di sistema: 🔵 enforce con hook, 🟠 audit o senza hook LSM, 🔴 demone spento. Notifica demone caduto/tornato e blocchi/canary **anche a finestra chiusa** (con la GUI aperta se ne occupa lei). Servizio utente systemd; clic = apre la GUI. Chiuderla non ferma la protezione |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF |
 | `zt-probe` | Collaudo del kernel: verifier per programma e, con `-xdp-lo`, XDP su loopback |

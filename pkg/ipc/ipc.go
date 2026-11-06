@@ -109,6 +109,14 @@ type VpnStatus struct {
 }
 
 // Status: fotografia del demone. Inviata a ogni nuova connessione e su UpdateStatus.
+// CanaryState: stato dell'anti-ransomware (canary). Enabled = voluto dalla config; Active = il watcher e'
+// davvero partito (puo' fallire senza CAP_SYS_ADMIN o con la home in sola lettura sotto systemd).
+type CanaryState struct {
+	Enabled bool `json:"enabled"`
+	Active  bool `json:"active"`
+	Dirs    int  `json:"dirs"`
+}
+
 type Status struct {
 	Type           string        `json:"-"`
 	Profile        string        `json:"profile"`
@@ -129,6 +137,7 @@ type Status struct {
 	Version        string        `json:"version"` // versione del demone (le UI avvisano se e' diversa dalla loro)
 	Interfaces     []IfaceInfo   `json:"interfaces"`
 	IfaceAuto      bool          `json:"iface_auto"` // nessuna `interface` nel config: si filtra la rete in uso
+	Canary         CanaryState   `json:"canary"`
 }
 
 // WireEvent: un evento di audit serializzato (stessi campi del log JSON).

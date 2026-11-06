@@ -58,6 +58,18 @@ export function ServiceStart() {
   return window['go']['main']['App']['ServiceStart']();
 }
 
+export function ApplyFeatures(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ApplyFeatures'](arg1, arg2, arg3);
+}
+
+export function TrayEnabled() {
+  return window['go']['main']['App']['TrayEnabled']();
+}
+
+export function SetTrayEnabled(arg1) {
+  return window['go']['main']['App']['SetTrayEnabled'](arg1);
+}
+
 export function BootEnabled() {
   return window['go']['main']['App']['BootEnabled']();
 }
