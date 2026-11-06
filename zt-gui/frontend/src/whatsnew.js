@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.14': {
+        title: 'Novità della versione 0.0.14',
+        items: [
+            ['Agente SSH di GNOME nel catalogo', 'In Regole trovi «Agente SSH di GNOME (gcr-ssh-agent)»: se in Blocca le tue chiavi non si caricavano più nell\'agente (ssh-add -l vuoto) basta un clic su Autorizza e Applica.'],
+        ],
+        note: 'Dopo Applica riavvia l\'agente: systemctl --user restart gcr-ssh-agent.',
+    },
     '0.0.13': {
         title: 'Novità della versione 0.0.13',
         items: [

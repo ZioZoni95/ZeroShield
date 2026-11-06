@@ -6,6 +6,10 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.14] — 2026-11-06
+
+- **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
+
 ## [0.0.13] — 2026-11-05
 
 - **GUI**: i riquadri a tendina (`<details>`) non si richiudono più da soli a ogni aggiornamento dello stato, in nessuna schermata. Si ricorda lo stato per schermata, titolo e posizione. Test in Guida e Configurazione.

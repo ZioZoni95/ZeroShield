@@ -78,7 +78,7 @@ Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stat
 
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.9** (pre-release, alpha); `main` è alla **0.0.12**, non ancora rilasciata. Il numero che vedi in fondo alla barra laterale della
+Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` è alla **0.0.14**, non ancora rilasciata. Il numero che vedi in fondo alla barra laterale della
 GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`. Cosa cambia in ogni versione:
 [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -232,7 +232,7 @@ nome con cui lo chiami.
 **Dalla GUI (consigliato).** La scheda *Regole* mostra questi gruppi con un interruttore e **una modalità propria**
 (*come le altre*, *solo osserva*, *blocca*) ciascuno, permette di togliere o rimettere i programmi di base e di creare
 **protezioni tue** (*Proteggi un mio file*: selettore, schemi con `*`, anteprima dei file coperti e avvisi). Mostra anche un
-**catalogo di programmi noti** (k3d, helm, k9s, oh-my-posh, kubectx, stern, flux, argocd, kind, minikube,
+**catalogo di programmi noti** (agente SSH di GNOME, k3d, helm, k9s, oh-my-posh, kubectx, stern, flux, argocd, kind, minikube,
 skaffold, lazydocker, gh, glab) e l'elenco dei programmi visti in `audit`, con il motivo quando uno non si può
 autorizzare. Le scelte restano una bozza finché non premi *Applica*.
 

@@ -315,3 +315,17 @@ func TestHelpersAreOnlyListedWhenPresentAndTrusted(t *testing.T) {
 		}
 	}
 }
+
+// Il catalogo contiene l'agente SSH di GNOME e punta a una regola che esiste davvero tra i gruppi predefiniti.
+func TestCatalogHasGnomeSSHAgent(t *testing.T) {
+	tool, ok := ToolByID("gcr-ssh-agent")
+	if !ok {
+		t.Fatal("gcr-ssh-agent manca dal catalogo")
+	}
+	if len(tool.Names) != 1 || tool.Names[0] != "/usr/libexec/gcr-ssh-agent" {
+		t.Errorf("percorso inatteso: %v", tool.Names)
+	}
+	if len(tool.Rules) != 1 || tool.Rules[0] != "ssh-keys" {
+		t.Errorf("regole inattese: %v", tool.Rules)
+	}
+}
