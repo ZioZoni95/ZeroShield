@@ -128,6 +128,13 @@ func (m *Manager) RuleName(id uint32) string {
 	return fmt.Sprintf("rule-%d", id)
 }
 
+// optionalBinaries: voci di base che possono non esistere (programmi di GNOME su un sistema KDE o su un server):
+// se mancano non e' un errore di configurazione e non si scrive l'avviso «non risolto».
+var optionalBinaries = map[string]bool{
+	"seahorse":                   true,
+	"/usr/libexec/gcr-ssh-agent": true,
+}
+
 // Sync riallinea le mappe allo stato attuale del filesystem: aggiunge i nuovi
 // file/binari e rimuove le voci non piu' presenti.
 //
@@ -154,6 +161,9 @@ func (m *Manager) Sync() (protected, allowed int) {
 			// con nome regola, cosi' l'utente sa cosa allargare o dove mettere path assoluto.
 			exe, ok := resolveExe(m.home, a)
 			if !ok {
+				if optionalBinaries[a] {
+					continue // programma di desktop che puo' mancare: niente avviso
+				}
 				m.warnOnce("unresolved:"+r.Name+":"+a, fmt.Sprintf("⚠️ regola %q: binario %q non risolto (PATH demone: %q + /snap/bin + ~/.local/bin), NON in whitelist", r.Name, a, os.Getenv("PATH")))
 				continue
 			}

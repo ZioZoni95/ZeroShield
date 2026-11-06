@@ -6,6 +6,11 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.15] — 2026-11-06
+
+- **Falsi blocchi**: `seahorse` («Password e chiavi», lanciato anche dalla ricerca del menu applicazioni) e `/usr/libexec/gcr-ssh-agent` entrano nella lista di base di `ssh-keys`. Visto il 2026-11-06: in enforce venivano negati mentre leggevano `~/.ssh/id_*` (log: `Error reading file … to check for SSH key`). Compromesso dichiarato: due programmi di sistema di root in più possono leggere le chiavi. Se mancano (KDE, server) nessun avviso «non risolto».
+- **Eventi**: il demone ricorda gli ultimi 200 eventi e alert canary e li rilegge a chi si collega (campo `replay`, compatibile con i client vecchi). Prima la GUI aperta dopo una notifica non mostrava il blocco. Tray: i replay non notificano; GUI: scarta i replay già presenti. Test di storico, limite e assenza di doppioni.
+
 ## [0.0.14] — 2026-11-06
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.

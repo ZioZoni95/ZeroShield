@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.15': {
+        title: 'Novità della versione 0.0.15',
+        items: [
+            ['Niente più falsi blocchi dalle app di GNOME', '«Password e chiavi» (seahorse) e l\'agente SSH del portachiavi non vengono più bloccati quando leggono le tue chiavi: sono nella lista di base della protezione SSH.'],
+            ['Gli eventi non si perdono più', 'Se ricevi una notifica di blocco a finestra chiusa, aprendo la GUI trovi l\'evento in Eventi (il demone ricorda gli ultimi 200). Gli eventi riletti non rinotificano.'],
+        ],
+        note: 'Serve il demone nuovo: dopo l\'aggiornamento riavvia il servizio (si riavvia da solo se ZeroShield era già configurato).',
+    },
     '0.0.14': {
         title: 'Novità della versione 0.0.14',
         items: [

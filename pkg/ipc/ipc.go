@@ -87,6 +87,7 @@ type CanaryAlert struct {
 	Path   string `json:"path,omitempty"`
 	Kind   string `json:"kind"`
 	Reason string `json:"reason"`
+	Replay bool   `json:"replay,omitempty"` // vedi WireEvent.Replay
 }
 
 // VpnStatus: stato osservato di tunnel e kill-switch (non quello "voluto").
@@ -140,6 +141,9 @@ type WireEvent struct {
 	Exe    string `json:"exe,omitempty"`
 	Rule   string `json:"rule"`
 	Inode  uint64 `json:"inode"`
+	// Replay: evento riletto dallo storico alla connessione (non e' successo adesso). Le UI lo
+	// mostrano ma non lo notificano; la GUI lo scarta se l'ha gia' visto (riconnessione).
+	Replay bool `json:"replay,omitempty"`
 }
 
 // envelope distingue i tipi sulla stessa connessione.
@@ -151,10 +155,26 @@ type envelope struct {
 type Server struct {
 	mu     sync.Mutex
 	subs   map[chan []byte]struct{}
-	status []byte // ultima riga status (già con \n)
+	status []byte   // ultima riga status (già con \n)
+	hist   [][]byte // ultimi eventi/alert, gia' marcati "replay": chi si collega adesso li rilegge
 
 	lis    net.Listener
 	closed bool
+}
+
+// histMax: quanti eventi il demone ricorda per chi si collega dopo (la GUI mostra gli ultimi 200).
+const histMax = 200
+
+// remember accoda una riga allo storico (con il campo replay) e butta la piu' vecchia oltre histMax.
+// Va chiamato con s.mu preso.
+func (s *Server) remember(typ string, raw []byte) {
+	line := make([]byte, 0, len(raw)+32)
+	line = append(line, []byte(`{"type":"`+typ+`","replay":true,`)...)
+	line = append(line, raw[1:]...)
+	s.hist = append(s.hist, line)
+	if len(s.hist) > histMax {
+		s.hist = append([][]byte(nil), s.hist[len(s.hist)-histMax:]...)
+	}
 }
 
 // NewServer apre il socket con permessi 0666: qualunque utente locale lo legge.
@@ -239,6 +259,7 @@ func (s *Server) Publish(ev WireEvent) {
 	raw = append(raw, '\n')
 	line := markType(raw, "event")
 	s.mu.Lock()
+	s.remember("event", raw)
 	for ch := range s.subs {
 		select {
 		case ch <- line:
@@ -260,6 +281,7 @@ func (s *Server) PublishCanary(a CanaryAlert) {
 	raw = append(raw, '\n')
 	line := markType(raw, "canary")
 	s.mu.Lock()
+	s.remember("canary", raw)
 	for ch := range s.subs {
 		select {
 		case ch <- line:
@@ -306,6 +328,9 @@ func (s *Server) serve(conn net.Conn) {
 	}
 	s.subs[ch] = struct{}{}
 	status := s.status
+	// Lo storico si copia nella stessa sezione critica in cui ci si iscrive: niente buchi e niente
+	// doppioni tra gli eventi riletti e quelli in diretta.
+	hist := append([][]byte(nil), s.hist...)
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -320,6 +345,14 @@ func (s *Server) serve(conn net.Conn) {
 		if err := w.Flush(); err != nil {
 			return
 		}
+	}
+	for _, line := range hist {
+		if _, err := w.Write(line); err != nil {
+			return
+		}
+	}
+	if err := w.Flush(); err != nil {
+		return
 	}
 	for line := range ch {
 		if _, err := w.Write(line); err != nil {
