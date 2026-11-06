@@ -150,6 +150,10 @@ type WireEvent struct {
 	Exe    string `json:"exe,omitempty"`
 	Rule   string `json:"rule"`
 	Inode  uint64 `json:"inode"`
+	// Dest/Scope: solo per Action "egress" (connessione in uscita di un programma che ha letto un segreto):
+	// destinazione "IP:porta" e ambito (lan | internet).
+	Dest  string `json:"dest,omitempty"`
+	Scope string `json:"scope,omitempty"`
 	// Replay: evento riletto dallo storico alla connessione (non e' successo adesso). Le UI lo
 	// mostrano ma non lo notificano; la GUI lo scarta se l'ha gia' visto (riconnessione).
 	Replay bool `json:"replay,omitempty"`
@@ -260,6 +264,7 @@ func (s *Server) UpdateStatus(st Status) {
 // Publish invia un evento a tutti i connessi (drop se pieni, mai blocco).
 func (s *Server) Publish(ev WireEvent) {
 	ev.Comm, ev.Exe, ev.Rule = SafeText(ev.Comm), SafeText(ev.Exe), SafeText(ev.Rule)
+	ev.Dest, ev.Scope = SafeText(ev.Dest), SafeText(ev.Scope)
 	ev.Time = time.Now().UTC().Format(time.RFC3339)
 	raw, err := json.Marshal(ev)
 	if err != nil {

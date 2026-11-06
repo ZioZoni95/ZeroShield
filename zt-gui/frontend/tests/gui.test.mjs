@@ -996,6 +996,28 @@ for (const v of ['guide', 'config']) {
   await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: undefined }); window.__emit('shield:status', window.__status); });
 }
 
+// Connessioni in uscita: evento 'egress' con tag, destinazione e filtro dedicato
+{
+  await page.click('#sidebar button[data-view="events"]');
+  await page.waitForSelector('#ev-q');
+  await page.evaluate(() => {
+    window.__emit('shield:event', { time: '2026-10-05T12:30:00Z', action: 'egress', pid: 7001, comm: 'python3', exe: '/usr/bin/python3.12', rule: 'ssh-keys', inode: 0, dest: '203.0.113.9:443', scope: 'internet' });
+    window.__emit('shield:event', { time: '2026-10-05T12:30:01Z', action: 'egress', pid: 7002, comm: 'kubectl', exe: '/usr/local/bin/kubectl', rule: 'cloud-creds', inode: 0, dest: '10.209.4.1:6443', scope: 'lan' });
+  });
+  await page.waitForFunction(() => document.querySelector('#ev-body').textContent.includes('203.0.113.9:443'));
+  const body = await page.textContent('#ev-body');
+  check('uscita: la riga mostra programma e destinazione', body.includes('/usr/bin/python3.12') && body.includes('203.0.113.9:443') && body.includes('uscita'));
+  check('uscita: la rete locale e distinta da Internet', body.includes('rete locale') && body.includes('10.209.4.1:6443'));
+  await page.click('#ev-bar [data-t="egress"]');
+  await page.waitForTimeout(150);
+  const onlyEg = await page.evaluate(() => [...document.querySelectorAll('#ev-body tr')].slice(1).every(r => r.textContent.includes('uscita')) && document.querySelectorAll('#ev-body tr').length > 2);
+  check('uscita: il filtro «uscita» mostra solo le connessioni in uscita', onlyEg);
+  await page.click('#ev-bar [data-t="audit"]');
+  await page.waitForTimeout(150);
+  check('uscita: il filtro «audit» le esclude', !(await page.textContent('#ev-body')).includes('203.0.113.9:443'));
+  await page.click('#ev-bar [data-t="all"]');
+}
+
 // Layout fluido: ogni componente segue la larghezza della finestra (stretta, normale, molto larga)
 {
   const sizes = [[480, 700], [760, 700], [1100, 760], [1900, 1000]];

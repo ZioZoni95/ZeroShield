@@ -547,6 +547,30 @@ Opzioni:
 		})
 	})
 
+	// --- Audit delle connessioni in uscita (solo registro) -----------------------------
+	// Hook opzionale: se non si aggancia, lo scudo prosegue senza. Segnala la prima volta che un programma che ha appena
+	// letto un segreto si collega a una destinazione; non blocca mai niente. Vedi docs/EGRESS.md.
+	if egLink, err := objs.AttachEgress(); err != nil {
+		log.Printf("⚠️ audit delle connessioni in uscita non agganciato: %v", err)
+	} else if egLink != nil {
+		defer egLink.Close()
+		if egRd, err := ringbuf.NewReader(objs.EgressLogs); err != nil {
+			log.Printf("⚠️ ring buffer delle connessioni in uscita: %v", err)
+		} else {
+			defer egRd.Close()
+			go audit.RunEgress(egRd, mgr.RuleName, exeIdx.Resolve, func(ev audit.EgressEvent) {
+				if srv == nil {
+					return
+				}
+				srv.Publish(ipc.WireEvent{
+					Action: "egress", PID: ev.PID, Comm: ev.Comm, Exe: ev.Exe, Rule: ev.Rule,
+					Dest: ev.Dest, Scope: ev.Scope,
+				})
+			})
+			log.Println("📤 Audit delle connessioni in uscita attivo (solo registro).")
+		}
+	}
+
 	// --- Canary anti-ransomware (fanotify, solo userspace) ------------------------------
 	// Disabilitato di default (canary.enabled). Non fatale: senza CAP_SYS_ADMIN
 	// il watcher non parte ma LSM/XDP restano attivi. Vedi docs/CANARY.md.

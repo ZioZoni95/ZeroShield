@@ -512,3 +512,8 @@ details.tech { margin: 14px 0 4px; }
 .fn-dir { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .chip.big { padding: 7px 16px; font-size: 13.5px; }
 .chip[disabled] { opacity: .55; cursor: default; }
+
+/* Connessioni in uscita di chi ha letto un segreto */
+.tag-egress { background: var(--amber-soft); color: var(--amber); }
+.tag-egress-lan { background: rgba(127,127,127,.2); color: var(--dim); }
+.row-egress td:first-child { box-shadow: inset 3px 0 0 var(--amber); }

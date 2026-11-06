@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.20': {
+        title: 'Novità della versione 0.0.20',
+        items: [
+            ['Chi manda dove, dopo aver letto un segreto', 'In Eventi trovi le connessioni in uscita dei programmi che hanno appena letto un tuo segreto: programma, destinazione e se è la rete locale o Internet. Si segnala la prima volta che compare una destinazione nuova. Usa il filtro «uscita».'],
+        ],
+        note: 'È solo un registro: non blocca niente e non vede il contenuto. Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.18': {
         title: 'Novità della versione 0.0.18',
         items: [

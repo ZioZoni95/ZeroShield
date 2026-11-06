@@ -10,6 +10,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/btf"
+	"github.com/cilium/ebpf/link"
 )
 
 // ProgZtFileTruncate: hook lsm/file_truncate (ftruncate su fd aperto, kernel >= 6.2).
@@ -18,6 +19,10 @@ import (
 // programmi come obbligatori (ShieldObjects fallirebbe su un kernel 5.15/6.1). Load qui
 // sotto decide a runtime se caricarlo.
 const ProgZtFileTruncate = "zt_file_truncate"
+
+// ProgZtSocketConnect: hook lsm/socket_connect (audit delle connessioni in uscita di chi ha letto un segreto).
+// OPZIONALE e solo registro: se non si carica o non si aggancia lo scudo prosegue senza questa copertura.
+const ProgZtSocketConnect = "zt_socket_connect"
 
 // CorePrograms: i programmi presenti su ogni kernel supportato. Deve coincidere con
 // ShieldPrograms meno ProgZtFileTruncate (lo verifica TestCoreProgramsMatchSpec).
@@ -46,7 +51,8 @@ type truncObjects struct {
 type Objects struct {
 	CorePrograms
 	ShieldMaps
-	ZtFileTruncate *ebpf.Program
+	ZtFileTruncate  *ebpf.Program
+	ZtSocketConnect *ebpf.Program // nil se non caricato (kernel senza l'hook, o rifiuto del verifier)
 }
 
 var (
@@ -69,6 +75,46 @@ func KernelHasLSMHook(name string) bool {
 
 // Load carica programmi e mappe. Sostituisce LoadShieldObjects.
 func Load() (*Objects, error) {
+	o, err := loadCore()
+	if err != nil {
+		return nil, err
+	}
+	loadEgress(o)
+	return o, nil
+}
+
+// loadEgress carica a parte l'hook delle connessioni in uscita, condividendo le mappe `touched` e `egress_logs` con il
+// resto (check_access scrive in `touched`, l'hook la legge). E' opzionale: un errore si dice e non ferma lo scudo.
+func loadEgress(o *Objects) {
+	if !KernelHasLSMHook("socket_connect") {
+		log.Printf("ℹ️ kernel senza hook socket_connect: audit delle connessioni in uscita non disponibile")
+		return
+	}
+	spec, err := LoadShield()
+	if err != nil {
+		log.Printf("⚠️ audit delle connessioni in uscita non disponibile: %v", err)
+		return
+	}
+	var eg struct {
+		ZtSocketConnect *ebpf.Program `ebpf:"zt_socket_connect"`
+	}
+	opts := &ebpf.CollectionOptions{MapReplacements: map[string]*ebpf.Map{"touched": o.Touched, "egress_logs": o.EgressLogs}}
+	if err := spec.LoadAndAssign(&eg, opts); err != nil {
+		log.Printf("⚠️ hook lsm/socket_connect non caricato (%v): nessun audit delle connessioni in uscita", err)
+		return
+	}
+	o.ZtSocketConnect = eg.ZtSocketConnect
+}
+
+// AttachEgress aggancia l'hook delle connessioni in uscita. Chiamante: chiudere il link alla fine. (nil, nil) se non caricato.
+func (o *Objects) AttachEgress() (link.Link, error) {
+	if o.ZtSocketConnect == nil {
+		return nil, nil
+	}
+	return link.AttachLSM(link.LSMOptions{Program: o.ZtSocketConnect})
+}
+
+func loadCore() (*Objects, error) {
 	spec, err := LoadShield()
 	if err != nil {
 		return nil, fmt.Errorf("spec eBPF: %w", err)
@@ -109,7 +155,7 @@ func (o *Objects) Close() error {
 			first = err
 		}
 	}
-	for _, p := range []*ebpf.Program{o.XdpShield, o.ZtFileOpen, o.ZtFileRename, o.ZtFileUnlink, o.ZtPathTruncate, o.ZtInodeLink, o.ZtFileTruncate} {
+	for _, p := range []*ebpf.Program{o.XdpShield, o.ZtFileOpen, o.ZtFileRename, o.ZtFileUnlink, o.ZtPathTruncate, o.ZtInodeLink, o.ZtFileTruncate, o.ZtSocketConnect} {
 		if p != nil {
 			keep(p.Close())
 		}

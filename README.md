@@ -196,6 +196,7 @@ nome con cui lo chiami.
   sulle mappe (tetto di 4096 per regola, 16384 in tutto) e un watcher **inotify** riallinea le mappe entro
   ~0,1 s da un rename (al massimo 1 s sotto una raffica); il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
   **Fail-closed**: se un hook non si aggancia il demone si ferma invece di fingersi attivo.
+* **Chi manda dove (audit delle connessioni in uscita).** Hook `lsm/socket_connect`, solo registro: segnala la prima volta che un programma che ha appena letto un segreto si collega a una destinazione (rete locale o Internet). Non blocca, non vede il contenuto, non segue i processi figli ([`docs/EGRESS.md`](docs/EGRESS.md)). Mai visto scattare su un kernel reale.
 * **Anti-ransomware (canary + fanotify).** Si accende dalla pagina **Funzioni** della GUI (sceglie le cartelle, prepara anche il drop-in systemd) o a mano nel config. File esca nascosti nelle cartelle scelte: chi li tocca viene
   ucciso in `enforce` (mai PID ≤ 1 né il demone). Una raffica di scritture, cancellazioni o rinomine genera
   solo un allarme. `exclude_exe` e `allow_exe` esentano indicizzatori e backup. Spento di default: si tara una

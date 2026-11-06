@@ -34,6 +34,8 @@ var script = []ipc.WireEvent{
 	{Action: "blocked", PID: 48921, Comm: "cat", Exe: "/usr/bin/cat", Rule: "cloud-creds", Inode: 9740993},
 	{Action: "audit", PID: 5102, Comm: "chrome", Exe: "/opt/google/chrome/chrome", Rule: "browser-secrets", Inode: 778812},
 	{Action: "blocked", PID: 5317, Comm: "ssh", Exe: "/tmp/ssh", Rule: "ssh-keys", Inode: 112345},
+	{Action: "egress", PID: 6120, Comm: "kubectl", Exe: "/usr/local/bin/kubectl", Rule: "cloud-creds", Dest: "10.209.4.1:6443", Scope: "lan"},
+	{Action: "egress", PID: 6188, Comm: "python3", Exe: "/usr/bin/python3.12", Rule: "ssh-keys", Dest: "203.0.113.9:443", Scope: "internet"},
 }
 
 func main() {

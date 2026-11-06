@@ -6,6 +6,12 @@ Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
 _Nulla per ora._
 
+## [0.0.20] — 2026-11-06
+
+- **Audit delle connessioni in uscita** (`docs/EGRESS.md`): nuovo hook `lsm/socket_connect`, **solo registro, non blocca mai**. Il kernel ricorda per 60 s i processi che hanno letto un segreto (mappa `touched`, scritta da `check_access`); a ogni `connect()` IPv4/IPv6 non loopback di uno di essi scrive un evento in un ring buffer dedicato (`egress_logs`, 64 byte per evento). Il demone segnala la **prima volta** di ogni coppia (programma, destinazione), con tetto di 20/s, e la classifica `lan`/`internet`. Evento IPC `action: "egress"` con `dest` e `scope`; GUI: tag «uscita», filtro dedicato, Internet in evidenza; TUI: riga «📤 USCITA».
+- Hook **opzionale**: un errore di caricamento o di aggancio non ferma lo scudo. Le mappe `touched`/`egress_logs` sono condivise con il resto tramite `MapReplacements`.
+- Test: decodifica del layout (v4, v6, payload corto), classificazione dell'ambito, «solo la prima volta» con tetto, evento IPC, e 4 controlli nel browser. **Non provato su un kernel reale**: compila e lo verifica la CI; procedura in `docs/COLLAUDO_HARDENING.md` (sezione 7).
+
 ## [0.0.18] — 2026-11-06
 
 - **Pagina «Funzioni»** (tasto 4; Regole, Rete, Configurazione e Guida scalano a 5-8): una scheda con pulsante per ogni funzione — protezione dei segreti (solo osserva/blocca), filtro di rete (`block_poisoning`), **anti-ransomware (canary)**, avvio all'accensione, icona nella barra — più il monitor VPN solo in lettura. Ogni scheda mostra lo stato **reale** del demone, non solo quello del file.

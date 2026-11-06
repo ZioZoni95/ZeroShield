@@ -521,9 +521,15 @@ func (m model) eventsView() string {
 		if ev.Action == "blocked" {
 			icon = evBlock.Render("🚨 BLOCCO ")
 		}
+		if ev.Action == "egress" {
+			icon = evAudit.Render("📤 USCITA ")
+		}
 		exe := ipc.SafeText(ev.Exe)
 		if exe == "" {
 			exe = dimStyle.Render("(processo uscito)")
+		}
+		if ev.Action == "egress" {
+			exe += " → " + ipc.SafeText(ev.Dest) + " (" + ipc.SafeText(ev.Scope) + ")"
 		}
 		// Colonne fisse: ora(8) regola(15) pid comm(14) exe. Allineate = scansionabili.
 		rows = append(rows, fmt.Sprintf("%s %s  %-15s pid=%-6d %-14.14s %s",

@@ -49,7 +49,7 @@ let status = null;
 let events = [];
 let offlineMsg = '';
 let evSearch = '';
-let evType = 'all'; // all | blocked | audit | canary
+let evType = 'all'; // all | blocked | audit | egress | canary
 let evSevFirst = false; // pericolosi prima (pattern SOC anti alert-fatigue)
 let evGroup = false; // raggruppa righe uguali (regola + exe) con un contatore
 let appVersion = ''; // dal binario (ldflags), non scritta a mano
@@ -548,15 +548,16 @@ function filterEvents() {
     const q = evSearch.toLowerCase();
     return events.filter(e => {
         if (evType === 'blocked' && !(e.action === 'blocked' || e.action === 'killed')) return false;
-        if (evType === 'audit' && (e.action === 'blocked' || e.canary)) return false;
+        if (evType === 'audit' && (e.action === 'blocked' || e.action === 'egress' || e.canary)) return false;
+        if (evType === 'egress' && e.action !== 'egress') return false;
         if (evType === 'canary' && !e.canary) return false;
         if (!q) return true;
-        const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''}`.toLowerCase();
+        const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''} ${e.dest || ''}`.toLowerCase();
         return hay.includes(q);
     });
 }
 
-const evSev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : (e.canary ? 1 : 2);
+const evSev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : ((e.canary || (e.action === 'egress' && e.scope === 'internet')) ? 1 : 2);
 
 // Etichetta e classe riga di un evento (condivise da tabella piatta e raggruppata).
 function evTag(e) {
@@ -564,6 +565,11 @@ function evTag(e) {
         return e.action === 'killed'
             ? [`<span class="tag tag-block">${ICO_BIRD} KILL</span>`, 'row-block']
             : [`<span class="tag tag-canary">${ICO_BIRD} canary</span>`, 'row-canary'];
+    }
+    if (e.action === 'egress') {
+        return e.scope === 'internet'
+            ? ['<span class="tag tag-egress">📤 uscita</span>', 'row-egress']
+            : ['<span class="tag tag-egress-lan">📤 uscita (rete locale)</span>', 'row-audit'];
     }
     return e.action === 'blocked'
         ? [`<span class="tag tag-block">${ICO_BLOCK} BLOCCO</span>`, 'row-block']
@@ -579,8 +585,9 @@ function eventsTableHTML(pool) {
             return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td>canary</td>
             <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.kind || '')}</td><td class="mono">${esc(e.exe || '')} ${esc(e.path || '')}</td></tr>`;
         }
+        const what = e.action === 'egress' ? `${esc(e.exe || '(uscito)')} → <b>${esc(e.dest || '')}</b>` : esc(e.exe || '(uscito)');
         return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td><button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button></td>
-        <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${esc(e.exe || '(uscito)')}</td></tr>`;
+        <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${what}</td></tr>`;
     }).join('');
     return `<table><tr><th>tipo</th><th>ora</th><th>regola</th><th>pid</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
 }
@@ -591,7 +598,7 @@ function eventsTableHTML(pool) {
 function eventsGroupedHTML(pool) {
     const groups = new Map();
     pool.forEach(e => {
-        const k = [e.canary ? 'canary' : e.action, e.rule, e.exe || e.comm || e.path].join('|');
+        const k = [e.canary ? 'canary' : e.action, e.rule, e.exe || e.comm || e.path, e.dest || ''].join('|');
         let g = groups.get(k);
         if (!g) { g = {first: e, n: 0}; groups.set(k, g); }
         g.n++; g.last = e;
@@ -610,7 +617,7 @@ function eventsGroupedHTML(pool) {
 }
 
 function eventsBarHTML() {
-    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['canary', 'canary']]
+    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['egress', 'uscita'], ['canary', 'canary']]
         .map(([v, l]) => `<button class="chip${evType === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('');
     return `<div class="toolbar"><input id="ev-q" type="search" placeholder="Filtra regola, comm, exe, pid…" value="${esc(evSearch)}"><span class="chips">${chips}</span>
     <button id="ev-group" class="chip${evGroup ? ' on' : ''}" title="Una riga per programma, con il numero di accessi">raggruppa</button>

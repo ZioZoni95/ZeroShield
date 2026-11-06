@@ -66,7 +66,7 @@ reale; i 4 programmi LSM passano il verifier (kernel dei runner GitHub).
 
 ## Fase 4 — Egress e AV (ultimi, costosi)
 
-- [ ] Audit delle connessioni in uscita dai programmi che hanno letto un segreto (`lsm/socket_connect`, solo log; vedi PUNTI_APERTI).
+- [x] Audit delle connessioni in uscita dai programmi che hanno letto un segreto (`lsm/socket_connect`, solo log): 0.0.20, vedi `docs/EGRESS.md`.
 - [ ] Egress per processo via cgroup (dopo kill-switch; nftables prima del C).
 - [ ] Hook AV esterno via fanotify `OPEN_PERM` (`av_socket:`, fail-open). Nell'hook va escluso il
   PID del demone, altrimenti va in deadlock.
