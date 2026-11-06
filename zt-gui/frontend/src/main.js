@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
 import {createFeaturesView} from './features.js';
 import {statusHtml} from './statuspage.js';
@@ -689,7 +689,7 @@ function wireEventLinks() {
 // La pagina Funzioni (un pulsante per funzione) vive in features.js.
 const featuresView = createFeaturesView({
     content, esc,
-    api: {RulesModel, ApplyFeatures, BootEnabled, SetBootEnabled, TrayEnabled, SetTrayEnabled},
+    api: {RulesModel, ApplyFeatures, BootEnabled, SetBootEnabled, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff},
     getStatus: () => status, confirmDialog, toast,
     goto: v => go(v),
     switchMode: next => switchMode(next),

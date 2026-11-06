@@ -10,6 +10,7 @@ export function createFeaturesView(d) {
     let model = null, boot = null, tray = null, loading = false, busy = '';
     let dirs = new Set();      // cartelle scelte per il canary (bozza finche' non si preme Attiva)
     let dirsInit = false;
+    let hardProfile = '';      // profilo scelto per l'hardening (vuoto = quello del config)
 
     async function load() {
         if (loading) return;
@@ -88,11 +89,29 @@ export function createFeaturesView(d) {
             `Mostra lo stato in alto (blu = blocca, arancione = solo osserva, rossa = demone spento) e ti avvisa dei blocchi anche a finestra chiusa. Chiuderla non ferma la protezione.`,
             tray === null ? '' : toggle('fn-tray', tray, ['Attiva', 'Spenta'], false)));
 
-        // 6. VPN (solo osservazione)
+        // 6. Hardening del sistema (script harden_system.sh: sempre con anteprima prima)
+        const profiles = ['home', 'corporate', 'public-wifi', 'paranoid'];
+        const hp = hardProfile || (model && profiles.includes(model.profile) ? model.profile : 'home');
+        cards.push(card('Hardening del sistema', 'Manuale', 'warn',
+            `Chiude l’ingresso con il firewall (UFW), spegne LLMNR/mDNS nel resolver, irrigidisce i parametri di rete e, sulle reti ostili, spegne avahi. Prima ti mostro <b>esattamente cosa cambierebbe</b>, poi decidi. <span class="rl-d">Sperimentale: lo script non è mai stato provato su un sistema vero; meglio in una macchina virtuale.</span>`,
+            `<select id="fn-hprof" aria-label="Profilo di hardening">${profiles.map(p => `<option value="${p}"${p === hp ? ' selected' : ''}>${p}</option>`).join('')}</select>
+             <button class="chip big" id="fn-harden">Vedi cosa cambierebbe…</button>`));
+
+        // 7. VPN: monitor (sempre) e kill-switch (se il tunnel e' configurato nel file)
         const vpn = st.vpn || {};
-        cards.push(card('Monitor VPN', vpn.enabled ? 'Attivo' : 'Spento', vpn.enabled ? 'on' : 'off',
-            `Controlla che il tunnel sia su e che il kill-switch sia attivo. <b>Osserva soltanto</b>: non accende né spegne la VPN. Si configura nel file (<code>vpn:</code>) perché servono l’indirizzo del server e il nome del tunnel.`,
-            `<button class="linklike" data-go="net">Vedi lo stato della rete →</button>`));
+        const vpnCfg = !!(vpn.enabled && vpn.endpoint && vpn.tunnel);
+        const ks = !!vpn.killswitch;
+        cards.push(card('VPN: monitor e kill-switch', !vpnCfg ? 'Non configurata' : ks ? 'Kill-switch attivo' : 'Kill-switch spento', !vpnCfg ? 'off' : ks ? 'on' : 'warn',
+            vpnCfg
+                ? `Tunnel <code>${esc(vpn.tunnel)}</code> verso <code>${esc(vpn.endpoint)}</code>: ${vpn.up ? 'su' : '<b>giù</b>'}. Il <b>kill-switch</b> fa uscire solo il traffico del tunnel: se la VPN cade la rete <b>si ferma</b> invece di passare in chiaro. Si toglie da qui o con <code>vpn_killswitch.sh off</code>.`
+                : `Il demone osserva tunnel e kill-switch, ma non c’è una VPN configurata. Aggiungi nel file <code>vpn:</code> con <code>endpoint</code> (IP:porta, mai un nome host) e <code>tunnel</code> per poter gestire il kill-switch da qui. <span class="rl-d">Provato solo in un namespace, mai su una rete vera.</span>`,
+            vpnCfg ? toggle('fn-ks', ks, ['Attivo', 'Spento'], false) + ` <button class="linklike" data-go="net">Stato della rete →</button>`
+                   : `<button class="linklike" data-go="net">Vedi lo stato della rete →</button>`));
+
+        // 8. FIDO2: interattivo (chiave fisica, PIN, tocco): solo da terminale
+        cards.push(card('Chiave FIDO2 (firma dei commit)', 'Da terminale', 'off',
+            `Crea una chiave SSH legata alla tua chiave fisica (serve il PIN e un tocco) e configura git per firmare i commit. È interattiva, quindi non si può fare da qui: lancia nel terminale <code>bash /usr/share/zeroshield/scripts/setup_fido2.sh</code>. <span class="rl-d">Mai eseguito su un sistema vero.</span>`,
+            ''));
 
         const root = document.getElementById('fn-root');
         root.innerHTML = `<div class="fn-grid">${cards.join('')}</div>${busy ? `<div class="rl-bar">${esc(busy)}</div>` : ''}`;
@@ -137,6 +156,34 @@ export function createFeaturesView(d) {
             const want = !boot;
             if (!want && !await confirmDialog({title: 'Spegnere l’avvio all’accensione?', body: 'Dopo il prossimo riavvio il PC resterà <b>senza protezione</b> finché non avvii tu il demone.', ok: 'Spegni', danger: true})) return;
             run(want ? 'Attivo l’avvio…' : 'Spengo l’avvio…', () => api.SetBootEnabled(want), want ? 'Il demone partirà a ogni accensione.' : 'Avvio all’accensione spento.');
+        };
+        const hs = $('fn-hprof');
+        if (hs) hs.onchange = () => { hardProfile = hs.value; };
+        const hb = $('fn-harden');
+        if (hb) hb.onclick = async () => {
+            const prof = ($('fn-hprof') || {}).value || 'home';
+            hb.disabled = true; hb.textContent = 'Calcolo…';
+            let text = '', err = '';
+            try { text = await api.HardenPreview(prof); } catch (e) { err = String((e && e.message) || e); }
+            hb.disabled = false; hb.textContent = 'Vedi cosa cambierebbe…';
+            if (err && !text) { toast(err, true); return; }
+            const ok = await confirmDialog({
+                title: `Hardening «${esc(prof)}»: anteprima`,
+                body: `<div class="fn-pre">${esc(text || '(nessuna modifica)')}</div>${err ? `<p class="warn">${esc(err)}</p>` : ''}
+                       Questa è solo l’anteprima: <b>non è stato cambiato nulla</b>. Se premi <b>Applica</b> lo script modifica firewall, resolver e parametri di rete (password di sistema). Meglio provarlo prima in una macchina virtuale.`,
+                ok: 'Applica', danger: true});
+            if (!ok) return;
+            run('Applico l’hardening…', () => api.HardenApply(prof), `Hardening «${prof}» applicato.`);
+        };
+        const kb = $('fn-ks');
+        if (kb) kb.onclick = async () => {
+            const v = (getStatus() || {}).vpn || {}, want = !v.killswitch;
+            const ok = await confirmDialog(want
+                ? {title: 'Accendere il kill-switch?', body: `Da ora esce <b>solo</b> il traffico del tunnel <b>${esc(v.tunnel || '')}</b> verso <b>${esc(v.endpoint || '')}</b>, il DHCP e la rete locale. Se la VPN cade, la rete <b>si ferma</b> finché non torna su o non lo spegni. Password di sistema richiesta.`, ok: 'Accendi', danger: true}
+                : {title: 'Spegnere il kill-switch?', body: 'Il traffico tornerà a uscire anche fuori dalla VPN. Password di sistema richiesta.', ok: 'Spegni', danger: true});
+            if (!ok) return;
+            run(want ? 'Accendo il kill-switch…' : 'Spengo il kill-switch…',
+                () => want ? api.KillSwitchOn(v.endpoint, v.tunnel) : api.KillSwitchOff(), want ? 'Kill-switch acceso.' : 'Kill-switch spento.');
         };
         const t = $('fn-tray');
         if (t) t.onclick = () => {

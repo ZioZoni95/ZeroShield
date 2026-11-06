@@ -517,3 +517,7 @@ details.tech { margin: 14px 0 4px; }
 .tag-egress { background: var(--amber-soft); color: var(--amber); }
 .tag-egress-lan { background: rgba(127,127,127,.2); color: var(--dim); }
 .row-egress td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+/* anteprima dell'hardening nella conferma */
+.fn-pre { max-height: 46vh; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin: 0 0 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; text-align: left; }
+#fn-hprof { font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
