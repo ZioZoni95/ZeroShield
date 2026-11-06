@@ -1296,7 +1296,11 @@ function showOnboarding() {
 
 EventsOn('shield:status', st => { status = st; recordRadar(st); statusSeq++; lastStatusAt = Date.now(); offlineMsg = ''; requestRender(); });
 EventsOn('shield:status-error', msg => { if (!status) { offlineMsg = msg; requestRender(); } });
+// Evento riletto dallo storico del demone alla connessione: se la GUI l'ha gia' (riconnessione dopo un
+// riavvio del demone) lo si scarta; gli eventi in diretta non si scartano mai (due uguali nello stesso secondo sono veri).
+const evKey = e => [e.time, e.pid, e.comm, e.exe, e.rule, e.action, e.inode].join('|');
 EventsOn('shield:event', ev => {
+    if (ev.replay && events.some(e => evKey(e) === evKey(ev))) return;
     events.push(ev);
     if (events.length > 200) events = events.slice(-200);
     requestRender();
@@ -1306,6 +1310,7 @@ EventsOn('shield:event', ev => {
 // qui solo toast visivo: la riga resta comunque in tabella).
 let lastCanaryToast = 0;
 EventsOn('shield:canary', a => {
+    if (a.replay && events.some(e => e.canary && e.time === a.time && e.pid === a.pid && e.kind === a.kind && e.path === a.path)) return;
     events.push({
         canary: true, time: a.time, action: a.action, pid: a.pid,
         kind: a.kind, exe: a.exe, path: a.path, rule: 'canary',

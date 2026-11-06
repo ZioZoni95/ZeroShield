@@ -111,3 +111,62 @@ func TestCanaryStream(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// Chi si collega dopo rilegge gli ultimi eventi (marcati replay): la GUI aperta dopo una notifica
+// li trova in Eventi. Quelli successivi arrivano in diretta, senza replay e senza doppioni.
+func TestEventHistoryOnConnect(t *testing.T) {
+	withTempSocket(t)
+	srv, err := NewServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	srv.UpdateStatus(Status{Profile: "home", Mode: "enforce"})
+	srv.Publish(WireEvent{Action: "blocked", PID: 1, Comm: "seahorse", Exe: "/usr/bin/seahorse", Rule: "ssh-keys"})
+	srv.Publish(WireEvent{Action: "audit", PID: 2, Comm: "x", Rule: "ssh-keys"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got := make(chan WireEvent, 8)
+	go Subscribe(ctx, func(ev WireEvent) { got <- ev })
+	var first, second WireEvent
+	select {
+	case first = <-got:
+	case <-time.After(3 * time.Second):
+		t.Fatal("nessun evento riletto dallo storico")
+	}
+	second = <-got
+	if !first.Replay || !second.Replay || first.PID != 1 || second.PID != 2 {
+		t.Errorf("storico errato: %+v %+v", first, second)
+	}
+	time.Sleep(100 * time.Millisecond)
+	srv.Publish(WireEvent{Action: "blocked", PID: 3, Comm: "nuovo"})
+	live := <-got
+	if live.Replay || live.PID != 3 {
+		t.Errorf("l'evento in diretta non deve essere replay: %+v", live)
+	}
+	select {
+	case extra := <-got:
+		t.Errorf("evento doppio: %+v", extra)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// Lo storico e' limitato: oltre histMax si butta il piu' vecchio.
+func TestEventHistoryIsBounded(t *testing.T) {
+	withTempSocket(t)
+	srv, err := NewServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	for i := 0; i < histMax+50; i++ {
+		srv.Publish(WireEvent{Action: "audit", PID: uint32(i), Comm: "x"})
+	}
+	srv.mu.Lock()
+	n := len(srv.hist)
+	srv.mu.Unlock()
+	if n != histMax {
+		t.Errorf("storico = %d, atteso %d", n, histMax)
+	}
+}

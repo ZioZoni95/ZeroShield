@@ -78,7 +78,7 @@ Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stat
 
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.9** (pre-release, alpha); `main` è alla **0.0.12**, non ancora rilasciata. Il numero che vedi in fondo alla barra laterale della
+Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` è alla **0.0.14**, non ancora rilasciata. Il numero che vedi in fondo alla barra laterale della
 GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`. Cosa cambia in ogni versione:
 [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -223,7 +223,7 @@ nome con cui lo chiami.
 
 | Gruppo | Protegge | Autorizzati |
 |---|---|---|
-| `ssh` | `~/.ssh/id_*` | ssh, ssh-add, ssh-agent, ssh-keygen, scp, sftp |
+| `ssh` | `~/.ssh/id_*` | ssh, ssh-add, ssh-agent, ssh-keygen, scp, sftp, seahorse e l'agente SSH di GNOME (`gcr-ssh-agent`, se presenti) |
 | `cloud` | `.kube/config`, `.aws/credentials`, credenziali Terraform | kubectl, helm, k9s, aws, terraform, tofu |
 | `tokens` | `.git-credentials`, `.docker/config.json`, `gh/hosts.yml`, `.cargo/credentials.toml`, `glab-cli/config.yml` | git, gh, glab, docker, cargo |
 | `gpg` | `~/.gnupg/private-keys-v1.d/` | gpg, gpg-agent, gpgsm |
@@ -232,7 +232,7 @@ nome con cui lo chiami.
 **Dalla GUI (consigliato).** La scheda *Regole* mostra questi gruppi con un interruttore e **una modalità propria**
 (*come le altre*, *solo osserva*, *blocca*) ciascuno, permette di togliere o rimettere i programmi di base e di creare
 **protezioni tue** (*Proteggi un mio file*: selettore, schemi con `*`, anteprima dei file coperti e avvisi). Mostra anche un
-**catalogo di programmi noti** (k3d, helm, k9s, oh-my-posh, kubectx, stern, flux, argocd, kind, minikube,
+**catalogo di programmi noti** (agente SSH di GNOME, k3d, helm, k9s, oh-my-posh, kubectx, stern, flux, argocd, kind, minikube,
 skaffold, lazydocker, gh, glab) e l'elenco dei programmi visti in `audit`, con il motivo quando uno non si può
 autorizzare. Le scelte restano una bozza finché non premi *Applica*.
 
@@ -451,11 +451,12 @@ docs/       documentazione (vedi sotto)
   stesso UID legge la memoria di `ssh` (mitigato da `kernel.yama.ptrace_scope=1`).
 * **btrfs e overlayfs: protezione inerte** (avviso all'avvio): solo ext4 e xfs.
 * **Servizio fermo = zero protezione**: nessun pinning degli hook, di proposito.
+* **Descrittori di file già aperti**: l'hook controlla l'`open`, non l'uso. Un fd ottenuto da un programma autorizzato (o prima dell'avvio del demone) e poi ereditato da un figlio o passato su un socket continua a leggere il segreto.
 
 **Da sapere prima di `enforce`.**
 
 * Il blocco è stato visto su un solo PC e con un file finto (vedi lo stato sopra): `file_truncate`, `deny_write` e le protezioni predefinite con i programmi veri non sono stati provati.
-* Il poisoning IPv6 dietro extension header passa. Il radar si aggiorna ogni ~5 secondi.
+* Il poisoning IPv6 con più di 6 extension header, con ESP o con un header sconosciuto passa (le catene fino a 6 header noti sono ora attraversate: 0.0.17). Il radar si aggiorna ogni ~5 secondi.
 * Il bypass del filtro di rete con pacchetti UDP IPv4 frammentati di proposito (primo frammento con MF) è corretto in 0.0.12: coperto da un test che esegue il vero programma XDP, non ancora provato con traffico frammentato vero su un kernel reale.
 * Se usi un programma da una cartella tua (es. `~/.local/bin/oh-my-posh`) e hai autorizzato la copia in `/usr/local/bin`, il blocco continua finché la shell non lancia **quella**
   copia (attenzione agli script di init in cache e ai terminali già aperti, che ricordano il vecchio percorso: `exec bash`). Dalla 0.0.12 la GUI lo segnala e propone l'alias.
@@ -477,6 +478,7 @@ L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.
 |---|---|
 | [`CHANGELOG.md`](CHANGELOG.md) | Cosa cambia in ogni versione, comprese le modifiche non ancora rilasciate |
 | [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.md) | Stato, collaudi mancanti, decisioni aperte |
+| [`docs/COLLAUDO_HARDENING.md`](docs/COLLAUDO_HARDENING.md) | Procedura per VM: rename tra regole, `deny_write`, truncate, frammenti e IPv6 con traffico vero, fd ereditati |
 | [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md) | Primo blocco reale degli hook LSM: ambiente, esiti, cosa non è provato, come ripeterlo |
 | [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md) · [`TESTING_LAB.md`](docs/TESTING_LAB.md) · [`TESTING.md`](docs/TESTING.md) | Cosa è stato provato su kernel reale; collaudo in VM isolata; collaudo pratico di LSM, XDP, FIDO2 e pentest esterno |
 | [`docs/CANARY.md`](docs/CANARY.md) · [`VPN_SETUP.md`](docs/VPN_SETUP.md) | Anti-ransomware: uso e taratura; kill-switch, auto-VPN, ProtonVPN |

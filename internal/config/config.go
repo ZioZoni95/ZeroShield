@@ -186,7 +186,11 @@ var groups = map[string]Rule{
 	"ssh": {
 		Name:  "ssh-keys",
 		Paths: []string{".ssh/id_*"},
-		Allow: []string{"ssh", "ssh-add", "ssh-agent", "ssh-keygen", "scp", "sftp"},
+		// Oltre agli strumenti ssh, i due programmi di GNOME che leggono le chiavi per mestiere: l'agente del
+		// portachiavi (le carica al login) e «Password e chiavi» (le controlla; lo lancia anche la ricerca
+		// del menu applicazioni). Senza, in enforce un'app di sistema legittima veniva bloccata (visto
+		// 2026-11-06). Sono di root; se non ci sono (KDE, server) non si segnala nulla (vedi lsm.optionalBinaries).
+		Allow: []string{"ssh", "ssh-add", "ssh-agent", "ssh-keygen", "scp", "sftp", "seahorse", "/usr/libexec/gcr-ssh-agent"},
 	},
 	// Credenziali cloud e Kubernetes. terraform/tofu leggono il loro credentials file.
 	"cloud": {

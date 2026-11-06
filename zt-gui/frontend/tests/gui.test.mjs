@@ -911,6 +911,22 @@ if (shots) {
 }
 
 check('nessun errore JavaScript nella pagina', errors.length === 0, errors.join(' | '));
+// Storico alla connessione: un evento riletto (replay) gia presente non si duplica; quelli in diretta restano tutti
+{
+  await page.click('#sidebar button[data-view="events"]');
+  const before = await page.evaluate(() => window.__getEventsCount ? window.__getEventsCount() : -1);
+  const ev = { time: '2026-10-05T12:00:00Z', action: 'blocked', pid: 4242, comm: 'seahorse', exe: '/usr/bin/seahorse', rule: 'ssh-keys', inode: 7 };
+  await page.evaluate((e) => { window.__emit('shield:event', e); window.__emit('shield:event', { ...e, replay: true }); window.__emit('shield:event', { ...e, replay: true }); }, ev);
+  await page.waitForTimeout(200);
+  const n = await page.evaluate(() => [...document.querySelectorAll('#content tbody tr')].filter(r => r.textContent.includes('seahorse')).length);
+  check('eventi: un replay gia presente non si duplica (1 riga, non 3)', n === 1, String(n));
+  await page.evaluate((e) => window.__emit('shield:event', { ...e, pid: 4243 }), ev);
+  await page.evaluate((e) => window.__emit('shield:event', { ...e, pid: 4243 }), ev);
+  await page.waitForTimeout(200);
+  const n2 = await page.evaluate(() => [...document.querySelectorAll('#content tbody tr')].filter(r => r.textContent.includes('seahorse')).length);
+  check('eventi: due eventi in diretta uguali restano entrambi', n2 === 3, String(n2));
+}
+
 // I riquadri a tendina restano aperti (o chiusi) quando lo stato si aggiorna, in ogni schermata
 for (const v of ['guide', 'config']) {
   await page.click(`#sidebar button[data-view="${v}"]`);

@@ -228,3 +228,21 @@ func TestInterfaceListValidation(t *testing.T) {
 		}
 	}
 }
+
+// La protezione di base delle chiavi SSH ammette anche i due programmi di GNOME che le leggono per mestiere
+// (agente del portachiavi e «Password e chiavi»): senza, in enforce un'app di sistema veniva bloccata.
+func TestSSHGroupAllowsGnomeKeyPrograms(t *testing.T) {
+	r, ok := Group("ssh")
+	if !ok {
+		t.Fatal("gruppo ssh assente")
+	}
+	have := map[string]bool{}
+	for _, a := range r.Allow {
+		have[a] = true
+	}
+	for _, want := range []string{"ssh", "ssh-add", "seahorse", "/usr/libexec/gcr-ssh-agent"} {
+		if !have[want] {
+			t.Errorf("%q manca tra i programmi di base di ssh-keys: %v", want, r.Allow)
+		}
+	}
+}

@@ -128,6 +128,13 @@ func (m *Manager) RuleName(id uint32) string {
 	return fmt.Sprintf("rule-%d", id)
 }
 
+// optionalBinaries: voci di base che possono non esistere (programmi di GNOME su un sistema KDE o su un server):
+// se mancano non e' un errore di configurazione e non si scrive l'avviso «non risolto».
+var optionalBinaries = map[string]bool{
+	"seahorse":                   true,
+	"/usr/libexec/gcr-ssh-agent": true,
+}
+
 // Sync riallinea le mappe allo stato attuale del filesystem: aggiunge i nuovi
 // file/binari e rimuove le voci non piu' presenti.
 //
@@ -154,6 +161,9 @@ func (m *Manager) Sync() (protected, allowed int) {
 			// con nome regola, cosi' l'utente sa cosa allargare o dove mettere path assoluto.
 			exe, ok := resolveExe(m.home, a)
 			if !ok {
+				if optionalBinaries[a] {
+					continue // programma di desktop che puo' mancare: niente avviso
+				}
 				m.warnOnce("unresolved:"+r.Name+":"+a, fmt.Sprintf("⚠️ regola %q: binario %q non risolto (PATH demone: %q + /snap/bin + ~/.local/bin), NON in whitelist", r.Name, a, os.Getenv("PATH")))
 				continue
 			}
@@ -196,12 +206,17 @@ func (m *Manager) Sync() (protected, allowed int) {
 		}
 	}
 
-	m.reconcile(m.protected, wantFiles)
-	m.reconcile(m.allowed, wantExes)
+	failFiles := m.reconcile(m.protected, wantFiles)
+	failExes := m.reconcile(m.allowed, wantExes)
+	if failFiles+failExes > 0 {
+		// Un errore di scrittura non deve passare per «protezione attiva»: i conteggi restituiti sono
+		// quelli davvero scritti, e il demone lo dice (revisione 2026-11-05: errori Put solo loggati).
+		log.Printf("⚠️ mappe eBPF incomplete: %d file protetti e %d binari autorizzati NON scritti: la protezione e' parziale", failFiles, failExes)
+	}
 	if m.watcher != nil {
 		m.watcher.Set(sel.dirs)
 	}
-	return len(wantFiles), len(wantExes)
+	return len(wantFiles) - failFiles, len(wantExes) - failExes
 }
 
 // warnOnce logga un avviso una sola volta per chiave: il rescan gira ogni pochi secondi.
@@ -222,7 +237,7 @@ func (m *Manager) warnOnce(key, msg string) {
 // la protezione delle altre regole. Il caso peggiore resta quello in cui un tool
 // LEGITTIMO non entra in whitelist: per questo Sync logga esplicitamente ogni
 // `allow` non risolto con il nome della regola (prima era silenzio).
-func (m *Manager) reconcile(mp *ebpf.Map, want map[key]uint32) {
+func (m *Manager) reconcile(mp *ebpf.Map, want map[key]uint32) (failed int) {
 	// Fase 1: identificare le voci obsolete iterando la mappa.
 	// Nota: non si puo' cancellare durante l'iterazione, quindi si raccoglie prima.
 	var stale []key
@@ -239,7 +254,7 @@ func (m *Manager) reconcile(mp *ebpf.Map, want map[key]uint32) {
 	// parte delle voci obsolete: inode riassegnati restavano protetti per errore.
 	if err := it.Err(); err != nil {
 		log.Printf("⚠️ iterazione mappa incompleta, obsolete non rimosse: %v", err)
-		return
+		return 0
 	}
 	// Fase 2: cancellare.
 	for _, s := range stale {
@@ -253,8 +268,10 @@ func (m *Manager) reconcile(mp *ebpf.Map, want map[key]uint32) {
 	for k, v := range want {
 		if err := mp.Put(k, v); err != nil {
 			log.Printf("⚠️ aggiornamento mappa: %v", err)
+			failed++
 		}
 	}
+	return failed
 }
 
 // expand espande un pattern in file regolari: relativo alla home o assoluto,

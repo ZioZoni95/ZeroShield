@@ -5,6 +5,37 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.17': {
+        title: 'Novità della versione 0.0.17',
+        items: [
+            ['Filtro di rete: IPv6 con extension header', 'I pacchetti IPv6 di poisoning con una o più intestazioni aggiuntive (hop-by-hop, routing, frammento, AH) non passano più senza controllo.'],
+            ['Procedura di collaudo per la VM', 'Nuovo documento con i comandi e gli esiti attesi per provare sul kernel rename, scritture, truncate, frammenti e descrittori ereditati.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
+    '0.0.16': {
+        title: 'Novità della versione 0.0.16',
+        items: [
+            ['Rinominare un file sopra un altro segreto', 'Spostare un file sopra un segreto protetto da un\'altra regola ora viene controllato anche sulla destinazione: prima bastava il permesso sul file di partenza.'],
+            ['Errori sulle mappe del kernel non più nascosti', 'Se qualche voce non viene scritta, il demone lo dice e i numeri mostrati sono quelli davvero attivi (protezione parziale invece di «attiva»).'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
+    '0.0.15': {
+        title: 'Novità della versione 0.0.15',
+        items: [
+            ['Niente più falsi blocchi dalle app di GNOME', '«Password e chiavi» (seahorse) e l\'agente SSH del portachiavi non vengono più bloccati quando leggono le tue chiavi: sono nella lista di base della protezione SSH.'],
+            ['Gli eventi non si perdono più', 'Se ricevi una notifica di blocco a finestra chiusa, aprendo la GUI trovi l\'evento in Eventi (il demone ricorda gli ultimi 200). Gli eventi riletti non rinotificano.'],
+        ],
+        note: 'Serve il demone nuovo: dopo l\'aggiornamento riavvia il servizio (si riavvia da solo se ZeroShield era già configurato).',
+    },
+    '0.0.14': {
+        title: 'Novità della versione 0.0.14',
+        items: [
+            ['Agente SSH di GNOME nel catalogo', 'In Regole trovi «Agente SSH di GNOME (gcr-ssh-agent)»: se in Blocca le tue chiavi non si caricavano più nell\'agente (ssh-add -l vuoto) basta un clic su Autorizza e Applica.'],
+        ],
+        note: 'Dopo Applica riavvia l\'agente: systemctl --user restart gcr-ssh-agent.',
+    },
     '0.0.13': {
         title: 'Novità della versione 0.0.13',
         items: [

@@ -144,7 +144,7 @@ func (t *tray) apply(s state, st ipc.Status) {
 func (t *tray) eventLoop() {
 	for t.ctx.Err() == nil {
 		_ = ipc.Subscribe(t.ctx, func(ev ipc.WireEvent) {
-			if ev.Action != "blocked" || guiRunning("/proc") {
+			if ev.Replay || ev.Action != "blocked" || guiRunning("/proc") {
 				return
 			}
 			t.mu.Lock()
@@ -170,7 +170,7 @@ func (t *tray) eventLoop() {
 func (t *tray) canaryLoop() {
 	for t.ctx.Err() == nil {
 		_ = ipc.SubscribeCanary(t.ctx, func(al ipc.CanaryAlert) {
-			if guiRunning("/proc") {
+			if al.Replay || guiRunning("/proc") {
 				return
 			}
 			title := "ZeroShield — esca canary toccata"

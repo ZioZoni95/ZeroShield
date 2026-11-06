@@ -17,6 +17,10 @@ type Tool struct {
 // Tools: i programmi che in audit risultano toccare i segreti dei flussi Kubernetes/container.
 // Le regole sono quelle dei gruppi predefiniti (cloud-creds, dev-tokens, ...).
 var Tools = []Tool{
+	// Su GNOME l'agente SSH del portachiavi carica le chiavi all'accesso: in enforce senza questa voce viene
+	// negato (visto 2026-11-06: «couldn't read file ~/.ssh/id_ed25519: Permission denied», `ssh-add -l` vuoto)
+	// mentre `ssh` da solo continua a funzionare perche' e' gia' in lista.
+	{"gcr-ssh-agent", "Agente SSH di GNOME (gcr-ssh-agent)", []string{"/usr/libexec/gcr-ssh-agent"}, []string{"ssh-keys"}, "carica le tue chiavi SSH all'accesso (portachiavi di GNOME)"},
 	{"k3d", "k3d", []string{"k3d"}, []string{"dev-tokens"}, "legge ~/.docker/config.json per i registry"},
 	{"helm", "Helm", []string{"helm"}, []string{"cloud-creds", "dev-tokens"}, "usa il kubeconfig e le credenziali dei registry OCI"},
 	{"k9s", "k9s", []string{"k9s"}, []string{"cloud-creds"}, "legge il kubeconfig per mostrare i cluster"},

@@ -37,6 +37,7 @@
 // Il resto (ARP, PPPoE) esce dal confronto: coperto da resolved/UFW, non da XDP.
 #define ETH_P_IP 0x0800
 #define ETH_P_IPV6 0x86DD
+#define MAX_V6_EXT 6 // extension header IPv6 attraversate prima di rinunciare (il verifier vuole un limite)
 #define ETH_P_8021Q 0x8100 // VLAN singola
 #define ETH_P_8021AD 0x88A8 // QinQ: tag esterno S-VLAN, poi (di solito) un 802.1Q interno
 
@@ -346,17 +347,50 @@ int xdp_shield(struct xdp_md *ctx) {
     }
 
     // IPv6: stessi protocolli di poisoning (mDNS ff02::fb, LLMNR ff02::1:3, Responder
-    // risponde anche su v6). Solo UDP come next-header diretto: con extension header
-    // (rari su multicast locale) si lascia passare. Niente blocco subnet su v6.
+    // risponde anche su v6). Si attraversano fino a MAX_V6_EXT extension header noti (hop-by-hop,
+    // routing, destination options, fragment (solo primo frammento), AH) per arrivare all'UDP: prima
+    // un pacchetto con una extension header passava senza controllo (aggirabile di proposito, revisione
+    // 2026-11-05). ESP, header sconosciuti, catene piu' lunghe del limite o frammenti non-primi: PASS
+    // (non si puo' leggere l'header UDP). Niente blocco subnet su v6.
     if (proto == ETH_P_IPV6) {
         if (!setting(SETTING_POISON, 1))
             return XDP_PASS;
         struct ipv6hdr *ip6 = nh;
         if ((void *)(ip6 + 1) > data_end)
             return XDP_PASS;
-        if (ip6->nexthdr != IPPROTO_UDP)
+        __u8 nexthdr = ip6->nexthdr;
+        void *cur = (void *)(ip6 + 1);
+#pragma unroll
+        for (int i = 0; i < MAX_V6_EXT; i++) {
+            if (nexthdr == IPPROTO_UDP)
+                break;
+            struct ipv6_opt_hdr *eh = cur;
+            if ((void *)(eh + 1) > data_end)
+                return XDP_PASS;
+            if (nexthdr == 0 || nexthdr == 43 || nexthdr == 60) {
+                // hop-by-hop, routing, destination options: (hdrlen + 1) * 8 byte
+                cur += ((__u32)eh->hdrlen + 1) * 8;
+                nexthdr = eh->nexthdr;
+            } else if (nexthdr == 44) {
+                // fragment header: 8 byte fissi; offset nei 13 bit alti del campo a 16 bit
+                struct frag_hdr *fh = cur;
+                if ((void *)(fh + 1) > data_end)
+                    return XDP_PASS;
+                if (bpf_ntohs(fh->frag_off) & 0xFFF8)
+                    return XDP_PASS; // frammento non-primo: niente header UDP
+                cur += 8;
+                nexthdr = fh->nexthdr;
+            } else if (nexthdr == 51) {
+                // authentication header: (hdrlen + 2) * 4 byte
+                cur += ((__u32)eh->hdrlen + 2) * 4;
+                nexthdr = eh->nexthdr;
+            } else {
+                return XDP_PASS; // ESP (cifrato), header sconosciuto o protocollo non UDP
+            }
+        }
+        if (nexthdr != IPPROTO_UDP)
             return XDP_PASS;
-        struct udphdr *udp6 = (void *)(ip6 + 1);
+        struct udphdr *udp6 = cur;
         if ((void *)(udp6 + 1) > data_end)
             return XDP_PASS;
         if (is_poison_port(bpf_ntohs(udp6->source), bpf_ntohs(udp6->dest))) {
@@ -622,13 +656,21 @@ int BPF_PROG(zt_file_rename, struct inode *old_dir, struct dentry *old_dentry,
         fk.ino = BPF_CORE_READ(victim, i_ino);
         fk.dev = BPF_CORE_READ(victim, i_sb, s_dev);
         rp = bpf_map_lookup_elem(&protected_files, &fk);
-        if (rp)
-            return check_access(fk, *rp & 0x7FFFFFFF);
+        if (rp) {
+            // Il sorgente e' protetto: se NON e' autorizzato si nega subito. Se lo e' NON si esce:
+            // la destinazione puo' appartenere a un'altra regola (ZS-005, revisione 2026-11-05), per
+            // cui il processo potrebbe non essere autorizzato. Prima qui c'era `return check_access(...)`
+            // e un rename A -> B passava con il solo permesso per A.
+            int ret = check_access(fk, *rp & 0x7FFFFFFF);
+            if (ret)
+                return ret;
+        }
     }
 
     // FIX: anche la DESTINAZIONE. `mv junk ~/.ssh/id_ed25519` sostituisce il
     // segreto (il vecchio inode viene sganciato) senza passare da inode_unlink.
-    // new_dentry->d_inode e' non-NULL solo se il target esiste gia'.
+    // new_dentry->d_inode e' non-NULL solo se il target esiste gia'. Ha il suo controllo indipendente:
+    // identita' e regola della destinazione, autorizzazione del processo per QUELLA regola.
     struct inode *target = BPF_CORE_READ(new_dentry, d_inode);
     if (!target)
         return 0;
