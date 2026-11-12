@@ -46,6 +46,28 @@ func TestDecodeEgressIPv6AndShort(t *testing.T) {
 	}
 }
 
+func TestLocalIsNotReported(t *testing.T) {
+	for ip, want := range map[string]bool{
+		"0.0.0.0":          true, // connect() verso 0.0.0.0 = localhost
+		"::":               true,
+		"127.0.0.1":        true,
+		"::1":              true,
+		"::ffff:0.0.0.0":   true,
+		"::ffff:127.0.0.1": true,
+		"10.157.40.57":     false, // rete locale vera: si segnala
+		"93.184.216.34":    false,
+		"2606:4700::1":     false,
+		"169.254.169.254":  false,
+	} {
+		if got := Local(net.ParseIP(ip)); got != want {
+			t.Errorf("Local(%s) = %v, atteso %v", ip, got, want)
+		}
+	}
+	if Local(nil) {
+		t.Error("un indirizzo assente non è locale")
+	}
+}
+
 func TestScope(t *testing.T) {
 	for ip, want := range map[string]string{
 		"10.209.4.62":   "lan",

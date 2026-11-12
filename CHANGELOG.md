@@ -28,6 +28,13 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.23] — 2026-11-12
+
+- **Audit in uscita: `0.0.0.0` e `::` non si segnalano più.** Su Linux connettersi a 0.0.0.0 vuol dire localhost; sul PC di prova 19 eventi su 72 (un port-forward di `kubectl`/`k9s` verso `0.0.0.0:45233`) erano segnati «lan» per errore. Ora si scartano come il loopback (`audit.Local`), senza consumare il tetto di eventi al secondo. `Scope` non classifica più l'indirizzo non specificato come rete locale.
+- **Un solo avviso per i programmi di base non installati.** Prima ogni avvio scriveva un avviso per `glab`, `cargo`, `aws`, `terraform`, `tofu` quando non erano sul PC. Ora una riga sola, in ordine: «ℹ️ programmi della lista di base non installati (nessun effetto finché non li installi): …». Restano gli avvisi singoli per i percorsi scritti a mano che non esistono (quelli sono errori dell'utente) e per i binari non di root.
+- Evidenza dal journal 2026-11-04/12 (8 giorni, tutto in enforce dal 5): nessun panic; episodi di falso blocco 19 → 3 → 2 → 2 → 4 → 2 al giorno (oh-my-posh e k9s il primo giorno, poi minikube, `docker-buildx`, `gvfsd-recent`); l'audit in uscita funziona su kernel reale. Nessuna minaccia vera da bloccare nel periodo.
+- Test: `Local` (IPv4, IPv6, mappati), `isBaseProgram`, riga unica ordinata.
+
 ## [0.0.22] — 2026-11-12
 
 - **Profilo condiviso** (`docs/PROFILO.md`): esporta le scelte della GUI in un file YAML (`format: zeroshield-profile`) e importale su un'altra macchina. Contiene programmi autorizzati, protezioni accese/spente, modalità per protezione, regole personali, filtro di rete e canary; **non** contiene `user`, `interface`, `vpn` né percorsi nelle cartelle di un utente (`/home`, `/root`, `/tmp`...).

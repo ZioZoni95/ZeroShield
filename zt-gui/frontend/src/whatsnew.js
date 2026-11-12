@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.23': {
+        title: 'Novità della versione 0.0.23',
+        items: [
+            ['Meno rumore nelle uscite', 'Le connessioni verso questo stesso computer (0.0.0.0) non compaiono più come «rete locale» in Eventi → uscita.'],
+            ['Meno avvisi nel registro', 'I programmi della lista di base che non hai installato (aws, glab, cargo…) sono ora una sola riga informativa invece di un avviso ciascuno a ogni avvio.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.22': {
         title: 'Novità della versione 0.0.22',
         items: [
