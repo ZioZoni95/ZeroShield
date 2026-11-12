@@ -70,12 +70,19 @@ func (e EgressRaw) IP() net.IP {
 	return nil
 }
 
+// Local dice se la destinazione e' la macchina stessa. Su Linux connettersi a 0.0.0.0 (o a ::) significa connettersi a
+// localhost: e' traffico locale come il loopback, non rete locale (visto dal vivo: 19 eventi verso 0.0.0.0:45233 di un
+// port-forward di kubectl/k9s segnati «lan»). Questi eventi non si segnalano.
+func Local(ip net.IP) bool {
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
+
 // Scope classifica la destinazione: "lan" (rete locale, indirizzi privati e link-local) o "internet".
 func Scope(ip net.IP) string {
 	if ip == nil {
 		return ""
 	}
-	if ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+	if ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
 		return "lan"
 	}
 	return "internet"
@@ -136,7 +143,7 @@ func RunEgress(rd *ringbuf.Reader, ruleName func(uint32) string, resolve ExeReso
 			continue
 		}
 		ip := raw.IP()
-		if ip == nil {
+		if ip == nil || Local(ip) {
 			continue
 		}
 		comm := ipc.SafeText(string(bytes.TrimRight(raw.Comm[:], "\x00")))

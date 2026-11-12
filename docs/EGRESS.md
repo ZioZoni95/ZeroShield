@@ -15,7 +15,7 @@ di un'esfiltrazione, ed è la risposta alla domanda «il radar dovrebbe rilevare
 
 1. Quando un programma **autorizzato** legge un file protetto (o, in audit, uno non autorizzato), il kernel lo ricorda per 60 s
    (mappa `touched`: tgid → regola, ora). Si passa da qui solo per i file protetti: il percorso caldo degli altri `open` non cambia.
-2. L'hook `lsm/socket_connect` guarda quella mappa a ogni `connect()`. Se il processo è «sospetto» e la destinazione è IPv4/IPv6 non loopback,
+2. L'hook `lsm/socket_connect` guarda quella mappa a ogni `connect()`. Se il processo è «sospetto» e la destinazione è IPv4/IPv6 non loopback (dal demone, `0.0.0.0` e `::` si scartano: connettersi a 0.0.0.0 significa connettersi a localhost),
    scrive un evento in un ring buffer dedicato (`egress_logs`).
 3. Il demone segnala **solo la prima volta** che compare la coppia (programma, destinazione): un `kubectl get pods` ripetuto non riempie il registro.
    Tetto di 20 eventi al secondo.

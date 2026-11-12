@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -314,4 +315,27 @@ func TestWatcherStressRapidRenames(t *testing.T) {
 		t.Errorf("%d rescan per 300 rename in %v: troppi (max %d), manca il debounce", n, time.Since(start).Round(time.Millisecond), maxFires)
 	}
 	t.Logf("300 rename in %v -> %d rescan", time.Since(start).Round(time.Millisecond), n)
+}
+
+func TestIsBaseProgram(t *testing.T) {
+	for name, want := range map[string]bool{
+		"aws": true, "glab": true, "cargo": true, "terraform": true, "ssh": true,
+		"/usr/local/bin/aws": false, // un percorso scritto a mano che non esiste è un errore da segnalare
+		"programma-mio":      false,
+		"":                   false,
+	} {
+		if got := isBaseProgram(name); got != want {
+			t.Errorf("isBaseProgram(%q) = %v, atteso %v", name, got, want)
+		}
+	}
+}
+
+func TestMissingBaseMessageIsOneSortedLine(t *testing.T) {
+	if missingBaseMessage(nil) != "" || missingBaseMessage(map[string]bool{}) != "" {
+		t.Error("senza programmi mancanti non si scrive niente")
+	}
+	msg := missingBaseMessage(map[string]bool{"tofu": true, "aws": true, "glab": true})
+	if strings.Count(msg, "\n") != 0 || !strings.HasSuffix(msg, ": aws, glab, tofu") {
+		t.Errorf("una riga sola, in ordine: %q", msg)
+	}
 }

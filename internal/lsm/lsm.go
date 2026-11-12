@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -135,6 +136,34 @@ var optionalBinaries = map[string]bool{
 	"/usr/libexec/gcr-ssh-agent": true,
 }
 
+// isBaseProgram: il nome (senza percorso) e' nella lista di base di un gruppo predefinito (aws, glab, cargo...).
+// Su un PC che non li ha installati e' normale: non e' un errore di configurazione da segnalare uno per uno.
+func isBaseProgram(name string) bool {
+	if strings.Contains(name, "/") {
+		return false // un percorso scritto a mano che non esiste e' un errore dell'utente: si avvisa
+	}
+	for _, id := range config.GroupOrder {
+		if g, ok := config.Group(id); ok && slices.Contains(g.Allow, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// missingBaseMessage: una sola riga per tutti i programmi di base non installati (prima erano un avviso per programma
+// a ogni avvio). nil/vuoto = niente da dire.
+func missingBaseMessage(names map[string]bool) string {
+	if len(names) == 0 {
+		return ""
+	}
+	list := make([]string, 0, len(names))
+	for n := range names {
+		list = append(list, n)
+	}
+	sort.Strings(list)
+	return "ℹ️ programmi della lista di base non installati (nessun effetto finché non li installi): " + strings.Join(list, ", ")
+}
+
 // Sync riallinea le mappe allo stato attuale del filesystem: aggiunge i nuovi
 // file/binari e rimuove le voci non piu' presenti.
 //
@@ -150,6 +179,7 @@ func (m *Manager) Sync() (protected, allowed int) {
 
 	sel := selectFiles(m.home, m.rules, owner)
 	wantFiles := sel.want
+	missingBase := map[string]bool{}
 	for i, r := range m.rules {
 		if r.DenyWrite {
 			m.warnOnce("deny:"+r.Name, fmt.Sprintf("⛔ regola %q: deny_write attivo, scrittura negata anche a root", r.Name))
@@ -163,6 +193,10 @@ func (m *Manager) Sync() (protected, allowed int) {
 			if !ok {
 				if optionalBinaries[a] {
 					continue // programma di desktop che puo' mancare: niente avviso
+				}
+				if isBaseProgram(a) {
+					missingBase[a] = true // una riga sola a fine giro, non un avviso per programma
+					continue
 				}
 				m.warnOnce("unresolved:"+r.Name+":"+a, fmt.Sprintf("⚠️ regola %q: binario %q non risolto (PATH demone: %q + /snap/bin + ~/.local/bin), NON in whitelist", r.Name, a, os.Getenv("PATH")))
 				continue
@@ -180,6 +214,10 @@ func (m *Manager) Sync() (protected, allowed int) {
 				wantExes[k] = 1
 			}
 		}
+	}
+
+	if msg := missingBaseMessage(missingBase); msg != "" {
+		m.warnOnce("missing-base:"+msg, msg)
 	}
 
 	// Allarme capienza: i file oltre i tetti NON sono protetti. Si logga solo quando il
