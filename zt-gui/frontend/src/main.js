@@ -1,8 +1,9 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff, ExportProfile, ChooseProfile, PreviewProfile, ApplyProfile} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
 import {createFeaturesView} from './features.js';
+import {createProfileView} from './profile.js';
 import {statusHtml} from './statuspage.js';
 import {createIfaceView} from './ifaces.js';
 import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
@@ -336,12 +337,14 @@ async function renderConfig() {
       ${kv('Subnet bloccate', subs.length ? subs.map(c => `<span class="mono">${esc(c)}</span>`).join(', ') : 'nessuna', 'Scarta tutto il traffico da quelle reti, anche le risposte: mai gateway o DNS.')}
       ${kv('VPN', (status.vpn && status.vpn.enabled) ? 'monitorata' : 'non monitorata', `Il demone osserva tunnel e kill-switch, non li applica. <button class="linklike" data-go="net">stato in Rete →</button>`)}
     </div>
+    <div id="profile-box"></div>
     ${sec('Altre opzioni')}
     <p class="sub">Canary, regole extra, intervallo di rescan e formato log si impostano nel file. Dopo ogni modifica:</p>
     ${codeRow('sudo systemctl restart zt-shield')}
     <details class="file"><summary>Mostra il file <span class="mono">shield.yaml</span></summary>
       <div class="file-bar"><button class="copy" data-copy="${esc(txt)}">copia contenuto</button><span class="sub">modifica con: </span><code>sudoedit /etc/zt-shield/shield.yaml</code></div>
       <pre>${esc(txt)}</pre></details>`;
+    profileView.mount(document.getElementById('profile-box'));
     const bt = document.getElementById('boot-toggle');
     if (bt) bt.onclick = async () => {
         const want = !boot;
@@ -693,6 +696,12 @@ const featuresView = createFeaturesView({
     getStatus: () => status, confirmDialog, toast,
     goto: v => go(v),
     switchMode: next => switchMode(next),
+});
+
+// Il profilo condiviso (esporta/importa le scelte tra macchine) vive in profile.js e sta nella pagina Configurazione.
+const profileView = createProfileView({
+    esc, api: {ExportProfile, ChooseProfile, PreviewProfile, ApplyProfile},
+    toast, confirmDialog, onApplied: () => { if (view === 'config') renderConfig(); },
 });
 
 // La schermata Regole vive in rules.js (ha stato proprio: bozza, controlli asincroni, barra "Applica").

@@ -107,6 +107,11 @@ Opzioni:
 		os.Exit(runConfigApply(flag.Args()[1:]))
 	}
 
+	// `zt-shield profile export|import`: profilo condivisibile tra macchine (anteprima senza privilegi).
+	if flag.NArg() >= 1 && flag.Arg(0) == "profile" {
+		os.Exit(runProfile(flag.Args()[1:]))
+	}
+
 	// Sottocomando di controllo: stesso canale delle future UI.
 	// `zt-shield ctl ping|rescan` — da root esegue, da utente spiega il diniego.
 	if flag.NArg() >= 1 && flag.Arg(0) == "ctl" {

@@ -28,6 +28,14 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.22] — 2026-11-12
+
+- **Profilo condiviso** (`docs/PROFILO.md`): esporta le scelte della GUI in un file YAML (`format: zeroshield-profile`) e importale su un'altra macchina. Contiene programmi autorizzati, protezioni accese/spente, modalità per protezione, regole personali, filtro di rete e canary; **non** contiene `user`, `interface`, `vpn` né percorsi nelle cartelle di un utente (`/home`, `/root`, `/tmp`...).
+- **Importazione prudente**: anteprima obbligatoria (aggiunge/toglie/cambia, scartati, avvisi), scarto dei programmi non di root e dei percorsi di utente, avviso per quelli non installati, **modalità importate in sola osservazione** per impostazione, *unisci* (predefinito) o *sostituisci*, applicazione solo del file visto (impronta SHA-256), file limitato a 256 KB e chiavi sconosciute rifiutate, validazione con il parser del demone. Applica con lo stesso percorso della GUI (`pkexec` + `config-apply`: backup e ripristino).
+- GUI: sezione «Profilo condiviso» in Configurazione. Terminale: `zt-shield profile export|import` (l'anteprima non richiede privilegi; `-yes` applica).
+- **Nessuna firma** del file: scelta dichiarata per la fase alpha, con la valutazione dei rischi in `docs/PROFILO.md`.
+- Test: 17 test per il formato e l'importazione (`pkg/rules`), 6 per la riga di comando e 22 controlli nel browser. **Non provato**: finestre native di salvataggio/apertura nell'app vera, applicazione con `pkexec` su una seconda macchina.
+
 ## [0.0.21] — 2026-11-06
 
 - **Postura del sistema** (`internal/posture`): il demone legge `kernel.yama.ptrace_scope` e `kernel.io_uring_disabled`, due impostazioni del kernel che non dipendono da ZeroShield ma ne aggirano i controlli se restano aperte (ptrace: un programma dello stesso utente legge la memoria di `ssh`; io_uring: i thread di lavoro non passano dall'hook dei file). Sono limiti già dichiarati: ora sono **visibili**. Un avviso nel journal all'avvio, il campo `posture` nello stato IPC e, nella GUI, due voci nella lista «Da fare» con il comando per chiuderli (sysctl persistente in `/etc/sysctl.d/`). **Non cambia nulla da solo.**

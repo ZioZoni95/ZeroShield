@@ -78,7 +78,7 @@ Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stat
 
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` sul remoto è alla **0.0.17**; le versioni **0.0.18–0.0.21** (pagina Funzioni, hardening e kill-switch dalla GUI, audit delle connessioni in uscita, controlli di postura) sono ancora solo in locale, in attesa del push. Il numero che vedi in fondo alla barra laterale della
+Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` sul remoto è alla **0.0.17**; le versioni **0.0.18–0.0.22** (pagina Funzioni, hardening e kill-switch dalla GUI, audit delle connessioni in uscita, controlli di postura, profilo condiviso) sono ancora solo in locale, in attesa del push. Il numero che vedi in fondo alla barra laterale della
 GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`. Cosa cambia in ogni versione:
 [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -196,6 +196,7 @@ nome con cui lo chiami.
   sulle mappe (tetto di 4096 per regola, 16384 in tutto) e un watcher **inotify** riallinea le mappe entro
   ~0,1 s da un rename (al massimo 1 s sotto una raffica); il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
   **Fail-closed**: se un hook non si aggancia il demone si ferma invece di fingersi attivo.
+* **Profilo condiviso (0.0.22).** Configurazione → *Profilo condiviso* (o `zt-shield profile export|import`): salva le tue scelte in un file e importale su un'altra macchina, per esempio la lista comune dell'ufficio. Anteprima prima di scrivere, programmi non di root scartati, modalità importate in sola osservazione, impronta SHA-256 del file visto. **Nessuna firma** (alpha): la valutazione dei rischi è in [`docs/PROFILO.md`](docs/PROFILO.md). Provato con test e sul config reale in sola lettura; non su una seconda macchina.
 * **Chi manda dove (audit delle connessioni in uscita).** Hook `lsm/socket_connect`, solo registro: segnala la prima volta che un programma che ha appena letto un segreto si collega a una destinazione (rete locale o Internet). Non blocca, non vede il contenuto, non segue i processi figli ([`docs/EGRESS.md`](docs/EGRESS.md)). Mai visto scattare su un kernel reale.
 * **Anti-ransomware (canary + fanotify).** Si accende dalla pagina **Funzioni** della GUI (sceglie le cartelle, prepara anche il drop-in systemd) o a mano nel config. File esca nascosti nelle cartelle scelte: chi li tocca viene
   ucciso in `enforce` (mai PID ≤ 1 né il demone). Una raffica di scritture, cancellazioni o rinomine genera
@@ -490,6 +491,7 @@ L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.
 | [`docs/COLLAUDO_HARDENING.md`](docs/COLLAUDO_HARDENING.md) | Procedura per VM: rename tra regole, `deny_write`, truncate, frammenti e IPv6 con traffico vero, fd ereditati |
 | [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md) | Primo blocco reale degli hook LSM: ambiente, esiti, cosa non è provato, come ripeterlo |
 | [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md) · [`TESTING_LAB.md`](docs/TESTING_LAB.md) · [`TESTING.md`](docs/TESTING.md) | Cosa è stato provato su kernel reale; collaudo in VM isolata; collaudo pratico di LSM, XDP, FIDO2 e pentest esterno |
+| [`docs/PROFILO.md`](docs/PROFILO.md) | Profilo condiviso: esportare/importare le scelte tra macchine e rischi |
 | [`docs/CANARY.md`](docs/CANARY.md) · [`VPN_SETUP.md`](docs/VPN_SETUP.md) | Anti-ransomware: uso e taratura; kill-switch, auto-VPN, ProtonVPN |
 | [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md) | Ricerca TUI/GUI e architettura IPC |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`FEATURE_*.md`](docs/) | Piano a fasi e studi sulle estensioni |

@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.22': {
+        title: 'Novità della versione 0.0.22',
+        items: [
+            ['Profilo condiviso', 'In Configurazione puoi esportare le tue scelte (programmi autorizzati, protezioni, regole personali, canary) in un file e importarle su un altro computer, per esempio per usare la stessa lista in ufficio. Prima di importare vedi cosa cambierebbe.'],
+            ['Più sicuro di default', 'L\'importazione porta le protezioni in sola osservazione, scarta i programmi che non sono di root e applica solo il file che hai visto. Dal terminale: zt-shield profile export / import.'],
+        ],
+        note: 'Il file non contiene utente, rete, VPN né programmi nelle tue cartelle, ma elenca i programmi che usi: rileggilo prima di condividerlo. Nessuna firma per ora (docs/PROFILO.md).',
+    },
     '0.0.21': {
         title: 'Novità della versione 0.0.21',
         items: [

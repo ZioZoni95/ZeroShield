@@ -113,3 +113,19 @@ export function SocketPath() {
 export function Version() {
   return window['go']['main']['App']['Version']();
 }
+
+export function ExportProfile(arg1, arg2) {
+  return window['go']['main']['App']['ExportProfile'](arg1, arg2);
+}
+
+export function ChooseProfile() {
+  return window['go']['main']['App']['ChooseProfile']();
+}
+
+export function PreviewProfile(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PreviewProfile'](arg1, arg2, arg3);
+}
+
+export function ApplyProfile(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ApplyProfile'](arg1, arg2, arg3, arg4);
+}

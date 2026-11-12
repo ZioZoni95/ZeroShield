@@ -82,6 +82,10 @@ await page.addInitScript((status) => {
     HardenApply: async (p) => { window.__hardApply.push(p); },
     KillSwitchOn: async (e, t) => { window.__ksCalls.push(['on', e, t]); },
     KillSwitchOff: async () => { window.__ksCalls.push(['off']); },
+    ExportProfile: async (n, t) => { window.__profCalls.push(['export', n, t]); if (window.__profCancel) return { path: '', left: [], cancelled: true }; return { path: '/home/u/zeroshield-profilo.yaml', left: ['«dev-tokens»: autorizzato /home/u/.local/bin/omp sta nella cartella di un utente'], cancelled: false }; },
+    ChooseProfile: async () => window.__profPath,
+    PreviewProfile: async (p, r, a) => { window.__profCalls.push(['preview', p, r, a]); if (window.__profErr) throw new Error(window.__profErr); return JSON.parse(JSON.stringify(window.__profPv)); },
+    ApplyProfile: async (p, sha, r, a) => { window.__profCalls.push(['apply', p, sha, r, a]); if (window.__profApplyErr) throw new Error(window.__profApplyErr); },
     RulesModel: async () => JSON.parse(JSON.stringify(window.__rm)),
     CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
     ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
@@ -123,7 +127,7 @@ await page.addInitScript((status) => {
     '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s': prog('k9s', '/usr/local/bin/k9s'),
   };
   window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = ''; window.__ifCalls = []; window.__ifFail = '';
-  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = []; window.__tray = true; window.__trayCalls = []; window.__featCalls = []; window.__hardPrev = []; window.__hardApply = []; window.__ksCalls = [];
+  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = []; window.__tray = true; window.__trayCalls = []; window.__featCalls = []; window.__hardPrev = []; window.__hardApply = []; window.__ksCalls = []; window.__profCalls = []; window.__profPath = '/tmp/ufficio.yaml'; window.__profPv = { name: 'Ufficio', note: 'pilota', exported_by: '0.0.22', exported_at: '', sha256: 'ab'.repeat(32), changes: [ { kind: 'add', text: 'Autorizza /usr/libexec/docker/cli-plugins/docker-buildx per «dev-tokens»' }, { kind: 'remove', text: 'Spegne la protezione «gpg-keys»' }, { kind: 'change', text: 'La protezione «cloud-creds» passa in Osserva' } ], warnings: ['helm: /usr/local/bin/helm non è installato su questa macchina'], skipped: ['«dev-tokens»: /home/mallory/omp sta nella cartella di un utente'], unchanged: false };
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
     EventsOff: () => {},
@@ -287,6 +291,63 @@ await page.click('#dlg-ok');
 await page.waitForTimeout(150);
 check('conferma enforce: OK chiama SetConfigMode("enforce")', (await page.evaluate(() => window.__setModeCalls.join(','))) === 'enforce');
 await page.evaluate(() => { window.__cfgMode = 'audit'; });
+
+// Profilo condiviso: esporta e importa le scelte (anteprima prima di scrivere)
+await page.waitForSelector('#pf-export');
+check('profilo: la pagina Configurazione ha la sezione «Profilo condiviso»', (await page.textContent('#profile-box')).includes('Esporta le tue scelte') && (await page.textContent('#profile-box')).includes('Importa un profilo'));
+await page.fill('#pf-name', 'Ufficio'); await page.fill('#pf-note', 'pilota 3 PC');
+await page.click('#pf-export');
+await page.waitForSelector('.pf-ok');
+check('profilo: esportare passa nome e nota', (await page.evaluate(() => JSON.stringify(window.__profCalls.find(c => c[0] === 'export')))) === '["export","Ufficio","pilota 3 PC"]');
+check('profilo: dice dove ha salvato e cosa è rimasto fuori', (await page.textContent('#profile-box')).includes('/home/u/zeroshield-profilo.yaml') && (await page.textContent('#profile-box')).includes('sta nella cartella di un utente'));
+check('profilo: nome e nota restano scritti dopo l\'esportazione', (await page.inputValue('#pf-name')) === 'Ufficio');
+await page.evaluate(() => { window.__profCancel = true; });
+await page.click('#pf-export');
+await page.waitForTimeout(120);
+check('profilo: se chiudi la finestra di salvataggio non compare «Salvato»', !(await page.textContent('#profile-box')).includes('Salvato in'));
+await page.evaluate(() => { window.__profCancel = false; });
+check('profilo: prima di scegliere un file non si applica niente', (await page.locator('#pf-apply').count()) === 0 && (await page.locator('#pf-pick').count()) === 1);
+await page.click('#pf-pick');
+await page.waitForSelector('#pf-changes');
+const pvTxt = await page.textContent('#profile-box');
+check('profilo: l\'anteprima mostra nome, impronta e i cambiamenti', pvTxt.includes('Ufficio') && pvTxt.includes('impronta abababab') && pvTxt.includes('docker-buildx per «dev-tokens»') && pvTxt.includes('Spegne la protezione «gpg-keys»'));
+check('profilo: i cambiamenti hanno il segno giusto (+ − ~)', await page.evaluate(() => [...document.querySelectorAll('#pf-changes li')].map(l => l.querySelector('.pf-s').textContent).join('') === '+−~'));
+check('profilo: mostra cosa non importa e cosa sapere', (await page.textContent('#pf-skipped')).includes('/home/mallory') && (await page.textContent('#pf-warns')).includes('non è installato'));
+check('profilo: di default importa in sola osservazione e unisce', (await page.isChecked('#pf-audit')) && !(await page.isChecked('#pf-replace')) && (await page.evaluate(() => JSON.stringify(window.__profCalls.filter(c => c[0] === 'preview').pop()))) === '["preview","/tmp/ufficio.yaml",false,true]');
+check('profilo: avvisa di controllare prima di importare', pvTxt.includes('Importa solo profili di cui ti fidi'));
+await page.uncheck('#pf-audit');
+await page.waitForSelector('#pf-changes');
+check('profilo: cambiare opzione ricalcola l\'anteprima', (await page.evaluate(() => JSON.stringify(window.__profCalls.filter(c => c[0] === 'preview').pop()))) === '["preview","/tmp/ufficio.yaml",false,false]');
+await page.check('#pf-audit'); await page.waitForSelector('#pf-changes');
+await page.check('#pf-replace'); await page.waitForSelector('#pf-changes');
+await page.click('#pf-apply');
+await page.waitForSelector('#dlg');
+check('profilo: sostituire chiede conferma e lo dice in chiaro', (await page.textContent('#dlg')).includes('sostituiscono') && (await page.textContent('#dlg')).includes('3'));
+check('profilo: la conferma ha il focus su Annulla', (await page.evaluate(() => document.activeElement && document.activeElement.id)) === 'dlg-no');
+await page.click('#dlg-no');
+await page.waitForTimeout(80);
+check('profilo: annullare la conferma non applica nulla', (await page.evaluate(() => window.__profCalls.filter(c => c[0] === 'apply').length)) === 0);
+await page.uncheck('#pf-replace'); await page.waitForSelector('#pf-changes');
+await page.evaluate(() => { window.__profApplyErr = 'il file è cambiato dopo l\'anteprima'; });
+await page.click('#pf-apply'); await page.waitForSelector('#dlg'); await page.click('#dlg-ok');
+await page.waitForTimeout(150);
+check('profilo: se l\'applicazione fallisce lo dice e l\'anteprima resta', (await page.locator('#pf-changes').count()) === 1 && (await page.evaluate(() => !!document.querySelector('#toast, .toast') && document.body.textContent.includes('Importazione non riuscita'))));
+await page.evaluate(() => { window.__profApplyErr = ''; });
+await page.click('#pf-apply'); await page.waitForSelector('#dlg'); await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__profCalls.filter(c => c[0] === 'apply').length === 2);
+check('profilo: applica con l\'impronta vista e le opzioni scelte', (await page.evaluate(() => JSON.stringify(window.__profCalls.filter(c => c[0] === 'apply').pop()))) === JSON.stringify(['apply', '/tmp/ufficio.yaml', 'ab'.repeat(32), false, true]));
+await page.waitForSelector('#pf-pick');
+check('profilo: dopo l\'importazione torna allo stato iniziale', (await page.locator('#pf-changes').count()) === 0);
+await page.evaluate(() => { window.__profPv = Object.assign({}, window.__profPv, { changes: [], unchanged: true }); });
+await page.click('#pf-pick'); await page.waitForSelector('#pf-same');
+check('profilo: se non cambia nulla lo dice e il pulsante è spento', (await page.locator('#pf-apply').isDisabled()) && (await page.textContent('#pf-same')).includes('Nessuna differenza'));
+await page.click('#pf-cancel');
+await page.evaluate(() => { window.__profErr = 'non è un profilo di ZeroShield'; });
+await page.click('#pf-pick'); await page.waitForSelector('#pf-err');
+check('profilo: un file non valido mostra l\'errore, senza pulsante Importa', (await page.textContent('#pf-err')).includes('non è un profilo') && (await page.locator('#pf-apply').count()) === 0);
+await page.click('#pf-cancel');
+await page.evaluate(() => { window.__profErr = ''; });
+check('profilo: l\'errore non lascia la sezione bloccata', (await page.locator('#pf-pick').count()) === 1);
 
 // Avvio all'accensione: spento di partenza, attivarlo non chiede conferma, spegnerlo si
 await page.click('#sidebar button[data-view="rules"]');

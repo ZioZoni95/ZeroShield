@@ -252,6 +252,76 @@ func (a *App) ApplyRules(c rules.Choice) error {
 
 // ApplyInterfaces salva le interfacce su cui filtrare (vuoto = automatica) e riavvia il servizio (auth di
 // sistema). Le altre scelte (regole, modalita') restano com'erano.
+// ProfileExport: esito dell'esportazione del profilo condivisibile.
+type ProfileExport struct {
+	Path      string   `json:"path"`      // dove e' stato scritto
+	Left      []string `json:"left"`      // cio' che non si esporta e perche'
+	Cancelled bool     `json:"cancelled"` // l'utente ha chiuso la finestra di salvataggio
+}
+
+// ExportProfile scrive le scelte della GUI in un file da portare su un'altra macchina (utente, interfaccia, VPN e
+// percorsi nelle cartelle di un utente restano fuori). Non serve nessun privilegio.
+func (a *App) ExportProfile(name, note string) (ProfileExport, error) {
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return ProfileExport{}, fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	data, left, err := rules.Export(svc.ReadConfig(), rules.ExportOptions{Name: name, Note: note, Version: version, Now: time.Now()})
+	if err != nil {
+		return ProfileExport{}, err
+	}
+	home, _ := os.UserHomeDir()
+	p, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title: "Salva il profilo", DefaultDirectory: home, DefaultFilename: "zeroshield-profilo.yaml",
+		Filters: []runtime.FileFilter{{DisplayName: "Profilo ZeroShield (*.yaml)", Pattern: "*.yaml;*.yml"}},
+	})
+	if err != nil {
+		return ProfileExport{}, err
+	}
+	if p == "" {
+		return ProfileExport{Cancelled: true, Left: left}, nil
+	}
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		return ProfileExport{}, err
+	}
+	return ProfileExport{Path: p, Left: left}, nil
+}
+
+// ChooseProfile apre il selettore di file per scegliere un profilo da importare ("" se l'utente annulla).
+func (a *App) ChooseProfile() (string, error) {
+	home, _ := os.UserHomeDir()
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Scegli il profilo da importare", DefaultDirectory: home,
+		Filters: []runtime.FileFilter{{DisplayName: "Profilo ZeroShield (*.yaml)", Pattern: "*.yaml;*.yml"}},
+	})
+}
+
+// PreviewProfile mostra cosa cambierebbe importando il file. Non scrive niente. L'impronta (sha256) nel risultato
+// serve ad ApplyProfile per applicare solo il file che si e' visto.
+func (a *App) PreviewProfile(path string, replace, asAudit bool) (rules.ImportResult, error) {
+	data, err := rules.ReadProfileFile(path)
+	if err != nil {
+		return rules.ImportResult{}, err
+	}
+	return rules.PreviewImport(svc.ReadConfig(), data, rules.ImportOptions{Replace: replace, AsAudit: asAudit})
+}
+
+// ApplyProfile importa il profilo (password di sistema, backup, ripristino se il servizio non riparte). Rilegge il
+// file e rifiuta se non e' piu' quello dell'anteprima.
+func (a *App) ApplyProfile(path, sha string, replace, asAudit bool) error {
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	data, err := rules.ReadProfileFile(path)
+	if err != nil {
+		return err
+	}
+	next, err := rules.ApplyPlan(svc.ReadConfig(), data, rules.ImportOptions{Replace: replace, AsAudit: asAudit}, sha)
+	if err != nil {
+		return err
+	}
+	return svc.ApplyConfig(next)
+}
+
 // HardenPreview mostra cosa cambierebbe harden_system.sh per un profilo (dry-run, senza privilegi).
 func (a *App) HardenPreview(profile string) (string, error) {
 	return svc.HardenPreview(profile)

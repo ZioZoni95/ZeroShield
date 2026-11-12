@@ -58,3 +58,11 @@ export function SetConfigMode(arg1:string):Promise<void>;
 export function SocketPath():Promise<string>;
 
 export function Version():Promise<string>;
+
+export function ExportProfile(arg1:string,arg2:string):Promise<Record<string, any>>;
+
+export function ChooseProfile():Promise<string>;
+
+export function PreviewProfile(arg1:string,arg2:boolean,arg3:boolean):Promise<Record<string, any>>;
+
+export function ApplyProfile(arg1:string,arg2:string,arg3:boolean,arg4:boolean):Promise<void>;
