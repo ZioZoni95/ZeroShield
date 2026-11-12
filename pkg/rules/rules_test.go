@@ -329,3 +329,62 @@ func TestCatalogHasGnomeSSHAgent(t *testing.T) {
 		t.Errorf("regole inattese: %v", tool.Rules)
 	}
 }
+
+// Funzioni attivabili con un pulsante: la scelta finisce nel blocco gestito, si rilegge identica e rispetta le chiavi scritte a mano.
+func TestFeatureChoicesRoundTrip(t *testing.T) {
+	off := false
+	c := Choice{BlockPoisoning: &off, Canary: &CanaryChoice{Enabled: true, Dirs: []string{"Documents", "Scrivania", "Documents"}}}
+	text, err := Apply("profile: home\nuser: u\n", c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"block_poisoning: false", "canary:", "enabled: true", "- Documents", "- Scrivania"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("manca %q nel blocco:\n%s", want, text)
+		}
+	}
+	if strings.Count(text, "Documents") != 1 {
+		t.Errorf("cartella duplicata:\n%s", text)
+	}
+	back, err := Parse(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.BlockPoisoning == nil || *back.BlockPoisoning || back.Canary == nil || !back.Canary.Enabled || len(back.Canary.Dirs) != 2 {
+		t.Errorf("rilettura diversa: %+v", back)
+	}
+	// Acceso (default) e canary spento non si scrivono: il blocco sparisce.
+	on := true
+	empty, err := Apply(text, Choice{BlockPoisoning: &on, Canary: &CanaryChoice{Enabled: false}})
+	if err != nil || strings.Contains(empty, "block_poisoning") || strings.Contains(empty, "canary") {
+		t.Errorf("il blocco doveva sparire: %v\n%s", err, empty)
+	}
+}
+
+func TestFeatureManualKeysAreRespected(t *testing.T) {
+	off := false
+	if _, err := Apply("profile: home\nuser: u\nblock_poisoning: true\n", Choice{BlockPoisoning: &off}); err != ErrManualFeature {
+		t.Errorf("block_poisoning scritto a mano: atteso ErrManualFeature, ottenuto %v", err)
+	}
+	if _, err := Apply("profile: home\nuser: u\ncanary:\n  enabled: true\n", Choice{Canary: &CanaryChoice{Enabled: true}}); err != ErrManualFeature {
+		t.Errorf("canary scritto a mano: atteso ErrManualFeature, ottenuto %v", err)
+	}
+	if _, err := Apply("profile: home\nuser: u\n", Choice{Canary: &CanaryChoice{Enabled: true, Dirs: []string{"../etc"}}}); err == nil {
+		t.Error("una cartella con .. va rifiutata")
+	}
+}
+
+func TestModelFeaturesFromConfig(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, "Documents"), 0o755)
+	m := BuildModel("profile: home\nuser: u\n", home)
+	if !m.Features.BlockPoisoning || m.Features.CanaryEnabled || len(m.Features.CanaryCandidates) != 1 || m.Features.CanaryCandidates[0] != "Documents" {
+		t.Errorf("funzioni di partenza inattese: %+v", m.Features)
+	}
+	off := false
+	text, _ := Apply("profile: home\nuser: u\n", Choice{BlockPoisoning: &off, Canary: &CanaryChoice{Enabled: true, Dirs: []string{"Documents"}}})
+	m = BuildModel(text, home)
+	if m.Features.BlockPoisoning || !m.Features.CanaryEnabled || m.Features.ManualCanary {
+		t.Errorf("funzioni dopo la scelta inattese: %+v", m.Features)
+	}
+}

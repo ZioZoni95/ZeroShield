@@ -34,6 +34,8 @@ var script = []ipc.WireEvent{
 	{Action: "blocked", PID: 48921, Comm: "cat", Exe: "/usr/bin/cat", Rule: "cloud-creds", Inode: 9740993},
 	{Action: "audit", PID: 5102, Comm: "chrome", Exe: "/opt/google/chrome/chrome", Rule: "browser-secrets", Inode: 778812},
 	{Action: "blocked", PID: 5317, Comm: "ssh", Exe: "/tmp/ssh", Rule: "ssh-keys", Inode: 112345},
+	{Action: "egress", PID: 6120, Comm: "kubectl", Exe: "/usr/local/bin/kubectl", Rule: "cloud-creds", Dest: "10.209.4.1:6443", Scope: "lan"},
+	{Action: "egress", PID: 6188, Comm: "python3", Exe: "/usr/bin/python3.12", Rule: "ssh-keys", Dest: "203.0.113.9:443", Scope: "internet"},
 }
 
 func main() {
@@ -54,6 +56,10 @@ func main() {
 		HookLSM: true, XDP: []string{"enp0s3 (mock)"},
 		Protected: 42, Allowed: 18,
 		BlockPoisoning: true, BlockSubnets: []string{"192.168.100.0/24"},
+		Posture: []ipc.PostureItem{
+			{ID: "ptrace", Title: "Memoria dei programmi protetta da ptrace", Detail: "Dato di prova (mock).", Fix: "echo 'kernel.yama.ptrace_scope = 1' | sudo tee /etc/sysctl.d/60-zeroshield-ptrace.conf && sudo sysctl --system"},
+			{ID: "io_uring", OK: true, Title: "Percorso io_uring chiuso", Detail: "Dato di prova (mock)."},
+		},
 		Vpn: ipc.VpnStatus{Enabled: true, Endpoint: "203.0.113.7:51820", Tunnel: "wg0", Up: false, KillSwitch: true, HandshakeAge: -1},
 		Listening: []ipc.ListenEntry{
 			{Proto: "tcp", Addr: "127.0.0.1", Port: 631, PID: 1234, Exe: "/usr/sbin/cupsd"},

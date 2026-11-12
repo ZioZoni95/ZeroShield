@@ -78,7 +78,7 @@ Non serve scrivere YAML: la GUI lo fa per te. Restano però i limiti dello [stat
 
 ## 🔬 Stato reale del progetto
 
-Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` è alla **0.0.14**, non ancora rilasciata. Il numero che vedi in fondo alla barra laterale della
+Ultima release pubblicata: **v0.0.12** (pre-release, alpha); `main` sul remoto è alla **0.0.17**; le versioni **0.0.18–0.0.22** (pagina Funzioni, hardening e kill-switch dalla GUI, audit delle connessioni in uscita, controlli di postura, profilo condiviso) sono ancora solo in locale, in attesa del push. Il numero che vedi in fondo alla barra laterale della
 GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`. Cosa cambia in ogni versione:
 [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -196,7 +196,9 @@ nome con cui lo chiami.
   sulle mappe (tetto di 4096 per regola, 16384 in tutto) e un watcher **inotify** riallinea le mappe entro
   ~0,1 s da un rename (al massimo 1 s sotto una raffica); il rescan periodico (`rescan_seconds`) resta come rete di sicurezza.
   **Fail-closed**: se un hook non si aggancia il demone si ferma invece di fingersi attivo.
-* **Anti-ransomware (canary + fanotify).** File esca nascosti nelle cartelle scelte: chi li tocca viene
+* **Profilo condiviso (0.0.22).** Configurazione → *Profilo condiviso* (o `zt-shield profile export|import`): salva le tue scelte in un file e importale su un'altra macchina, per esempio la lista comune dell'ufficio. Anteprima prima di scrivere, programmi non di root scartati, modalità importate in sola osservazione, impronta SHA-256 del file visto. **Nessuna firma** (alpha): la valutazione dei rischi è in [`docs/PROFILO.md`](docs/PROFILO.md). Provato con test e sul config reale in sola lettura; non su una seconda macchina.
+* **Chi manda dove (audit delle connessioni in uscita).** Hook `lsm/socket_connect`, solo registro: segnala la prima volta che un programma che ha appena letto un segreto si collega a una destinazione (rete locale o Internet). Non blocca, non vede il contenuto, non segue i processi figli ([`docs/EGRESS.md`](docs/EGRESS.md)). Mai visto scattare su un kernel reale.
+* **Anti-ransomware (canary + fanotify).** Si accende dalla pagina **Funzioni** della GUI (sceglie le cartelle, prepara anche il drop-in systemd) o a mano nel config. File esca nascosti nelle cartelle scelte: chi li tocca viene
   ucciso in `enforce` (mai PID ≤ 1 né il demone). Una raffica di scritture, cancellazioni o rinomine genera
   solo un allarme. `exclude_exe` e `allow_exe` esentano indicizzatori e backup. Spento di default: si tara una
   settimana in `audit` ([`docs/CANARY.md`](docs/CANARY.md)).
@@ -390,7 +392,7 @@ sanificato nel demone (`ipc.SafeText`) prima di raggiungere TUI e GUI.
 |---|---|
 | `zt-shield` | Il demone (`sudo zt-shield` o servizio). Sottocomandi: `ctl ping\|rescan`, `dropin` (drop-in systemd per il canary), `config-apply FILE` (root: valida un config, copia di sicurezza, sostituzione atomica, riavvio e ripristino se non riparte; lo usa la GUI) |
 | `zt-tui` | Terminale con sei schede (Stato, Eventi, Regole, Rete, Radar, Config), filtro eventi, azioni (`i` installa, `s` avvia, `X` ferma, `m` mode, `R` rescan) e `--dump` |
-| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, **regole guidate** (catalogo, «Rendi affidabile», bozza e *Applica*), rete e VPN, configurazione con cambio audit/enforce, guida a schede, primo avvio con controlli preliminari, interruttore **Avvio all'accensione** e popup **Novità** a ogni nuova versione. **Finestra adattiva**: il contenuto segue la larghezza (fino a 480 px, con la barra laterale a sole icone sotto i 900 px). Scorciatoie `1`-`7`; la versione è in fondo alla barra laterale |
+| `zt-gui` | Finestra desktop (Wails): verdetto di protezione, eventi raggruppabili, radar che separa rumore di rete da sorgenti da verificare, **pagina Funzioni** (un pulsante per ogni funzione: segreti, filtro di rete, anti-ransomware, avvio, icona, hardening con anteprima, kill-switch VPN; i due ultimi sperimentali), **regole guidate** (catalogo, «Rendi affidabile», bozza e *Applica*), rete e VPN, configurazione con cambio audit/enforce, guida a schede, primo avvio con controlli preliminari, interruttore **Avvio all'accensione** e popup **Novità** a ogni nuova versione. **Finestra adattiva**: il contenuto segue la larghezza (fino a 480 px, con la barra laterale a sole icone sotto i 900 px). Scorciatoie `1`-`8`; la versione è in fondo alla barra laterale |
 | `zt-tray` | Icona nella barra di sistema: 🔵 enforce con hook, 🟠 audit o senza hook LSM, 🔴 demone spento. Notifica demone caduto/tornato e blocchi/canary **anche a finestra chiusa** (con la GUI aperta se ne occupa lei). Servizio utente systemd; clic = apre la GUI. Chiuderla non ferma la protezione |
 | `zt-mockd` | Finto demone con dati inventati, per vedere le UI senza root né eBPF |
 | `zt-probe` | Collaudo del kernel: verifier per programma e, con `-xdp-lo`, XDP su loopback |
@@ -448,10 +450,18 @@ docs/       documentazione (vedi sotto)
 * **Whitelist per binario, non per catena.** Ogni binario in lista legge i suoi file per chiunque lo invochi.
   Il segreto forte resta la chiave FIDO2.
 * **`io_uring` = fail-open** (scelta per evitare falsi blocchi) e **niente hook `ptrace`**: un processo con lo
-  stesso UID legge la memoria di `ssh` (mitigato da `kernel.yama.ptrace_scope=1`).
+  stesso UID legge la memoria di `ssh`. Dalla 0.0.21 la GUI (Stato → «Da fare») e il journal dicono se
+  `kernel.yama.ptrace_scope` e `kernel.io_uring_disabled` sono aperti e mostrano il comando per chiuderli;
+  ZeroShield non li cambia da solo, quindi finché non lo fai il limite resta.
 * **btrfs e overlayfs: protezione inerte** (avviso all'avvio): solo ext4 e xfs.
 * **Servizio fermo = zero protezione**: nessun pinning degli hook, di proposito.
 * **Descrittori di file già aperti**: l'hook controlla l'`open`, non l'uso. Un fd ottenuto da un programma autorizzato (o prima dell'avvio del demone) e poi ereditato da un figlio o passato su un socket continua a leggere il segreto.
+
+**Quali si possono chiudere e quali no:** tabella completa in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.md#limiti-accettati). In breve: IPv6 oltre 6 header, btrfs/overlayfs, descrittori ereditati e il collaudo in VM si chiudono con lavoro; io_uring e ptrace con una scelta dell'utente; ESP, root, whitelist per binario e servizio fermo restano per natura.
+
+**Cosa è stato fatto di questi limiti (0.0.21).** Nessuno è chiuso dal codice: ptrace e io_uring sono resi visibili (con il rimedio),
+i descrittori di file ereditati, IPv6 oltre 6 header o con ESP e btrfs/overlayfs restano com'erano. Non sono stati toccati senza un kernel
+di prova: scrivere un hook in più su `file_permission` o cambiare la chiave dei file senza provarli rischierebbe nuovi falsi blocchi.
 
 **Da sapere prima di `enforce`.**
 
@@ -481,6 +491,7 @@ L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.
 | [`docs/COLLAUDO_HARDENING.md`](docs/COLLAUDO_HARDENING.md) | Procedura per VM: rename tra regole, `deny_write`, truncate, frammenti e IPv6 con traffico vero, fd ereditati |
 | [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md) | Primo blocco reale degli hook LSM: ambiente, esiti, cosa non è provato, come ripeterlo |
 | [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md) · [`TESTING_LAB.md`](docs/TESTING_LAB.md) · [`TESTING.md`](docs/TESTING.md) | Cosa è stato provato su kernel reale; collaudo in VM isolata; collaudo pratico di LSM, XDP, FIDO2 e pentest esterno |
+| [`docs/PROFILO.md`](docs/PROFILO.md) | Profilo condiviso: esportare/importare le scelte tra macchine e rischi |
 | [`docs/CANARY.md`](docs/CANARY.md) · [`VPN_SETUP.md`](docs/VPN_SETUP.md) | Anti-ransomware: uso e taratura; kill-switch, auto-VPN, ProtonVPN |
 | [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md) | Ricerca TUI/GUI e architettura IPC |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`FEATURE_*.md`](docs/) | Piano a fasi e studi sulle estensioni |

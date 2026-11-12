@@ -57,6 +57,12 @@
 // (Restituirlo positivo e' un errore classico: l'utente vede successo e nessun errore.)
 #define EACCES   13
 
+// Famiglie di indirizzi per l'audit delle connessioni in uscita (vmlinux.h non porta le macro).
+#define AF_INET  2
+#define AF_INET6 10
+// Un processo che ha letto un segreto e' "sospetto" per questo tempo: le sue connessioni in uscita si segnalano.
+#define EGRESS_WINDOW_NS (60ULL * 1000000000ULL)
+
 // Indici nella mappa `settings`. Chiavi intere perche' sono gli unici indici
 // di array semplici usabili in BPF senza costruire struct.
 #define SETTING_ENFORCE 0 // 1 = nega l'accesso, 0 = solo audit (logga e lascia passare)
@@ -296,6 +302,46 @@ struct {
     __uint(max_entries, 256 * 1024);
 } audit_logs SEC(".maps");
 
+// ---------------------------------------------------------------------------
+// Audit delle connessioni in uscita dei programmi che toccano i segreti (solo registro, mai blocco)
+// ---------------------------------------------------------------------------
+//
+// `touched`: tgid -> ultimo accesso consentito a un file protetto (e la regola). Lo scrive check_access.
+// L'hook socket_connect guarda questa mappa: se il processo ha letto un segreto da meno di
+// EGRESS_WINDOW_NS e si collega a un indirizzo che non e' loopback, emette un evento. Non vede il
+// contenuto (traffico cifrato) ne' i byte: dice solo «questo programma ha letto la regola R e poi si e'
+// collegato a IP:porta». Limite: valgono i processi, non i loro figli (un `git` che lancia `ssh` e' un altro tgid).
+struct touch {
+    __u64 ts;
+    __u32 rule;
+    __u32 pad;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 4096);
+    __type(key, __u32);
+    __type(value, struct touch);
+} touched SEC(".maps");
+
+// Layout identico a audit.EgressEvent (Go): pid@0 comm@4 rule@20 family@24 port@26 addr@28 pad@44 exe_ino@48 exe_dev@56 = 64 byte.
+struct egress_event {
+    __u32 pid;
+    char  comm[16];
+    __u32 rule;
+    __u16 family; // AF_INET o AF_INET6
+    __u16 port;   // network byte order, copiata grezza
+    __u8  addr[16]; // IPv4 nei primi 4 byte
+    __u32 pad;
+    __u64 exe_ino;
+    __u64 exe_dev;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 64 * 1024);
+} egress_logs SEC(".maps");
+
 // Helper: legge un'impostazione con fallback. __always_inline perche' una funzione
 // esterna non e' ammessa in BPF e il verifier la richiede sempre inlined.
 static __always_inline __u32 setting(__u32 key, __u32 def) {
@@ -533,6 +579,16 @@ int BPF_PROG(zt_file_open, struct file *file) {
     return check_access(fk, rule);
 }
 
+// mark_touch: ricorda che questo processo ha appena letto un segreto (vedi `touched`). Costa una update, e si
+// arriva qui solo per i file protetti: il percorso caldo degli altri open non cambia.
+static __always_inline void mark_touch(__u32 rule) {
+    __u32 tgid = bpf_get_current_pid_tgid() >> 32;
+    struct touch t = {};
+    t.ts = bpf_ktime_get_ns();
+    t.rule = rule;
+    bpf_map_update_elem(&touched, &tgid, &t, BPF_ANY);
+}
+
 // check_access: cuore comune di file_open/unlink/rename. 0 = consenti,
 // -EACCES = nega in enforce (in audit logga e consente).
 // NOTA (io_uring): le open via IORING_OP_OPENAT girano in un worker il cui mm
@@ -561,8 +617,10 @@ static __always_inline int check_access(struct file_key fk, __u32 rule) {
         ak.ino = BPF_CORE_READ(exe, i_ino);
         ak.dev = BPF_CORE_READ(exe, i_sb, s_dev);
         ak.rule = rule; // la stessa chiave privata puo' valere solo per regole diverse
-        if (bpf_map_lookup_elem(&allowed_exes, &ak))
+        if (bpf_map_lookup_elem(&allowed_exes, &ak)) {
+            mark_touch(rule);
             return 0; // binario autorizzato per questa regola
+        }
         exe_ino = ak.ino;
         exe_dev = ak.dev;
     }
@@ -594,6 +652,8 @@ static __always_inline int check_access(struct file_key fk, __u32 rule) {
         bpf_ringbuf_submit(event, 0);
     }
 
+    if (!enforce)
+        mark_touch(rule); // in audit il processo legge davvero il segreto: anche lui e' da seguire
     // In audit si restituisce 0: l'accesso passa e l'utente non se ne accorge.
     // In enforce si nega. Gli open write-only passano salvo deny_write=1
     // (vedi testa funzione): creazione chiavi e backup funzionano di default.
@@ -716,4 +776,87 @@ int BPF_PROG(zt_file_truncate, struct file *file) {
     if (!rp)
         return 0;
     return check_access(fk, *rp & 0x7FFFFFFF);
+}
+
+// ---------------------------------------------------------------------------
+// 4. LSM: connessioni in uscita di chi ha toccato un segreto (solo audit)
+// ---------------------------------------------------------------------------
+//
+// Restituisce SEMPRE 0: non nega mai una connessione. E' un registro per capire "chi manda dove" dopo aver
+// letto un segreto, non un firewall. La prima volta che una coppia (programma, destinazione) compare la
+// segnala userspace; qui si filtra solo cio' che non serve a niente (loopback, famiglie diverse da IP).
+SEC("lsm/socket_connect")
+int BPF_PROG(zt_socket_connect, struct socket *sock, struct sockaddr *address, int addrlen) {
+    __u32 tgid = bpf_get_current_pid_tgid() >> 32;
+    struct touch *t = bpf_map_lookup_elem(&touched, &tgid);
+    if (!t)
+        return 0; // percorso caldo: quasi ogni connect() esce qui con una lookup
+    if (bpf_ktime_get_ns() - t->ts > EGRESS_WINDOW_NS)
+        return 0;
+
+    __u16 family = 0;
+    bpf_probe_read_kernel(&family, sizeof(family), &address->sa_family);
+    if (family != AF_INET && family != AF_INET6)
+        return 0; // AF_UNIX e il resto: niente rete
+
+    struct egress_event *e = bpf_ringbuf_reserve(&egress_logs, sizeof(*e), 0);
+    if (!e)
+        return 0; // pieno: si perde l'evento, mai il sistema
+    __builtin_memset(e, 0, sizeof(*e));
+    e->pid = tgid;
+    bpf_get_current_comm(&e->comm, sizeof(e->comm));
+    e->rule = t->rule;
+    e->family = family;
+
+    if (family == AF_INET) {
+        struct sockaddr_in sin = {};
+        if (addrlen < (int)sizeof(sin)) {
+            bpf_ringbuf_discard(e, 0);
+            return 0;
+        }
+        bpf_probe_read_kernel(&sin, sizeof(sin), address);
+        if ((sin.sin_addr.s_addr & 0xff) == 127) { // 127.0.0.0/8 (primo byte in network order)
+            bpf_ringbuf_discard(e, 0);
+            return 0;
+        }
+        e->port = sin.sin_port;
+        __builtin_memcpy(e->addr, &sin.sin_addr.s_addr, 4);
+    } else {
+        struct sockaddr_in6 sin6 = {};
+        if (addrlen < (int)sizeof(sin6)) {
+            bpf_ringbuf_discard(e, 0);
+            return 0;
+        }
+        bpf_probe_read_kernel(&sin6, sizeof(sin6), address);
+        __u8 *a = sin6.sin6_addr.in6_u.u6_addr8;
+        int loop = 1;
+#pragma unroll
+        for (int i = 0; i < 15; i++)
+            if (a[i] != 0)
+                loop = 0;
+        if (loop && a[15] == 1) { // ::1
+            bpf_ringbuf_discard(e, 0);
+            return 0;
+        }
+        e->port = sin6.sin6_port;
+        __builtin_memcpy(e->addr, a, 16);
+    }
+
+    // Identita' del binario (come in check_access): serve a risalire al percorso se il processo e' gia' uscito.
+    struct task_struct *task = bpf_get_current_task_btf();
+    if (task) {
+        struct mm_struct *mm = BPF_CORE_READ(task, mm);
+        if (mm) {
+            struct file *exe_file = BPF_CORE_READ(mm, exe_file);
+            if (exe_file) {
+                struct inode *exe = BPF_CORE_READ(exe_file, f_inode);
+                if (exe) {
+                    e->exe_ino = BPF_CORE_READ(exe, i_ino);
+                    e->exe_dev = BPF_CORE_READ(exe, i_sb, s_dev);
+                }
+            }
+        }
+    }
+    bpf_ringbuf_submit(e, 0);
+    return 0;
 }

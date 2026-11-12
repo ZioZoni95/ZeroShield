@@ -28,6 +28,61 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.22] — 2026-11-12
+
+- **Profilo condiviso** (`docs/PROFILO.md`): esporta le scelte della GUI in un file YAML (`format: zeroshield-profile`) e importale su un'altra macchina. Contiene programmi autorizzati, protezioni accese/spente, modalità per protezione, regole personali, filtro di rete e canary; **non** contiene `user`, `interface`, `vpn` né percorsi nelle cartelle di un utente (`/home`, `/root`, `/tmp`...).
+- **Importazione prudente**: anteprima obbligatoria (aggiunge/toglie/cambia, scartati, avvisi), scarto dei programmi non di root e dei percorsi di utente, avviso per quelli non installati, **modalità importate in sola osservazione** per impostazione, *unisci* (predefinito) o *sostituisci*, applicazione solo del file visto (impronta SHA-256), file limitato a 256 KB e chiavi sconosciute rifiutate, validazione con il parser del demone. Applica con lo stesso percorso della GUI (`pkexec` + `config-apply`: backup e ripristino).
+- GUI: sezione «Profilo condiviso» in Configurazione. Terminale: `zt-shield profile export|import` (l'anteprima non richiede privilegi; `-yes` applica).
+- **Nessuna firma** del file: scelta dichiarata per la fase alpha, con la valutazione dei rischi in `docs/PROFILO.md`.
+- Test: 17 test per il formato e l'importazione (`pkg/rules`), 6 per la riga di comando e 22 controlli nel browser. **Non provato**: finestre native di salvataggio/apertura nell'app vera, applicazione con `pkexec` su una seconda macchina.
+
+## [0.0.21] — 2026-11-06
+
+- **Postura del sistema** (`internal/posture`): il demone legge `kernel.yama.ptrace_scope` e `kernel.io_uring_disabled`, due impostazioni del kernel che non dipendono da ZeroShield ma ne aggirano i controlli se restano aperte (ptrace: un programma dello stesso utente legge la memoria di `ssh`; io_uring: i thread di lavoro non passano dall'hook dei file). Sono limiti già dichiarati: ora sono **visibili**. Un avviso nel journal all'avvio, il campo `posture` nello stato IPC e, nella GUI, due voci nella lista «Da fare» con il comando per chiuderli (sysctl persistente in `/etc/sysctl.d/`). **Non cambia nulla da solo.**
+- Limiti che **restano** (strutturali o da provare su un kernel reale): fd già aperti/ereditati/`SCM_RIGHTS` (servirebbe `file_permission` su ogni lettura, con costo e rischio di falsi blocchi), IPv6 oltre 6 extension header o con ESP, btrfs/overlayfs (la chiave dev+inode non coincide; già con avviso). Vedi `docs/PUNTI_APERTI.md`.
+
+## [0.0.20] — 2026-11-06
+
+- **Audit delle connessioni in uscita** (`docs/EGRESS.md`): nuovo hook `lsm/socket_connect`, **solo registro, non blocca mai**. Il kernel ricorda per 60 s i processi che hanno letto un segreto (mappa `touched`, scritta da `check_access`); a ogni `connect()` IPv4/IPv6 non loopback di uno di essi scrive un evento in un ring buffer dedicato (`egress_logs`, 64 byte per evento). Il demone segnala la **prima volta** di ogni coppia (programma, destinazione), con tetto di 20/s, e la classifica `lan`/`internet`. Evento IPC `action: "egress"` con `dest` e `scope`; GUI: tag «uscita», filtro dedicato, Internet in evidenza; TUI: riga «📤 USCITA».
+- Hook **opzionale**: un errore di caricamento o di aggancio non ferma lo scudo. Le mappe `touched`/`egress_logs` sono condivise con il resto tramite `MapReplacements`.
+- Test: decodifica del layout (v4, v6, payload corto), classificazione dell'ambito, «solo la prima volta» con tetto, evento IPC, e 4 controlli nel browser. **Non provato su un kernel reale**: compila e lo verifica la CI; procedura in `docs/COLLAUDO_HARDENING.md` (sezione 7).
+
+## [0.0.19] — 2026-11-06
+
+- **Pagina Funzioni**: schede per **hardening del sistema** (profilo a scelta; l'anteprima è `harden_system.sh <profilo> --dry-run` senza privilegi, mostrata prima di ogni applicazione; annullare non cambia nulla), **kill-switch VPN** (acceso/spento con endpoint e tunnel letti dal demone, solo se `vpn:` è nel config; conferma che avvisa che la rete si ferma se il tunnel cade) e **chiave FIDO2** (solo istruzioni: è interattiva).
+- `pkg/svc`: `HardenPreview/HardenApply/KillSwitchOn/KillSwitchOff`; argomenti validati (profilo noto, endpoint `IPv4:porta` o `[IPv6]:porta` mai un nome host, interfaccia, CIDR) e passati uno per uno, mai in una stringa di shell; azioni sul sistema via `pkexec`. Test di validazione, anteprima (comando e troncamento) e rifiuto prima di eseguire.
+- **Non provato su un sistema vero**: gli script restano `--dry-run` + comandi finti, e il kill-switch solo in un network namespace. Vale per i pulsanti.
+
+## [0.0.18] — 2026-11-06
+
+- **Pagina «Funzioni»** (tasto 4; Regole, Rete, Configurazione e Guida scalano a 5-8): una scheda con pulsante per ogni funzione — protezione dei segreti (solo osserva/blocca), filtro di rete (`block_poisoning`), **anti-ransomware (canary)**, avvio all'accensione, icona nella barra — più il monitor VPN solo in lettura. Ogni scheda mostra lo stato **reale** del demone, non solo quello del file.
+- **Canary dalla GUI**: nuovo campo `canary` nello stato (`enabled`, `active`, `dirs`): «voluto ma non partito» è un avviso, non un finto «attivo». Le cartelle si scelgono tra quelle comuni che esistono nella home. La scelta finisce nel blocco gestito del config (`block_poisoning: false` solo se spento, `canary:` solo se acceso); se le stesse chiavi sono scritte a mano la GUI non le tocca.
+- **`config-apply` e il drop-in systemd**: con il canary acceso crea `/etc/systemd/system/zt-shield.service.d/canary.conf` (`ReadWritePaths=` solo per le cartelle delle esche, perché la unit ha `ProtectHome=read-only`) e fa `daemon-reload`; spento lo toglie; un drop-in scritto a mano non si tocca; dopo un ripristino il drop-in segue il config. Prima il canary andava abilitato a mano con `zt-shield dropin | sudo install …`.
+- **Icona nella barra** attivabile da GUI (`systemctl --user enable/disable --now`, senza password). `ApplyRules` conserva ora anche `block_poisoning` e `canary`.
+- Test: scrittura/lettura della scelta, chiavi manuali, modello, drop-in, e 13 controlli nel browser per la pagina.
+
+## [0.0.17] — 2026-11-06
+
+- **XDP, IPv6 con extension header**: prima un pacchetto con una extension header passava senza controllo (aggirabile di proposito). Ora si attraversano fino a 6 header noti (hop-by-hop, routing, destination options, fragment solo se primo frammento, AH) fino all'UDP; ESP, header sconosciute, catene più lunghe e frammenti non-primi passano. Test `TestXDPIPv6ExtensionHeaders` (14 casi, sul vero programma, in CI come root). **Non ancora visto con il verifier del kernel in questa sessione: lo esegue la CI (`zt-probe`).**
+- **Watcher**: test di stress (300 sostituzioni atomiche in 2 s → 3 rescan, e sempre un rescan dopo l'ultima).
+- **Docs**: `docs/COLLAUDO_HARDENING.md`, procedura per VM (rename ZS-005, `deny_write`, truncate, frammenti, IPv6, fd ereditati).
+
+## [0.0.16] — 2026-11-06
+
+Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul sorgente.
+
+- **ZS-005 (medio) — `inode_rename`**: se il sorgente era protetto e il processo autorizzato per la sua regola, l'hook usciva senza controllare la destinazione, che può appartenere a un'altra regola. Ora il sorgente nega subito se non autorizzato; se autorizzato si controlla comunque la destinazione, con la **sua** regola. Compila e passa i test Go; **non provato a runtime su un kernel** (gli hook LSM non si eseguono con `BPF_PROG_TEST_RUN`): resta da collaudare (vedi `PUNTI_APERTI.md`).
+- **Mappe eBPF**: gli errori di scrittura (`Put`) erano solo loggati e il demone annunciava comunque «File protetti: N». Ora `Sync` restituisce i conteggi davvero scritti e logga `⚠️ mappe eBPF incomplete … la protezione è parziale`. Non coperto da un test unitario (servono privilegi BPF).
+
+## [0.0.15] — 2026-11-06
+
+- **Falsi blocchi**: `seahorse` («Password e chiavi», lanciato anche dalla ricerca del menu applicazioni) e `/usr/libexec/gcr-ssh-agent` entrano nella lista di base di `ssh-keys`. Visto il 2026-11-06: in enforce venivano negati mentre leggevano `~/.ssh/id_*` (log: `Error reading file … to check for SSH key`). Compromesso dichiarato: due programmi di sistema di root in più possono leggere le chiavi. Se mancano (KDE, server) nessun avviso «non risolto».
+- **Eventi**: il demone ricorda gli ultimi 200 eventi e alert canary e li rilegge a chi si collega (campo `replay`, compatibile con i client vecchi). Prima la GUI aperta dopo una notifica non mostrava il blocco. Tray: i replay non notificano; GUI: scarta i replay già presenti. Test di storico, limite e assenza di doppioni.
+
+## [0.0.14] — 2026-11-06
+
+- **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
+
 ## [0.0.13] — 2026-11-05
 
 - **GUI**: i riquadri a tendina (`<details>`) non si richiudono più da soli a ogni aggiornamento dello stato, in nessuna schermata. Si ricorda lo stato per schermata, titolo e posizione. Test in Guida e Configurazione.

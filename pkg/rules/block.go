@@ -37,6 +37,14 @@ type CustomRule struct {
 	Mode      string   `yaml:"mode,omitempty" json:"mode"` // "" = come la modalita' globale
 }
 
+// CanaryChoice: anti-ransomware (esche fanotify) acceso dalla GUI. Spento = la chiave non c'e' (il default del
+// demone e' spento): scrivere `enabled: false` non serve. Gli altri parametri (nomi delle esche, soglie di
+// massa) restano ai default del demone.
+type CanaryChoice struct {
+	Enabled bool     `yaml:"enabled" json:"enabled"`
+	Dirs    []string `yaml:"dirs,omitempty" json:"dirs"` // relative alla home o assolute; vuoto = default del demone (Documents)
+}
+
 // Choice: le scelte che la GUI gestisce.
 type Choice struct {
 	EnableGroups []string            `yaml:"enable_groups,omitempty" json:"enable_groups"`
@@ -48,12 +56,17 @@ type Choice struct {
 	// Interface: interfacce su cui agganciare il filtro di rete (lista csv, come la chiave `interface` del config).
 	// Vuoto = automatica (la rete in uso).
 	Interface string `yaml:"interface,omitempty" json:"interface"`
+	// BlockPoisoning: nil = come il default del demone (acceso). Solo `false` va scritto: spegne il filtro di rete.
+	BlockPoisoning *bool `yaml:"block_poisoning,omitempty" json:"block_poisoning"`
+	// Canary: nil = spento.
+	Canary *CanaryChoice `yaml:"canary,omitempty" json:"canary"`
 }
 
 // Empty: nessuna scelta (il blocco non serve).
 func (c Choice) Empty() bool {
 	return len(c.EnableGroups) == 0 && len(c.DisableRules) == 0 && len(c.AllowExtra) == 0 &&
-		len(c.RemoveAllow) == 0 && len(c.RuleModes) == 0 && len(c.ExtraRules) == 0 && c.Interface == ""
+		len(c.RemoveAllow) == 0 && len(c.RuleModes) == 0 && len(c.ExtraRules) == 0 && c.Interface == "" &&
+		c.BlockPoisoning == nil && c.Canary == nil
 }
 
 // uniqKeep toglie i doppioni mantenendo l'ordine (per i percorsi l'ordine e' quello scelto dall'utente).
@@ -119,6 +132,13 @@ func normalize(c Choice) Choice {
 		}
 	}
 	out.Interface = strings.Join(uniqKeep(ifs), ",")
+	if c.BlockPoisoning != nil && !*c.BlockPoisoning {
+		off := false // acceso = default: non si scrive
+		out.BlockPoisoning = &off
+	}
+	if c.Canary != nil && c.Canary.Enabled {
+		out.Canary = &CanaryChoice{Enabled: true, Dirs: uniqKeep(c.Canary.Dirs)}
+	}
 	return out
 }
 
@@ -172,6 +192,16 @@ func validate(c Choice) error {
 	}
 	if err := ValidateInterfaces(c.Interface); err != nil {
 		return err
+	}
+	if c.Canary != nil {
+		if len(c.Canary.Dirs) > 32 {
+			return fmt.Errorf("troppe cartelle per il canary (massimo 32)")
+		}
+		for _, d := range c.Canary.Dirs {
+			if d == "" || len(d) > 4096 || strings.ContainsAny(d, "*?[\x00\n\r\t") || strings.Contains(d, "..") {
+				return fmt.Errorf("cartella del canary %q non valida", d)
+			}
+		}
 	}
 	seen := map[string]bool{}
 	for _, r := range c.ExtraRules {
@@ -270,6 +300,24 @@ func ValidateInterfaces(list string) error {
 	return nil
 }
 
+// ErrManualFeature: `block_poisoning` o `canary` sono scritte a mano nel config: la GUI non le puo' definire una seconda volta.
+var ErrManualFeature = errors.New("nel config ci sono gia' `block_poisoning` o `canary` scritte a mano: modificale li' (o toglile per usare i pulsanti)")
+
+// ManualKey dice se il config ha la chiave top-level `key` scritta a mano (fuori dal blocco gestito).
+func ManualKey(text, key string) bool {
+	before, _, after, found := split(text)
+	rest := text
+	if found {
+		rest = before + after
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal([]byte(rest), &m); err != nil {
+		return false
+	}
+	_, ok := m[key]
+	return ok
+}
+
 // ManualInterface dice se il config ha `interface` scritta a mano (fuori dal blocco gestito).
 func ManualInterface(text string) bool {
 	before, _, after, found := split(text)
@@ -333,6 +381,9 @@ func Apply(text string, c Choice) (string, error) {
 	}
 	if c.Interface != "" && ManualInterface(text) {
 		return "", ErrManualInterface
+	}
+	if (c.BlockPoisoning != nil && ManualKey(text, "block_poisoning")) || (c.Canary != nil && ManualKey(text, "canary")) {
+		return "", ErrManualFeature
 	}
 	blk, err := Render(c)
 	if err != nil {

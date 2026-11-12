@@ -58,6 +58,34 @@ export function ServiceStart() {
   return window['go']['main']['App']['ServiceStart']();
 }
 
+export function HardenPreview(arg1) {
+  return window['go']['main']['App']['HardenPreview'](arg1);
+}
+
+export function HardenApply(arg1) {
+  return window['go']['main']['App']['HardenApply'](arg1);
+}
+
+export function KillSwitchOn(arg1, arg2) {
+  return window['go']['main']['App']['KillSwitchOn'](arg1, arg2);
+}
+
+export function KillSwitchOff() {
+  return window['go']['main']['App']['KillSwitchOff']();
+}
+
+export function ApplyFeatures(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ApplyFeatures'](arg1, arg2, arg3);
+}
+
+export function TrayEnabled() {
+  return window['go']['main']['App']['TrayEnabled']();
+}
+
+export function SetTrayEnabled(arg1) {
+  return window['go']['main']['App']['SetTrayEnabled'](arg1);
+}
+
 export function BootEnabled() {
   return window['go']['main']['App']['BootEnabled']();
 }
@@ -84,4 +112,20 @@ export function SocketPath() {
 
 export function Version() {
   return window['go']['main']['App']['Version']();
+}
+
+export function ExportProfile(arg1, arg2) {
+  return window['go']['main']['App']['ExportProfile'](arg1, arg2);
+}
+
+export function ChooseProfile() {
+  return window['go']['main']['App']['ChooseProfile']();
+}
+
+export function PreviewProfile(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PreviewProfile'](arg1, arg2, arg3);
+}
+
+export function ApplyProfile(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ApplyProfile'](arg1, arg2, arg3, arg4);
 }

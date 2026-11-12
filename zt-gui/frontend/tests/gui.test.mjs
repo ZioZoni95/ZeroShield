@@ -42,6 +42,10 @@ const STATUS = {
   block_poisoning: true, block_subnets: [], time: '2026-10-05T10:00:00Z',
   vpn: { enabled: false, up: false, killswitch: false, handshake_age: -1 },
   top_sources: [], listening: [], listening_total: 0, rules: [{ name: 'ssh-keys', paths: ['.ssh/id_*'], allow: ['ssh'] }],
+  posture: [
+    { id: 'ptrace', ok: false, title: 'Memoria dei programmi protetta da ptrace', detail: 'Qualunque programma con il tuo stesso utente può leggere la memoria.', fix: "echo 'kernel.yama.ptrace_scope = 1' | sudo tee /etc/sysctl.d/60-zeroshield-ptrace.conf && sudo sysctl --system" },
+    { id: 'io_uring', ok: true, title: 'Percorso io_uring chiuso', detail: 'io_uring è limitato o spento.' },
+  ],
 };
 
 const results = [];
@@ -71,6 +75,17 @@ await page.addInitScript((status) => {
     SetConfigMode: async (m) => { window.__setModeCalls.push(m); },
     BootEnabled: async () => window.__boot,
     SetBootEnabled: async (on) => { window.__bootCalls.push(on); window.__boot = on; },
+    TrayEnabled: async () => window.__tray,
+    SetTrayEnabled: async (on) => { window.__trayCalls.push(on); window.__tray = on; },
+    ApplyFeatures: async (poison, canary, dirs) => { window.__featCalls.push([poison, canary, dirs]); },
+    HardenPreview: async (p) => { window.__hardPrev.push(p); return 'diff finto per ' + p + '\n+ ufw default deny incoming'; },
+    HardenApply: async (p) => { window.__hardApply.push(p); },
+    KillSwitchOn: async (e, t) => { window.__ksCalls.push(['on', e, t]); },
+    KillSwitchOff: async () => { window.__ksCalls.push(['off']); },
+    ExportProfile: async (n, t) => { window.__profCalls.push(['export', n, t]); if (window.__profCancel) return { path: '', left: [], cancelled: true }; return { path: '/home/u/zeroshield-profilo.yaml', left: ['«dev-tokens»: autorizzato /home/u/.local/bin/omp sta nella cartella di un utente'], cancelled: false }; },
+    ChooseProfile: async () => window.__profPath,
+    PreviewProfile: async (p, r, a) => { window.__profCalls.push(['preview', p, r, a]); if (window.__profErr) throw new Error(window.__profErr); return JSON.parse(JSON.stringify(window.__profPv)); },
+    ApplyProfile: async (p, sha, r, a) => { window.__profCalls.push(['apply', p, sha, r, a]); if (window.__profApplyErr) throw new Error(window.__profApplyErr); },
     RulesModel: async () => JSON.parse(JSON.stringify(window.__rm)),
     CheckProgram: async (x) => JSON.parse(JSON.stringify(window.__progs[x] || { input: x, found: false, why: 'non trovato sul sistema' })),
     ApplyRules: async (c) => { window.__applyCalls.push(c); if (window.__applyFail) throw new Error(window.__applyFail); window.__rm.choice = c; },
@@ -83,7 +98,7 @@ await page.addInitScript((status) => {
   const prog = (name, path, o) => Object.assign({ input: name, name, path, found: true, trusted: true, trust_err: '', verdict_ok: true, why: '', fix: '', ok: true, alt: '' }, o || {});
   const tool = (id, label, rules, reads, p, allowed) => Object.assign({ id, label, names: [id], rules, reads }, p, { allowed: allowed || [] });
   window.__rm = {
-    profile: 'home', manual: false, manual_rules: false, global_mode: 'audit', error: '', custom: [], helpers: [{ id: 'localsearch', label: 'Indicizzatore di GNOME (localsearch)', why: 'scansiona i file in background', found: ['/usr/libexec/localsearch-extractor-3'] }, { id: 'altro', label: 'Non presente', why: 'x', found: [] }], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
+    profile: 'home', features: { block_poisoning: true, manual_block_poisoning: false, canary_enabled: false, canary_dirs: [], manual_canary: false, canary_candidates: ['Documents', 'Scrivania'] },  manual: false, manual_rules: false, global_mode: 'audit', error: '', custom: [], helpers: [{ id: 'localsearch', label: 'Indicizzatore di GNOME (localsearch)', why: 'scansiona i file in background', found: ['/usr/libexec/localsearch-extractor-3'] }, { id: 'altro', label: 'Non presente', why: 'x', found: [] }], choice: { enable_groups: null, disable_rules: null, allow_extra: null },
     groups: [
       grp('ssh', 'ssh-keys', true, ['ssh', 'ssh-add'], ['.ssh/id_*']),
       grp('cloud', 'cloud-creds', true, ['kubectl', 'helm', 'k9s'], ['.kube/config']),
@@ -112,7 +127,7 @@ await page.addInitScript((status) => {
     '/home/linuxbrew/.linuxbrew/Cellar/k9s/0.51.0/bin/k9s': prog('k9s', '/usr/local/bin/k9s'),
   };
   window.__applyCalls = []; window.__trustCalls = []; window.__applyFail = ''; window.__ifCalls = []; window.__ifFail = '';
-  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = [];
+  window.__cfgMode = 'audit'; window.__cfgDelay = 0; window.__setModeCalls = []; window.__boot = false; window.__bootCalls = []; window.__tray = true; window.__trayCalls = []; window.__featCalls = []; window.__hardPrev = []; window.__hardApply = []; window.__ksCalls = []; window.__profCalls = []; window.__profPath = '/tmp/ufficio.yaml'; window.__profPv = { name: 'Ufficio', note: 'pilota', exported_by: '0.0.22', exported_at: '', sha256: 'ab'.repeat(32), changes: [ { kind: 'add', text: 'Autorizza /usr/libexec/docker/cli-plugins/docker-buildx per «dev-tokens»' }, { kind: 'remove', text: 'Spegne la protezione «gpg-keys»' }, { kind: 'change', text: 'La protezione «cloud-creds» passa in Osserva' } ], warnings: ['helm: /usr/local/bin/helm non è installato su questa macchina'], skipped: ['«dev-tokens»: /home/mallory/omp sta nella cartella di un utente'], unchanged: false };
   window.runtime = {
     EventsOnMultiple: (name, cb) => { (window.__handlers[name] = window.__handlers[name] || []).push(cb); return () => {}; },
     EventsOff: () => {},
@@ -217,13 +232,13 @@ check('Guida: nessun cp che sovrascrive la config', !/sudo cp configs\/shield\.e
 // --- Correzioni UX (2026-11-04): menu, tastiera, ora locale, configurazione, eventi, guida.
 await page.click('#sidebar button[data-view="status"]');
 const nav = await page.evaluate(() => [...document.querySelectorAll('#sidebar button')].map(b => b.dataset.view + ':' + b.querySelector('kbd').textContent));
-check('menu: ordine e numeri coerenti (1..7 in sequenza)', nav.join(',') === 'status:1,events:2,radar:3,rules:4,net:5,config:6,guide:7', nav.join(','));
+check('menu: ordine e numeri coerenti (1..8 in sequenza)', nav.join(',') === 'status:1,events:2,radar:3,features:4,rules:5,net:6,config:7,guide:8', nav.join(','));
 
 await page.evaluate(() => document.activeElement && document.activeElement.blur());
-await page.keyboard.press('4');
-check('tastiera: il tasto 4 apre Regole', (await page.textContent('#view-title')) === 'Regole');
-await page.keyboard.press('6');
-check('tastiera: il tasto 6 apre Configurazione', (await page.textContent('#view-title')) === 'Configurazione');
+await page.keyboard.press('5');
+check('tastiera: il tasto 5 apre Regole', (await page.textContent('#view-title')) === 'Regole');
+await page.keyboard.press('7');
+check('tastiera: il tasto 7 apre Configurazione', (await page.textContent('#view-title')) === 'Configurazione');
 await page.keyboard.press('2');
 await page.waitForSelector('#ev-q');
 await page.focus('#ev-q');
@@ -277,6 +292,63 @@ await page.waitForTimeout(150);
 check('conferma enforce: OK chiama SetConfigMode("enforce")', (await page.evaluate(() => window.__setModeCalls.join(','))) === 'enforce');
 await page.evaluate(() => { window.__cfgMode = 'audit'; });
 
+// Profilo condiviso: esporta e importa le scelte (anteprima prima di scrivere)
+await page.waitForSelector('#pf-export');
+check('profilo: la pagina Configurazione ha la sezione «Profilo condiviso»', (await page.textContent('#profile-box')).includes('Esporta le tue scelte') && (await page.textContent('#profile-box')).includes('Importa un profilo'));
+await page.fill('#pf-name', 'Ufficio'); await page.fill('#pf-note', 'pilota 3 PC');
+await page.click('#pf-export');
+await page.waitForSelector('.pf-ok');
+check('profilo: esportare passa nome e nota', (await page.evaluate(() => JSON.stringify(window.__profCalls.find(c => c[0] === 'export')))) === '["export","Ufficio","pilota 3 PC"]');
+check('profilo: dice dove ha salvato e cosa è rimasto fuori', (await page.textContent('#profile-box')).includes('/home/u/zeroshield-profilo.yaml') && (await page.textContent('#profile-box')).includes('sta nella cartella di un utente'));
+check('profilo: nome e nota restano scritti dopo l\'esportazione', (await page.inputValue('#pf-name')) === 'Ufficio');
+await page.evaluate(() => { window.__profCancel = true; });
+await page.click('#pf-export');
+await page.waitForTimeout(120);
+check('profilo: se chiudi la finestra di salvataggio non compare «Salvato»', !(await page.textContent('#profile-box')).includes('Salvato in'));
+await page.evaluate(() => { window.__profCancel = false; });
+check('profilo: prima di scegliere un file non si applica niente', (await page.locator('#pf-apply').count()) === 0 && (await page.locator('#pf-pick').count()) === 1);
+await page.click('#pf-pick');
+await page.waitForSelector('#pf-changes');
+const pvTxt = await page.textContent('#profile-box');
+check('profilo: l\'anteprima mostra nome, impronta e i cambiamenti', pvTxt.includes('Ufficio') && pvTxt.includes('impronta abababab') && pvTxt.includes('docker-buildx per «dev-tokens»') && pvTxt.includes('Spegne la protezione «gpg-keys»'));
+check('profilo: i cambiamenti hanno il segno giusto (+ − ~)', await page.evaluate(() => [...document.querySelectorAll('#pf-changes li')].map(l => l.querySelector('.pf-s').textContent).join('') === '+−~'));
+check('profilo: mostra cosa non importa e cosa sapere', (await page.textContent('#pf-skipped')).includes('/home/mallory') && (await page.textContent('#pf-warns')).includes('non è installato'));
+check('profilo: di default importa in sola osservazione e unisce', (await page.isChecked('#pf-audit')) && !(await page.isChecked('#pf-replace')) && (await page.evaluate(() => JSON.stringify(window.__profCalls.filter(c => c[0] === 'preview').pop()))) === '["preview","/tmp/ufficio.yaml",false,true]');
+check('profilo: avvisa di controllare prima di importare', pvTxt.includes('Importa solo profili di cui ti fidi'));
+await page.uncheck('#pf-audit');
+await page.waitForSelector('#pf-changes');
+check('profilo: cambiare opzione ricalcola l\'anteprima', (await page.evaluate(() => JSON.stringify(window.__profCalls.filter(c => c[0] === 'preview').pop()))) === '["preview","/tmp/ufficio.yaml",false,false]');
+await page.check('#pf-audit'); await page.waitForSelector('#pf-changes');
+await page.check('#pf-replace'); await page.waitForSelector('#pf-changes');
+await page.click('#pf-apply');
+await page.waitForSelector('#dlg');
+check('profilo: sostituire chiede conferma e lo dice in chiaro', (await page.textContent('#dlg')).includes('sostituiscono') && (await page.textContent('#dlg')).includes('3'));
+check('profilo: la conferma ha il focus su Annulla', (await page.evaluate(() => document.activeElement && document.activeElement.id)) === 'dlg-no');
+await page.click('#dlg-no');
+await page.waitForTimeout(80);
+check('profilo: annullare la conferma non applica nulla', (await page.evaluate(() => window.__profCalls.filter(c => c[0] === 'apply').length)) === 0);
+await page.uncheck('#pf-replace'); await page.waitForSelector('#pf-changes');
+await page.evaluate(() => { window.__profApplyErr = 'il file è cambiato dopo l\'anteprima'; });
+await page.click('#pf-apply'); await page.waitForSelector('#dlg'); await page.click('#dlg-ok');
+await page.waitForTimeout(150);
+check('profilo: se l\'applicazione fallisce lo dice e l\'anteprima resta', (await page.locator('#pf-changes').count()) === 1 && (await page.evaluate(() => !!document.querySelector('#toast, .toast') && document.body.textContent.includes('Importazione non riuscita'))));
+await page.evaluate(() => { window.__profApplyErr = ''; });
+await page.click('#pf-apply'); await page.waitForSelector('#dlg'); await page.click('#dlg-ok');
+await page.waitForFunction(() => window.__profCalls.filter(c => c[0] === 'apply').length === 2);
+check('profilo: applica con l\'impronta vista e le opzioni scelte', (await page.evaluate(() => JSON.stringify(window.__profCalls.filter(c => c[0] === 'apply').pop()))) === JSON.stringify(['apply', '/tmp/ufficio.yaml', 'ab'.repeat(32), false, true]));
+await page.waitForSelector('#pf-pick');
+check('profilo: dopo l\'importazione torna allo stato iniziale', (await page.locator('#pf-changes').count()) === 0);
+await page.evaluate(() => { window.__profPv = Object.assign({}, window.__profPv, { changes: [], unchanged: true }); });
+await page.click('#pf-pick'); await page.waitForSelector('#pf-same');
+check('profilo: se non cambia nulla lo dice e il pulsante è spento', (await page.locator('#pf-apply').isDisabled()) && (await page.textContent('#pf-same')).includes('Nessuna differenza'));
+await page.click('#pf-cancel');
+await page.evaluate(() => { window.__profErr = 'non è un profilo di ZeroShield'; });
+await page.click('#pf-pick'); await page.waitForSelector('#pf-err');
+check('profilo: un file non valido mostra l\'errore, senza pulsante Importa', (await page.textContent('#pf-err')).includes('non è un profilo') && (await page.locator('#pf-apply').count()) === 0);
+await page.click('#pf-cancel');
+await page.evaluate(() => { window.__profErr = ''; });
+check('profilo: l\'errore non lascia la sezione bloccata', (await page.locator('#pf-pick').count()) === 1);
+
 // Avvio all'accensione: spento di partenza, attivarlo non chiede conferma, spegnerlo si
 await page.click('#sidebar button[data-view="rules"]');
 await page.click('#sidebar button[data-view="config"]');
@@ -320,6 +392,8 @@ check('stato: in audit la scheda in alto dice cosa fare (osservi, non blocchi)',
 check('stato: un solo pulsante principale in alto', (await page.locator('.hero .hero-btn').count()) === 1);
 check('stato: tre tessere in linguaggio semplice (Segreti, Rete, Attività)', ['Segreti', 'Rete', 'Attività'].every(t => stTxt.includes(t)));
 check('stato: lista "Da fare" con avanzamento', stTxt.includes('Da fare') && /\d su \d/.test(stTxt) && stTxt.includes('Servizio attivo'));
+check('stato: la postura del kernel compare in "Da fare" con il comando per chiuderla', stTxt.includes('Memoria dei programmi protetta da ptrace') && (await page.locator('.todo-fix').count()) === 1 && (await page.textContent('.todo-fix')).includes('sysctl --system'));
+check('stato: un controllo di postura già a posto non mostra comandi', stTxt.includes('Percorso io_uring chiuso') && !stTxt.includes('io_uring_disabled = 2'));
 check('stato: ultimi eventi in una frase leggibile', stTxt.includes('Ultimi eventi') && stTxt.includes('ha letto «'));
 check('stato: i dettagli tecnici sono ripiegati', (await page.evaluate(() => document.querySelector('details.tech') && !document.querySelector('details.tech').open)) === true);
 check('stato: nomi tecnici delle regole non compaiono nelle frasi', !/ha letto «(ssh-keys|cloud-creds)/.test(stTxt));
@@ -949,13 +1023,106 @@ for (const v of ['guide', 'config']) {
   check(`riquadri: in ${v} richiuderlo a mano lo mantiene chiuso`, closedAfter === false);
 }
 
+// Pagina Funzioni: un pulsante per funzione, con lo stato reale del demone
+{
+  await page.click('#sidebar button[data-view="features"]');
+  await page.waitForSelector('#fn-root .fn-card');
+  const titles = await page.evaluate(() => [...document.querySelectorAll('#fn-root .fn-head b')].map(b => b.textContent));
+  check('funzioni: otto schede (segreti, rete, canary, avvio, icona, hardening, VPN, FIDO2)', titles.length === 8 && titles.some(t => t.includes('Anti-ransomware')) && titles.some(t => t.includes('Filtro di rete')), titles.join(' | '));
+  check('funzioni: il canary spento mostra le cartelle da scegliere', (await page.locator('#fn-root [data-dir]').count()) === 2);
+  check('funzioni: l\'icona (accesa) risulta Attiva', (await page.textContent('#fn-tray')).includes('Attiva'));
+
+  // Filtro di rete: spegnerlo chiede conferma e chiama ApplyFeatures(false, canary, dirs)
+  await page.click('#fn-poison');
+  await page.waitForSelector('#dlg');
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__featCalls.length === 1);
+  check('funzioni: spegnere il filtro chiama ApplyFeatures(false, false, …)', await page.evaluate(() => window.__featCalls[0][0] === false && window.__featCalls[0][1] === false), JSON.stringify(await page.evaluate(() => window.__featCalls)));
+
+  // Canary: acceso con le cartelle scelte
+  await page.waitForSelector('#fn-canary:not([disabled])');
+  await page.check('[data-dir="Scrivania"]');
+  await page.click('#fn-canary');
+  await page.waitForSelector('#dlg');
+  check('funzioni: la conferma del canary elenca le cartelle e spiega che in audit avvisa soltanto', (await page.textContent('#dlg')).includes('Scrivania') && (await page.textContent('#dlg')).includes('Solo osserva'));
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__featCalls.length === 2);
+  check('funzioni: accendere il canary chiama ApplyFeatures(…, true, [cartelle])', await page.evaluate(() => window.__featCalls[1][1] === true && window.__featCalls[1][2].includes('Scrivania')), JSON.stringify(await page.evaluate(() => window.__featCalls[1])));
+
+  // Icona: si accende e si spegne senza password (nessun dialogo per accenderla)
+  await page.click('#fn-tray');
+  await page.waitForFunction(() => window.__trayCalls.length === 1);
+  check('funzioni: l\'icona si spegne con SetTrayEnabled(false)', await page.evaluate(() => window.__trayCalls[0] === false));
+
+  // Hardening: prima l'anteprima, poi la conferma; annullare non applica nulla
+  await page.click('#fn-harden');
+  await page.waitForSelector('#dlg .fn-pre');
+  const prevTxt = await page.textContent('#dlg');
+  check('funzioni: l\'hardening mostra l\'anteprima e dice che non ha cambiato nulla', prevTxt.includes('diff finto per home') && prevTxt.includes('non è stato cambiato nulla'), prevTxt.slice(0, 120));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  check('funzioni: annullare l\'anteprima non applica nulla', await page.evaluate(() => window.__hardApply.length === 0 && window.__hardPrev.length === 1));
+  await page.selectOption('#fn-hprof', 'public-wifi');
+  await page.click('#fn-harden');
+  await page.waitForSelector('#dlg .fn-pre');
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__hardApply.length === 1);
+  check('funzioni: confermando si applica il profilo scelto', await page.evaluate(() => window.__hardApply[0] === 'public-wifi'));
+
+  // Kill-switch VPN: senza VPN configurata non c'e' il pulsante; con la VPN si accende dopo una conferma che avvisa
+  check('funzioni: senza VPN configurata niente pulsante kill-switch', (await page.locator('#fn-ks').count()) === 0);
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { vpn: { enabled: true, endpoint: '203.0.113.7:51820', tunnel: 'wg0', up: true, killswitch: false, handshake_age: 5 } }); window.__emit('shield:status', window.__status); });
+  await page.waitForSelector('#fn-ks');
+  await page.click('#fn-ks');
+  await page.waitForSelector('#dlg');
+  check('funzioni: la conferma del kill-switch avvisa che la rete si ferma', (await page.textContent('#dlg')).includes('si ferma') && (await page.textContent('#dlg')).includes('wg0'));
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__ksCalls.length === 1);
+  check('funzioni: il kill-switch si accende con endpoint e tunnel del demone', await page.evaluate(() => JSON.stringify(window.__ksCalls[0]) === JSON.stringify(['on', '203.0.113.7:51820', 'wg0'])), JSON.stringify(await page.evaluate(() => window.__ksCalls)));
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { vpn: undefined }); window.__emit('shield:status', window.__status); });
+
+  // Stato reale: canary attivo secondo il demone
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: { enabled: true, active: true, dirs: 1 } }); window.__emit('shield:status', window.__status); });
+  await page.waitForFunction(() => [...document.querySelectorAll('.fn-card')].find(c => c.textContent.includes('Anti-ransomware'))?.querySelector('.fn-state')?.textContent === 'Attivo');
+  const cardTxt = await page.locator('.fn-card', { hasText: 'Anti-ransomware' }).textContent();
+  check('funzioni: il canary risulta Attivo dallo stato del demone', cardTxt.includes('Attivo'), cardTxt.slice(0, 120));
+
+  // Voluto ma non partito: avviso, non un finto «attivo»
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: { enabled: true, active: false, dirs: 1 } }); window.__emit('shield:status', window.__status); });
+  await page.waitForFunction(() => document.querySelector('#fn-root').textContent.includes('non partito'));
+  check('funzioni: canary voluto ma non partito = avviso', true);
+  await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { canary: undefined }); window.__emit('shield:status', window.__status); });
+}
+
+// Connessioni in uscita: evento 'egress' con tag, destinazione e filtro dedicato
+{
+  await page.click('#sidebar button[data-view="events"]');
+  await page.waitForSelector('#ev-q');
+  await page.evaluate(() => {
+    window.__emit('shield:event', { time: '2026-10-05T12:30:00Z', action: 'egress', pid: 7001, comm: 'python3', exe: '/usr/bin/python3.12', rule: 'ssh-keys', inode: 0, dest: '203.0.113.9:443', scope: 'internet' });
+    window.__emit('shield:event', { time: '2026-10-05T12:30:01Z', action: 'egress', pid: 7002, comm: 'kubectl', exe: '/usr/local/bin/kubectl', rule: 'cloud-creds', inode: 0, dest: '10.209.4.1:6443', scope: 'lan' });
+  });
+  await page.waitForFunction(() => document.querySelector('#ev-body').textContent.includes('203.0.113.9:443'));
+  const body = await page.textContent('#ev-body');
+  check('uscita: la riga mostra programma e destinazione', body.includes('/usr/bin/python3.12') && body.includes('203.0.113.9:443') && body.includes('uscita'));
+  check('uscita: la rete locale e distinta da Internet', body.includes('rete locale') && body.includes('10.209.4.1:6443'));
+  await page.click('#ev-bar [data-t="egress"]');
+  await page.waitForTimeout(150);
+  const onlyEg = await page.evaluate(() => [...document.querySelectorAll('#ev-body tr')].slice(1).every(r => r.textContent.includes('uscita')) && document.querySelectorAll('#ev-body tr').length > 2);
+  check('uscita: il filtro «uscita» mostra solo le connessioni in uscita', onlyEg);
+  await page.click('#ev-bar [data-t="audit"]');
+  await page.waitForTimeout(150);
+  check('uscita: il filtro «audit» le esclude', !(await page.textContent('#ev-body')).includes('203.0.113.9:443'));
+  await page.click('#ev-bar [data-t="all"]');
+}
+
 // Layout fluido: ogni componente segue la larghezza della finestra (stretta, normale, molto larga)
 {
   const sizes = [[480, 700], [760, 700], [1100, 760], [1900, 1000]];
   const seenW = {};
   for (const [w, h] of sizes) {
     await page.setViewportSize({ width: w, height: h });
-    for (const v of ['status', 'events', 'radar', 'rules', 'net', 'config', 'guide']) {
+    for (const v of ['status', 'events', 'radar', 'features', 'rules', 'net', 'config', 'guide']) {
       await page.click(`#sidebar button[data-view="${v}"]`);
       await page.waitForTimeout(60);
       const m = await page.evaluate(() => ({

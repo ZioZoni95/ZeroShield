@@ -93,6 +93,21 @@ PY
 
 Atteso: l'accesso tramite l'fd **passa** (l'hook controlla l'`open`, non l'uso). Serve come prova del limite dichiarato in README.
 
+## 7. Audit delle connessioni in uscita (0.0.20)
+
+Con il demone in `audit` e la protezione `zs-b` della sezione 0 (`/usr/bin/cat` autorizzato per B):
+
+| # | Comando | Atteso nel journal |
+|---|---|---|
+| 1 | `journalctl -u zt-shield -b \| grep "connessioni in uscita"` | `📤 Audit delle connessioni in uscita attivo (solo registro).` (altrimenti la riga con il motivo) |
+| 2 | `python3 -c "import socket; f=open('b1'); s=socket.create_connection(('example.org',443),5)"` con `python3` autorizzato per B | `📤 [USCITA] regola=zs-b … → <IP>:443 (internet, nuova destinazione)` |
+| 3 | lo stesso comando una seconda volta | **nessuna** nuova riga (stessa coppia) |
+| 4 | `python3 -c "import socket; s=socket.create_connection(('127.0.0.1',22),2)"` subito dopo aver letto `b1` | nessuna riga (loopback) |
+| 5 | connessione a una destinazione **senza** aver letto prima un segreto | nessuna riga |
+| 6 | stessa connessione 70 secondi dopo la lettura | nessuna riga (finestra scaduta) |
+
+La GUI → Eventi → «uscita» deve mostrare la riga del punto 2 con l'ambito `internet`.
+
 ## 6. Pulizia
 
 Togli le due protezioni (GUI → Regole → Elimina → Applica), poi `rm -r ~/zs-collaudo`: finché esistono, i file sono protetti.

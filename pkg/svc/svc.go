@@ -56,6 +56,30 @@ func elevator() (string, error) {
 	return "", fmt.Errorf("pkexec assente: esegui nel terminale: sudo systemctl enable --now %s", Unit)
 }
 
+// TrayUnit: servizio utente dell'icona nella barra.
+const TrayUnit = "zeroshield-tray.service"
+
+// TrayEnabled dice se l'icona nella barra parte da sola a ogni sessione (servizio utente, nessun privilegio).
+func TrayEnabled() bool {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return false
+	}
+	out, _ := exec.Command("systemctl", "--user", "is-enabled", TrayUnit).Output()
+	return strings.TrimSpace(string(out)) == "enabled"
+}
+
+// SetTrayEnabled abilita (e avvia) o disabilita (e ferma) l'icona. E' un servizio dell'utente: niente pkexec.
+func SetTrayEnabled(on bool) error {
+	verb := []string{"--user", "disable", "--now", TrayUnit}
+	if on {
+		verb = []string{"--user", "enable", "--now", TrayUnit}
+	}
+	if out, err := exec.Command("systemctl", verb...).CombinedOutput(); err != nil {
+		return fmt.Errorf("icona nella barra: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // BootEnabled dice se il demone parte da solo all'accensione (systemctl is-enabled). Non
 // serve root. "static"/"masked"/errore contano come no: l'utente non lo ha attivato.
 func BootEnabled() bool {

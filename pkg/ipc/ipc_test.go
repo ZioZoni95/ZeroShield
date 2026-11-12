@@ -36,6 +36,26 @@ func TestStatusRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStatusCarriesPosture(t *testing.T) {
+	withTempSocket(t)
+	srv, err := NewServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	srv.UpdateStatus(Status{Profile: "home", Posture: []PostureItem{
+		{ID: "ptrace", OK: false, Title: "t", Detail: "d", Fix: "sudo sysctl -w x=1"},
+		{ID: "io_uring", OK: true, Title: "u", Detail: "ok"},
+	}})
+	st, err := GetStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Posture) != 2 || st.Posture[0].Fix != "sudo sysctl -w x=1" || st.Posture[0].OK || !st.Posture[1].OK {
+		t.Errorf("postura alterata: %+v", st.Posture)
+	}
+}
+
 func TestEventStream(t *testing.T) {
 	withTempSocket(t)
 	srv, err := NewServer()
@@ -168,5 +188,29 @@ func TestEventHistoryIsBounded(t *testing.T) {
 	srv.mu.Unlock()
 	if n != histMax {
 		t.Errorf("storico = %d, atteso %d", n, histMax)
+	}
+}
+
+// Gli eventi di uscita portano destinazione e ambito fino al client (e restano nello storico).
+func TestEgressEventFieldsReachClient(t *testing.T) {
+	withTempSocket(t)
+	srv, err := NewServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	srv.UpdateStatus(Status{Profile: "home", Mode: "audit"})
+	srv.Publish(WireEvent{Action: "egress", PID: 9, Comm: "kubectl", Exe: "/usr/local/bin/kubectl", Rule: "cloud-creds", Dest: "10.0.0.1:6443", Scope: "lan"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got := make(chan WireEvent, 2)
+	go Subscribe(ctx, func(ev WireEvent) { got <- ev })
+	select {
+	case ev := <-got:
+		if ev.Action != "egress" || ev.Dest != "10.0.0.1:6443" || ev.Scope != "lan" || !ev.Replay {
+			t.Errorf("evento di uscita alterato: %+v", ev)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("nessun evento")
 	}
 }

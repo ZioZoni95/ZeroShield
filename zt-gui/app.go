@@ -168,6 +168,16 @@ func (a *App) ServiceStart() error {
 	return svc.Start()
 }
 
+// TrayEnabled: l'icona nella barra parte da sola a ogni sessione?
+func (a *App) TrayEnabled() bool {
+	return svc.TrayEnabled()
+}
+
+// SetTrayEnabled accende o spegne l'icona nella barra (servizio utente, senza password).
+func (a *App) SetTrayEnabled(on bool) error {
+	return svc.SetTrayEnabled(on)
+}
+
 // BootEnabled: il demone parte da solo all'accensione?
 func (a *App) BootEnabled() bool {
 	return svc.BootEnabled()
@@ -225,8 +235,10 @@ func (a *App) ApplyRules(c rules.Choice) error {
 		return fmt.Errorf("config di sistema assente: installa prima il servizio")
 	}
 	// La scelta delle interfacce non e' di questa schermata: si conserva quella gia' salvata.
+	// Stesso discorso per le funzioni accese dalla pagina Funzioni (filtro di rete, canary).
 	if have, perr := rules.Parse(cur); perr == nil {
 		c.Interface = have.Interface
+		c.BlockPoisoning, c.Canary = have.BlockPoisoning, have.Canary
 	}
 	next, err := rules.Apply(cur, c)
 	if err != nil {
@@ -240,6 +252,128 @@ func (a *App) ApplyRules(c rules.Choice) error {
 
 // ApplyInterfaces salva le interfacce su cui filtrare (vuoto = automatica) e riavvia il servizio (auth di
 // sistema). Le altre scelte (regole, modalita') restano com'erano.
+// ProfileExport: esito dell'esportazione del profilo condivisibile.
+type ProfileExport struct {
+	Path      string   `json:"path"`      // dove e' stato scritto
+	Left      []string `json:"left"`      // cio' che non si esporta e perche'
+	Cancelled bool     `json:"cancelled"` // l'utente ha chiuso la finestra di salvataggio
+}
+
+// ExportProfile scrive le scelte della GUI in un file da portare su un'altra macchina (utente, interfaccia, VPN e
+// percorsi nelle cartelle di un utente restano fuori). Non serve nessun privilegio.
+func (a *App) ExportProfile(name, note string) (ProfileExport, error) {
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return ProfileExport{}, fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	data, left, err := rules.Export(svc.ReadConfig(), rules.ExportOptions{Name: name, Note: note, Version: version, Now: time.Now()})
+	if err != nil {
+		return ProfileExport{}, err
+	}
+	home, _ := os.UserHomeDir()
+	p, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title: "Salva il profilo", DefaultDirectory: home, DefaultFilename: "zeroshield-profilo.yaml",
+		Filters: []runtime.FileFilter{{DisplayName: "Profilo ZeroShield (*.yaml)", Pattern: "*.yaml;*.yml"}},
+	})
+	if err != nil {
+		return ProfileExport{}, err
+	}
+	if p == "" {
+		return ProfileExport{Cancelled: true, Left: left}, nil
+	}
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		return ProfileExport{}, err
+	}
+	return ProfileExport{Path: p, Left: left}, nil
+}
+
+// ChooseProfile apre il selettore di file per scegliere un profilo da importare ("" se l'utente annulla).
+func (a *App) ChooseProfile() (string, error) {
+	home, _ := os.UserHomeDir()
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Scegli il profilo da importare", DefaultDirectory: home,
+		Filters: []runtime.FileFilter{{DisplayName: "Profilo ZeroShield (*.yaml)", Pattern: "*.yaml;*.yml"}},
+	})
+}
+
+// PreviewProfile mostra cosa cambierebbe importando il file. Non scrive niente. L'impronta (sha256) nel risultato
+// serve ad ApplyProfile per applicare solo il file che si e' visto.
+func (a *App) PreviewProfile(path string, replace, asAudit bool) (rules.ImportResult, error) {
+	data, err := rules.ReadProfileFile(path)
+	if err != nil {
+		return rules.ImportResult{}, err
+	}
+	return rules.PreviewImport(svc.ReadConfig(), data, rules.ImportOptions{Replace: replace, AsAudit: asAudit})
+}
+
+// ApplyProfile importa il profilo (password di sistema, backup, ripristino se il servizio non riparte). Rilegge il
+// file e rifiuta se non e' piu' quello dell'anteprima.
+func (a *App) ApplyProfile(path, sha string, replace, asAudit bool) error {
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	data, err := rules.ReadProfileFile(path)
+	if err != nil {
+		return err
+	}
+	next, err := rules.ApplyPlan(svc.ReadConfig(), data, rules.ImportOptions{Replace: replace, AsAudit: asAudit}, sha)
+	if err != nil {
+		return err
+	}
+	return svc.ApplyConfig(next)
+}
+
+// HardenPreview mostra cosa cambierebbe harden_system.sh per un profilo (dry-run, senza privilegi).
+func (a *App) HardenPreview(profile string) (string, error) {
+	return svc.HardenPreview(profile)
+}
+
+// HardenApply applica l'hardening del sistema (pkexec). La UI deve aver mostrato prima l'anteprima.
+func (a *App) HardenApply(profile string) error {
+	return svc.HardenApply(profile)
+}
+
+// KillSwitchOn accende il kill-switch VPN (pkexec). Endpoint e tunnel li valida svc.
+func (a *App) KillSwitchOn(endpoint, tunnel string) error {
+	return svc.KillSwitchOn(endpoint, tunnel, nil)
+}
+
+// KillSwitchOff toglie il kill-switch VPN (pkexec).
+func (a *App) KillSwitchOff() error {
+	return svc.KillSwitchOff()
+}
+
+// ApplyFeatures accende o spegne le funzioni della pagina Funzioni: filtro anti-poisoning e canary anti-ransomware
+// (con le cartelle delle esche). Scrive il config con config-apply (pkexec): backup, riavvio e ripristino se non riparte.
+func (a *App) ApplyFeatures(blockPoisoning bool, canary bool, canaryDirs []string) error {
+	cur := svc.ReadConfig()
+	if _, err := os.Stat(svc.ConfigPath); err != nil {
+		return fmt.Errorf("config di sistema assente: installa prima il servizio")
+	}
+	have, err := rules.Parse(cur)
+	if err != nil {
+		return err
+	}
+	if blockPoisoning {
+		have.BlockPoisoning = nil // acceso = default del demone
+	} else {
+		off := false
+		have.BlockPoisoning = &off
+	}
+	if canary {
+		have.Canary = &rules.CanaryChoice{Enabled: true, Dirs: canaryDirs}
+	} else {
+		have.Canary = nil
+	}
+	next, err := rules.Apply(cur, have)
+	if err != nil {
+		return err
+	}
+	if err := rules.Validate(next); err != nil {
+		return fmt.Errorf("il demone rifiuterebbe questa configurazione: %w", err)
+	}
+	return svc.ApplyConfig(next)
+}
+
 func (a *App) ApplyInterfaces(names []string) error {
 	cur := svc.ReadConfig()
 	if _, err := os.Stat(svc.ConfigPath); err != nil {

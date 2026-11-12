@@ -5,6 +5,46 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.22': {
+        title: 'Novità della versione 0.0.22',
+        items: [
+            ['Profilo condiviso', 'In Configurazione puoi esportare le tue scelte (programmi autorizzati, protezioni, regole personali, canary) in un file e importarle su un altro computer, per esempio per usare la stessa lista in ufficio. Prima di importare vedi cosa cambierebbe.'],
+            ['Più sicuro di default', 'L\'importazione porta le protezioni in sola osservazione, scarta i programmi che non sono di root e applica solo il file che hai visto. Dal terminale: zt-shield profile export / import.'],
+        ],
+        note: 'Il file non contiene utente, rete, VPN né programmi nelle tue cartelle, ma elenca i programmi che usi: rileggilo prima di condividerlo. Nessuna firma per ora (docs/PROFILO.md).',
+    },
+    '0.0.21': {
+        title: 'Novità della versione 0.0.21',
+        items: [
+            ['Due falle del sistema ora si vedono', 'Nella pagina Stato, sotto «Da fare», compaiono due controlli: se un programma può leggere la memoria di ssh (ptrace) e se esiste il percorso io_uring che aggira il blocco dei file. Se uno è aperto trovi il comando da copiare in un terminale per chiuderlo.'],
+        ],
+        note: 'ZeroShield non cambia nulla da solo: ti dice cosa è aperto e come chiuderlo. Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
+    '0.0.20': {
+        title: 'Novità della versione 0.0.20',
+        items: [
+            ['Chi manda dove, dopo aver letto un segreto', 'In Eventi trovi le connessioni in uscita dei programmi che hanno appena letto un tuo segreto: programma, destinazione e se è la rete locale o Internet. Si segnala la prima volta che compare una destinazione nuova. Usa il filtro «uscita».'],
+        ],
+        note: 'È solo un registro: non blocca niente e non vede il contenuto. Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
+    '0.0.19': {
+        title: 'Novità della versione 0.0.19',
+        items: [
+            ['Hardening dalla GUI, con anteprima', 'Nella pagina Funzioni scegli il profilo e vedi esattamente cosa cambierebbe (firewall, resolver, parametri di rete) prima di applicare. Annullare non cambia nulla.'],
+            ['Kill-switch VPN con un pulsante', 'Se nel file hai configurato la VPN, lo accendi e lo spegni da Funzioni. Ti avvisa che, se il tunnel cade, la rete si ferma.'],
+            ['Chiave FIDO2', 'Una scheda ti dice come configurarla dal terminale (serve la chiave fisica, il PIN e un tocco).'],
+        ],
+        note: 'Hardening e kill-switch sono sperimentali: gli script non sono mai stati provati su un sistema vero. Provali in una macchina virtuale.',
+    },
+    '0.0.18': {
+        title: 'Novità della versione 0.0.18',
+        items: [
+            ['Nuova pagina «Funzioni»', 'Un pulsante per ogni funzione, da accendere o spegnere una per una: protezione dei segreti (solo osserva o blocca), filtro di rete, anti-ransomware, avvio all\'accensione e icona nella barra. Ogni scheda spiega cosa fa e mostra lo stato reale del demone.'],
+            ['Anti-ransomware dalla GUI', 'Il canary si accende scegliendo le cartelle (Documenti, Scrivania…) e parte da solo avvisando: l\'aggiornamento prepara anche il permesso di sistema che gli serve per creare le esche.'],
+            ['Scorciatoie 1-8', 'Con la nuova pagina Funzioni (tasto 4) Regole passa a 5, Rete a 6, Configurazione a 7, Guida a 8.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento. Il canary conviene lasciarlo una settimana in «Solo osserva».',
+    },
     '0.0.17': {
         title: 'Novità della versione 0.0.17',
         items: [

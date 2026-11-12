@@ -109,6 +109,14 @@ type VpnStatus struct {
 }
 
 // Status: fotografia del demone. Inviata a ogni nuova connessione e su UpdateStatus.
+// CanaryState: stato dell'anti-ransomware (canary). Enabled = voluto dalla config; Active = il watcher e'
+// davvero partito (puo' fallire senza CAP_SYS_ADMIN o con la home in sola lettura sotto systemd).
+type CanaryState struct {
+	Enabled bool `json:"enabled"`
+	Active  bool `json:"active"`
+	Dirs    int  `json:"dirs"`
+}
+
 type Status struct {
 	Type           string        `json:"-"`
 	Profile        string        `json:"profile"`
@@ -129,6 +137,19 @@ type Status struct {
 	Version        string        `json:"version"` // versione del demone (le UI avvisano se e' diversa dalla loro)
 	Interfaces     []IfaceInfo   `json:"interfaces"`
 	IfaceAuto      bool          `json:"iface_auto"` // nessuna `interface` nel config: si filtra la rete in uso
+	Canary         CanaryState   `json:"canary"`
+	// Posture: impostazioni del kernel che cambiano l'efficacia dello scudo (ptrace, io_uring).
+	Posture []PostureItem `json:"posture,omitempty"`
+}
+
+// PostureItem: un controllo di postura del sistema. OK=true: nessuna azione consigliata.
+// Fix e' un comando da eseguire con sudo (vuoto se non c'e' nulla da fare da qui).
+type PostureItem struct {
+	ID     string `json:"id"`
+	OK     bool   `json:"ok"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+	Fix    string `json:"fix,omitempty"`
 }
 
 // WireEvent: un evento di audit serializzato (stessi campi del log JSON).
@@ -141,6 +162,10 @@ type WireEvent struct {
 	Exe    string `json:"exe,omitempty"`
 	Rule   string `json:"rule"`
 	Inode  uint64 `json:"inode"`
+	// Dest/Scope: solo per Action "egress" (connessione in uscita di un programma che ha letto un segreto):
+	// destinazione "IP:porta" e ambito (lan | internet).
+	Dest  string `json:"dest,omitempty"`
+	Scope string `json:"scope,omitempty"`
 	// Replay: evento riletto dallo storico alla connessione (non e' successo adesso). Le UI lo
 	// mostrano ma non lo notificano; la GUI lo scarta se l'ha gia' visto (riconnessione).
 	Replay bool `json:"replay,omitempty"`
@@ -251,6 +276,7 @@ func (s *Server) UpdateStatus(st Status) {
 // Publish invia un evento a tutti i connessi (drop se pieni, mai blocco).
 func (s *Server) Publish(ev WireEvent) {
 	ev.Comm, ev.Exe, ev.Rule = SafeText(ev.Comm), SafeText(ev.Exe), SafeText(ev.Rule)
+	ev.Dest, ev.Scope = SafeText(ev.Dest), SafeText(ev.Scope)
 	ev.Time = time.Now().UTC().Format(time.RFC3339)
 	raw, err := json.Marshal(ev)
 	if err != nil {

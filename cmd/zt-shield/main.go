@@ -49,6 +49,7 @@ import (
 	"zt-shield/internal/lsm"
 	"zt-shield/internal/netif"
 	"zt-shield/internal/netstat"
+	"zt-shield/internal/posture"
 	"zt-shield/internal/priv"
 	"zt-shield/internal/vpn"
 	"zt-shield/internal/watchdog"
@@ -104,6 +105,11 @@ Opzioni:
 	// `zt-shield config-apply FILE`: valida e installa un config (usato dalla GUI via pkexec).
 	if flag.NArg() >= 1 && flag.Arg(0) == "config-apply" {
 		os.Exit(runConfigApply(flag.Args()[1:]))
+	}
+
+	// `zt-shield profile export|import`: profilo condivisibile tra macchine (anteprima senza privilegi).
+	if flag.NArg() >= 1 && flag.Arg(0) == "profile" {
+		os.Exit(runProfile(flag.Args()[1:]))
 	}
 
 	// Sottocomando di controllo: stesso canale delle future UI.
@@ -369,8 +375,27 @@ Opzioni:
 	// Stato VPN osservato (tunnel, kill-switch nft, handshake). Il demone non applica
 	// nulla: misura e avvisa. Proprieta' della goroutine di rescan dopo l'avvio.
 	curVpn := vpn.Check(cfg.Vpn, vpn.ExecRunner)
+	// postureItems rilegge ptrace/io_uring a ogni fotografia: se l'utente applica il rimedio il
+	// controllo diventa verde al prossimo aggiornamento, senza riavviare il demone.
+	postureItems := func() []ipc.PostureItem {
+		var out []ipc.PostureItem
+		for _, it := range posture.Check(posture.ProcSys) {
+			out = append(out, ipc.PostureItem{ID: it.ID, OK: it.OK, Title: it.Title, Detail: it.Detail, Fix: it.Fix})
+		}
+		return out
+	}
+	// Avvisi una volta sola all'avvio (i limiti sono noti: qui diventano visibili nel journal).
+	for _, it := range posture.Check(posture.ProcSys) {
+		if !it.OK {
+			log.Printf("⚠️ %s: %s", it.Title, it.Detail)
+		}
+	}
+
 	// publishStatus fotografa demone per le UI. Chiamata a ogni cambio rilevante
 	// (avvio, rescan) perche' il protocollo ritrasmette ai connessi.
+	// canaryActive: il watcher fanotify e' davvero partito (la config puo' chiederlo e l'avvio fallire,
+	// per esempio senza CAP_SYS_ADMIN): la GUI mostra lo stato reale, non solo quello voluto.
+	var canaryActive atomic.Bool
 	publishStatus := func() {
 		if srv == nil {
 			return
@@ -394,6 +419,8 @@ Opzioni:
 			Listening: listening, ListeningTotal: listeningTotal, Rules: rules,
 			Version:    version,
 			Interfaces: ifs, IfaceAuto: strings.TrimSpace(cfg.Interface) == "",
+			Canary:  ipc.CanaryState{Enabled: cfg.Canary.Enabled, Active: canaryActive.Load(), Dirs: len(cfg.Canary.Dirs)},
+			Posture: postureItems(),
 		})
 	}
 	publishStatus()
@@ -543,6 +570,30 @@ Opzioni:
 		})
 	})
 
+	// --- Audit delle connessioni in uscita (solo registro) -----------------------------
+	// Hook opzionale: se non si aggancia, lo scudo prosegue senza. Segnala la prima volta che un programma che ha appena
+	// letto un segreto si collega a una destinazione; non blocca mai niente. Vedi docs/EGRESS.md.
+	if egLink, err := objs.AttachEgress(); err != nil {
+		log.Printf("⚠️ audit delle connessioni in uscita non agganciato: %v", err)
+	} else if egLink != nil {
+		defer egLink.Close()
+		if egRd, err := ringbuf.NewReader(objs.EgressLogs); err != nil {
+			log.Printf("⚠️ ring buffer delle connessioni in uscita: %v", err)
+		} else {
+			defer egRd.Close()
+			go audit.RunEgress(egRd, mgr.RuleName, exeIdx.Resolve, func(ev audit.EgressEvent) {
+				if srv == nil {
+					return
+				}
+				srv.Publish(ipc.WireEvent{
+					Action: "egress", PID: ev.PID, Comm: ev.Comm, Exe: ev.Exe, Rule: ev.Rule,
+					Dest: ev.Dest, Scope: ev.Scope,
+				})
+			})
+			log.Println("📤 Audit delle connessioni in uscita attivo (solo registro).")
+		}
+	}
+
 	// --- Canary anti-ransomware (fanotify, solo userspace) ------------------------------
 	// Disabilitato di default (canary.enabled). Non fatale: senza CAP_SYS_ADMIN
 	// il watcher non parte ma LSM/XDP restano attivi. Vedi docs/CANARY.md.
@@ -592,6 +643,7 @@ Opzioni:
 			}
 		} else {
 			defer w.Close()
+			canaryActive.Store(true)
 			log.Println("🐤 Watcher canary attivo.")
 		}
 	}

@@ -117,6 +117,19 @@ type HelperView struct {
 	Found []string `json:"found"`
 }
 
+// FeaturesView: lo stato delle funzioni attivabili con un pulsante (pagina Funzioni).
+type FeaturesView struct {
+	BlockPoisoning       bool     `json:"block_poisoning"`        // valore effettivo letto dal config
+	ManualBlockPoisoning bool     `json:"manual_block_poisoning"` // scritto a mano: il pulsante e' spento
+	CanaryEnabled        bool     `json:"canary_enabled"`
+	CanaryDirs           []string `json:"canary_dirs"`
+	ManualCanary         bool     `json:"manual_canary"`
+	CanaryCandidates     []string `json:"canary_candidates"` // cartelle comuni che esistono nella home
+}
+
+// canaryCandidates: cartelle di uso comune dove ha senso mettere le esche (solo quelle che esistono).
+var canaryCandidates = []string{"Documents", "Documenti", "Scrivania", "Desktop", "Downloads", "Scaricati", "Pictures", "Immagini", "Projects", "Progetti"}
+
 // Model: tutto cio' che serve a disegnare la schermata Regole.
 type Model struct {
 	Profile string       `json:"profile"`
@@ -130,10 +143,11 @@ type Model struct {
 	// ManualRules: extra_rules scritte a mano: «Proteggi un mio file» resta spento (stessa chiave due volte).
 	ManualRules bool `json:"manual_rules"`
 	// ManualInterface: `interface` scritta a mano (BaseInterface ne e' il valore): la scelta dalla GUI e' spenta.
-	ManualInterface bool   `json:"manual_interface"`
-	BaseInterface   string `json:"base_interface"`
-	GlobalMode      string `json:"global_mode"` // audit | enforce
-	Error           string `json:"error"`
+	ManualInterface bool         `json:"manual_interface"`
+	BaseInterface   string       `json:"base_interface"`
+	GlobalMode      string       `json:"global_mode"` // audit | enforce
+	Features        FeaturesView `json:"features"`
+	Error           string       `json:"error"`
 }
 
 // BuildModel costruisce il modello dal testo del config. Non scrive nulla.
@@ -158,6 +172,20 @@ func BuildModel(cfgText, home string) Model {
 		return m
 	}
 	m.Profile, m.GlobalMode = cfg.Profile, cfg.Mode
+	// Funzioni: valori effettivi (blocco gestito compreso), non quelli del solo profilo.
+	eff := cfg
+	if full, err := loadText(cfgText); err == nil {
+		eff = full
+	}
+	m.Features = FeaturesView{
+		BlockPoisoning: eff.BlockPoisoning, ManualBlockPoisoning: ManualKey(cfgText, "block_poisoning"),
+		CanaryEnabled: eff.Canary.Enabled, CanaryDirs: eff.Canary.Dirs, ManualCanary: ManualKey(cfgText, "canary"),
+	}
+	for _, d := range canaryCandidates {
+		if fi, err := os.Stat(filepath.Join(home, d)); err == nil && fi.IsDir() {
+			m.Features.CanaryCandidates = append(m.Features.CanaryCandidates, d)
+		}
+	}
 	m.ManualRules = ManualExtraRules(cfgText)
 	m.ManualInterface = ManualInterface(cfgText)
 	m.BaseInterface = cfg.Interface

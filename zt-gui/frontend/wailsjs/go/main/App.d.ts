@@ -31,6 +31,20 @@ export function ServiceInstallAs(arg1:string,arg2:string):Promise<void>;
 
 export function ServiceStart():Promise<void>;
 
+export function HardenPreview(arg1:string):Promise<string>;
+
+export function HardenApply(arg1:string):Promise<void>;
+
+export function KillSwitchOn(arg1:string,arg2:string):Promise<void>;
+
+export function KillSwitchOff():Promise<void>;
+
+export function ApplyFeatures(arg1:boolean,arg2:boolean,arg3:Array<string>):Promise<void>;
+
+export function TrayEnabled():Promise<boolean>;
+
+export function SetTrayEnabled(arg1:boolean):Promise<void>;
+
 export function BootEnabled():Promise<boolean>;
 
 export function SetBootEnabled(arg1:boolean):Promise<void>;
@@ -44,3 +58,11 @@ export function SetConfigMode(arg1:string):Promise<void>;
 export function SocketPath():Promise<string>;
 
 export function Version():Promise<string>;
+
+export function ExportProfile(arg1:string,arg2:string):Promise<Record<string, any>>;
+
+export function ChooseProfile():Promise<string>;
+
+export function PreviewProfile(arg1:string,arg2:boolean,arg3:boolean):Promise<Record<string, any>>;
+
+export function ApplyProfile(arg1:string,arg2:string,arg3:boolean,arg4:boolean):Promise<void>;

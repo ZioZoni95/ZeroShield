@@ -18,7 +18,7 @@ func TestCoreProgramsMatchSpec(t *testing.T) {
 	}
 	var inSpec []string
 	for n := range spec.Programs {
-		if n != ProgZtFileTruncate {
+		if n != ProgZtFileTruncate && n != ProgZtSocketConnect {
 			inSpec = append(inSpec, n)
 		}
 	}

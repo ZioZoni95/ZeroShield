@@ -1,7 +1,9 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff, ExportProfile, ChooseProfile, PreviewProfile, ApplyProfile} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
+import {createFeaturesView} from './features.js';
+import {createProfileView} from './profile.js';
 import {statusHtml} from './statuspage.js';
 import {createIfaceView} from './ifaces.js';
 import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
@@ -14,9 +16,9 @@ const viewTitle = document.getElementById('view-title');
 const conn = document.getElementById('conn');
 const evCount = document.getElementById('ev-count');
 const buttons = [...document.querySelectorAll('#sidebar button')];
-const TITLES = {status: 'Stato', events: 'Eventi', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida', config: 'Configurazione'};
+const TITLES = {status: 'Stato', events: 'Eventi', features: 'Funzioni', rules: 'Regole', net: 'Rete', radar: 'Radar', guide: 'Guida', config: 'Configurazione'};
 // Stesso ordine della sidebar: i numeri accanto alle voci sono anche le scorciatoie da tastiera.
-const VIEW_ORDER = ['status', 'events', 'radar', 'rules', 'net', 'config', 'guide'];
+const VIEW_ORDER = ['status', 'events', 'radar', 'features', 'rules', 'net', 'config', 'guide'];
 
 let view = 'status';
 
@@ -48,7 +50,7 @@ let status = null;
 let events = [];
 let offlineMsg = '';
 let evSearch = '';
-let evType = 'all'; // all | blocked | audit | canary
+let evType = 'all'; // all | blocked | audit | egress | canary
 let evSevFirst = false; // pericolosi prima (pattern SOC anti alert-fatigue)
 let evGroup = false; // raggruppa righe uguali (regola + exe) con un contatore
 let appVersion = ''; // dal binario (ldflags), non scritta a mano
@@ -71,14 +73,14 @@ let prevMode = '';
 
 buttons.forEach(b => b.onclick = () => go(b.dataset.view));
 
-// Scorciatoie 1-7. Mai mentre si scrive in un campo o c'e' una finestra aperta:
+// Scorciatoie 1-8. Mai mentre si scrive in un campo o c'e' una finestra aperta:
 // la ricerca eventi non deve cambiare tab digitando un numero.
 document.addEventListener('keydown', e => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target && e.target.tagName;
     if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
     if (document.getElementById('onboard') || document.getElementById('dlg')) return;
-    const i = '1234567'.indexOf(e.key);
+    const i = '12345678'.indexOf(e.key);
     if (i >= 0 && e.key.length === 1) go(VIEW_ORDER[i]);
 });
 
@@ -285,6 +287,7 @@ function render(force) {
     evCount.textContent = events.length > 0 ? events.length : '';
     if (view === 'status') return renderStatus();
     if (view === 'events') return renderEvents();
+    if (view === 'features') return featuresView.render();
     if (view === 'rules') return renderRules(force);
     if (view === 'radar') return renderRadar();
     if (view === 'guide') return renderGuide();
@@ -334,12 +337,14 @@ async function renderConfig() {
       ${kv('Subnet bloccate', subs.length ? subs.map(c => `<span class="mono">${esc(c)}</span>`).join(', ') : 'nessuna', 'Scarta tutto il traffico da quelle reti, anche le risposte: mai gateway o DNS.')}
       ${kv('VPN', (status.vpn && status.vpn.enabled) ? 'monitorata' : 'non monitorata', `Il demone osserva tunnel e kill-switch, non li applica. <button class="linklike" data-go="net">stato in Rete →</button>`)}
     </div>
+    <div id="profile-box"></div>
     ${sec('Altre opzioni')}
     <p class="sub">Canary, regole extra, intervallo di rescan e formato log si impostano nel file. Dopo ogni modifica:</p>
     ${codeRow('sudo systemctl restart zt-shield')}
     <details class="file"><summary>Mostra il file <span class="mono">shield.yaml</span></summary>
       <div class="file-bar"><button class="copy" data-copy="${esc(txt)}">copia contenuto</button><span class="sub">modifica con: </span><code>sudoedit /etc/zt-shield/shield.yaml</code></div>
       <pre>${esc(txt)}</pre></details>`;
+    profileView.mount(document.getElementById('profile-box'));
     const bt = document.getElementById('boot-toggle');
     if (bt) bt.onclick = async () => {
         const want = !boot;
@@ -546,15 +551,16 @@ function filterEvents() {
     const q = evSearch.toLowerCase();
     return events.filter(e => {
         if (evType === 'blocked' && !(e.action === 'blocked' || e.action === 'killed')) return false;
-        if (evType === 'audit' && (e.action === 'blocked' || e.canary)) return false;
+        if (evType === 'audit' && (e.action === 'blocked' || e.action === 'egress' || e.canary)) return false;
+        if (evType === 'egress' && e.action !== 'egress') return false;
         if (evType === 'canary' && !e.canary) return false;
         if (!q) return true;
-        const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''}`.toLowerCase();
+        const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''} ${e.dest || ''}`.toLowerCase();
         return hay.includes(q);
     });
 }
 
-const evSev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : (e.canary ? 1 : 2);
+const evSev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : ((e.canary || (e.action === 'egress' && e.scope === 'internet')) ? 1 : 2);
 
 // Etichetta e classe riga di un evento (condivise da tabella piatta e raggruppata).
 function evTag(e) {
@@ -562,6 +568,11 @@ function evTag(e) {
         return e.action === 'killed'
             ? [`<span class="tag tag-block">${ICO_BIRD} KILL</span>`, 'row-block']
             : [`<span class="tag tag-canary">${ICO_BIRD} canary</span>`, 'row-canary'];
+    }
+    if (e.action === 'egress') {
+        return e.scope === 'internet'
+            ? ['<span class="tag tag-egress">📤 uscita</span>', 'row-egress']
+            : ['<span class="tag tag-egress-lan">📤 uscita (rete locale)</span>', 'row-audit'];
     }
     return e.action === 'blocked'
         ? [`<span class="tag tag-block">${ICO_BLOCK} BLOCCO</span>`, 'row-block']
@@ -577,8 +588,9 @@ function eventsTableHTML(pool) {
             return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td>canary</td>
             <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.kind || '')}</td><td class="mono">${esc(e.exe || '')} ${esc(e.path || '')}</td></tr>`;
         }
+        const what = e.action === 'egress' ? `${esc(e.exe || '(uscito)')} → <b>${esc(e.dest || '')}</b>` : esc(e.exe || '(uscito)');
         return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td><button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button></td>
-        <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${esc(e.exe || '(uscito)')}</td></tr>`;
+        <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${what}</td></tr>`;
     }).join('');
     return `<table><tr><th>tipo</th><th>ora</th><th>regola</th><th>pid</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
 }
@@ -589,7 +601,7 @@ function eventsTableHTML(pool) {
 function eventsGroupedHTML(pool) {
     const groups = new Map();
     pool.forEach(e => {
-        const k = [e.canary ? 'canary' : e.action, e.rule, e.exe || e.comm || e.path].join('|');
+        const k = [e.canary ? 'canary' : e.action, e.rule, e.exe || e.comm || e.path, e.dest || ''].join('|');
         let g = groups.get(k);
         if (!g) { g = {first: e, n: 0}; groups.set(k, g); }
         g.n++; g.last = e;
@@ -608,7 +620,7 @@ function eventsGroupedHTML(pool) {
 }
 
 function eventsBarHTML() {
-    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['canary', 'canary']]
+    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['egress', 'uscita'], ['canary', 'canary']]
         .map(([v, l]) => `<button class="chip${evType === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('');
     return `<div class="toolbar"><input id="ev-q" type="search" placeholder="Filtra regola, comm, exe, pid…" value="${esc(evSearch)}"><span class="chips">${chips}</span>
     <button id="ev-group" class="chip${evGroup ? ' on' : ''}" title="Una riga per programma, con il numero di accessi">raggruppa</button>
@@ -676,6 +688,21 @@ function wireEventLinks() {
         l.onclick = () => { evSearch = l.dataset.rule; evType = 'all'; render(); };
     });
 }
+
+// La pagina Funzioni (un pulsante per funzione) vive in features.js.
+const featuresView = createFeaturesView({
+    content, esc,
+    api: {RulesModel, ApplyFeatures, BootEnabled, SetBootEnabled, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff},
+    getStatus: () => status, confirmDialog, toast,
+    goto: v => go(v),
+    switchMode: next => switchMode(next),
+});
+
+// Il profilo condiviso (esporta/importa le scelte tra macchine) vive in profile.js e sta nella pagina Configurazione.
+const profileView = createProfileView({
+    esc, api: {ExportProfile, ChooseProfile, PreviewProfile, ApplyProfile},
+    toast, confirmDialog, onApplied: () => { if (view === 'config') renderConfig(); },
+});
 
 // La schermata Regole vive in rules.js (ha stato proprio: bozza, controlli asincroni, barra "Applica").
 const rulesView = createRulesView({
