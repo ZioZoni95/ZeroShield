@@ -28,6 +28,17 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.28] — 2026-11-13
+
+Rifacimento GUI, ultimo passo: **Configurazione**, **Guida**, **Radar**, primo avvio. Con questa versione tutte le otto pagine usano il nuovo sistema di design.
+
+- **Configurazione**: «Avvio all'accensione» è un interruttore; **nuovo** interruttore «Icona nella barra» (stesso `SetTrayEnabled` della pagina Funzioni, nessun privilegio nuovo); le righe Interfacce, Drop poisoning, Canary e Regole portano alla pagina dove si cambiano (prima dicevano «si cambia nel file» anche per ciò che la GUI sa già fare). Il testo «Altre opzioni» elenca solo ciò che resta davvero nel file: profilo, utente, subnet bloccate, VPN, rescan, formato del log.
+- **Guida**: schede come controllo segmentato; aggiunta la riga della pagina Funzioni e corrette le scorciatoie (1–8, prima diceva 1–7); il titolo «Da pacchetto .deb» è un'intestazione di sezione.
+- **Radar**: il riquadro del verdetto va a capo correttamente (titolo sopra, note sotto); la legenda usa lo spazio accanto al grafico.
+- **Barra laterale**: un poco più larga (180 px minimo), i nomi lunghi non finiscono più sotto il numero della scorciatoia. Simboli `◐` tolti (non presenti in tutti i font di sistema).
+- **Non fatto, di proposito**: l'editor a campi per profilo, utente, subnet e VPN. Richiede nuove scritture sul canale privilegiato e resta dopo il collaudo in VM (`docs/PUNTI_APERTI.md`).
+- Test: 271 controlli (2 nuovi: interruttore dell'icona in Configurazione, collegamenti verso Rete/Funzioni/Regole), chiaro e scuro, nel browser headless con il demone simulato. **Mai visto nell'app Wails vera (WebKitGTK)**: sfocature, font di sistema e `:has()` vanno controllati lì.
+
 ## [0.0.27] — 2026-11-13
 
 Rifacimento GUI, terzo passo: pagine **Funzioni**, **Rete** e **Regole**. Nessuna funzione tolta.

@@ -5,6 +5,15 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.28': {
+        title: 'Novità della versione 0.0.28',
+        items: [
+            ['Configurazione con i comandi veri', 'L\'avvio all\'accensione e l\'icona nella barra sono interruttori. Interfacce, filtro di rete, canary e regole hanno il collegamento alla pagina dove si cambiano, invece del rimando al file.'],
+            ['Guida e Radar più leggibili', 'Le schede della Guida sono un unico selettore e c\'è la voce per la pagina Funzioni; nel Radar la spiegazione usa lo spazio a fianco del grafico.'],
+            ['Rifacimento completato', 'Tutte le otto pagine usano ora lo stesso stile, in chiaro e in scuro.'],
+        ],
+        note: 'Profilo, utente protetto, subnet bloccate e VPN si cambiano ancora solo nel file: un editor a campi arriverà dopo il collaudo in macchina virtuale.',
+    },
     '0.0.27': {
         title: 'Novità della versione 0.0.27',
         items: [

@@ -369,6 +369,24 @@ await page.click('#dlg-ok');
 await page.waitForFunction(() => document.getElementById('boot-toggle')?.textContent.includes('Spento'));
 check('avvio: confermato, chiama SetBootEnabled(false)', (await page.evaluate(() => window.__bootCalls.join(','))) === 'true,false');
 
+// Configurazione: l'icona nella barra si accende e si spegne anche da qui (stesso servizio della pagina Funzioni),
+// e le voci che si cambiano altrove portano alla pagina giusta invece di rimandare al file.
+{
+  await page.waitForSelector('#tray-toggle');
+  const before = await page.evaluate(() => window.__trayCalls.length);
+  const was = (await page.getAttribute('#tray-toggle', 'aria-checked')) === 'true';
+  await page.click('#tray-toggle');
+  await page.waitForFunction((n) => window.__trayCalls.length === n + 1, before);
+  check('config: l\'interruttore dell\'icona chiama SetTrayEnabled con lo stato opposto', (await page.evaluate(() => window.__trayCalls[window.__trayCalls.length - 1])) === !was);
+  await page.waitForFunction((w) => document.getElementById('tray-toggle')?.getAttribute('aria-checked') === String(!w), was);
+  await page.click('#tray-toggle'); // rimette lo stato di partenza per i controlli successivi
+  await page.waitForFunction((n) => window.__trayCalls.length === n + 2, before);
+  await page.waitForFunction((w) => document.getElementById('tray-toggle')?.getAttribute('aria-checked') === String(w), was);
+  await page.evaluate(() => { window.__trayCalls.length = 0; }); // i controlli della pagina Funzioni contano le chiamate da zero
+  const links = await page.evaluate(() => [...document.querySelectorAll('#content .panel [data-go]')].map(b => b.dataset.go));
+  check('config: interfacce, filtro e canary rimandano a Rete e Funzioni (non al file)', links.includes('net') && links.includes('features') && links.includes('rules'), links.join(','));
+}
+
 // Guida delle Regole: in enforce tutti e tre i passi risultano fatti (prima il 3 restava «in corso»)
 await page.click('#sidebar button[data-view="rules"]');
 await page.waitForSelector('.rl-steps');
@@ -508,7 +526,7 @@ check('guida: hook LSM spento si vede nei punti di controllo', (await page.locat
 await page.evaluate(() => window.__emit('shield:status', { ...window.__status, hook_lsm: true }));
 await page.click('[data-gtab="screens"]');
 const scr = await page.textContent('#content');
-check('guida: scheda schermate spiega ogni tab e le scorciatoie', ['Sono protetto?', 'Chi mi disturba in rete?', 'Cosa è protetto', '1', '7'].every(t => scr.includes(t)));
+check('guida: scheda schermate spiega ogni tab e le scorciatoie', ['Sono protetto?', 'Chi mi disturba in rete?', 'Cosa è protetto', 'Cosa posso accendere o spegnere?', '1', '8'].every(t => scr.includes(t)));
 await page.click('[data-gtab="terms"]');
 const trm = await page.textContent('#content');
 check('guida: glossario con audit/enforce, XDP, poisoning, canary', ['Audit / Enforce', 'XDP', 'Poisoning', 'Canary', 'Fail-closed'].every(t => trm.includes(t)));

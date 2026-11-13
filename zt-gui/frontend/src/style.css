@@ -85,7 +85,7 @@ button { cursor: pointer; }
 
 /* --- Barra laterale: sfondo «materiale», voce scelta piena come nelle Impostazioni --- */
 #sidebar {
-    width: clamp(160px, 15vw, 240px); background: var(--side); border-right: 1px solid var(--sep);
+    width: clamp(180px, 16vw, 240px); background: var(--side); border-right: 1px solid var(--sep);
     display: flex; flex-direction: column; padding: 14px 10px 10px; flex-shrink: 0;
 }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 650; letter-spacing: -.01em; padding: 4px 8px 12px; }
@@ -692,3 +692,23 @@ tr.row-canary { background: var(--amber-soft); }
 .if-mode label { padding: 10px 0; line-height: 1.45; }
 .if-mode label + label { border-top: 1px solid var(--sep); }
 .rule h3 { font-weight: 600; }
+
+/* ---- Configurazione, Guida, primo avvio (0.0.28) ---- */
+.tabs.segc { display: inline-flex; margin: 0 0 6px; }
+.kv-h .linklike { font-size: inherit; }
+.offline { margin: 0 auto; }
+.off-icon { font-size: 44px; line-height: 1; margin: 6px 0 8px; }
+.off-banner { border-radius: var(--r); padding: 10px 14px; font-weight: 600; }
+.rule h3 { margin-bottom: 4px; }
+.rule > div { color: var(--dim); font-size: 13.5px; line-height: 1.5; }
+.rule > div b, .rule > div .mono { color: var(--text); }
+details.src summary { font-size: 14px; margin: 18px 0 10px; }
+.faq summary::marker, details summary::marker { color: var(--dim); }
+.verdict-t { font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+table.compact td { vertical-align: top; }
+.verdict.warn, .verdict.bad, .verdict.ok { display: block; color: var(--text); font-weight: 400; }
+.verdict ul { color: var(--text); }
+#radar-legend { flex: 1 1 300px; max-width: 560px; }
+#radar-legend p, #radar-legend li { line-height: 1.5; }
+#sidebar button > span:not(.pill) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#sidebar button kbd { flex: none; }
