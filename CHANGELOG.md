@@ -28,6 +28,14 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.24] — 2026-11-13
+
+Dalla revisione del commit della 0.0.23.
+
+- **Avviso «non risolto» non più nascosto nelle regole dell'utente.** La riga unica per i programmi di base non installati valeva per qualunque regola: una regola scritta a mano con `allow: [aws]` e un refuso o un binario mancante finiva nell'info «nessun effetto» invece dell'avviso, e lo strumento veniva negato (EACCES) senza spiegazione. Ora `isBaseProgram` guarda anche la regola: solo i gruppi predefiniti (`ssh-keys`, `cloud-creds`, `dev-tokens`…) con la loro lista di base. Test con regola utente e con programma di base di un altro gruppo.
+- **`audit.Scope`** ora risponde `local` per loopback e indirizzo non specificato (prima `0.0.0.0` sarebbe diventato «internet» per un chiamante che non filtra con `Local`). Gli eventi non cambiano: `RunEgress` scarta già prima questi indirizzi. Casi aggiunti a `TestScope`.
+- Non cambiato, deciso: `0.0.0.0`/`::` restano esclusi dall'audit in uscita. Un relay locale (`kubectl port-forward`, `ssh -L`) non è tracciato dall'audit: limite da tenere presente, non un errore del codice.
+
 ## [0.0.23] — 2026-11-12
 
 - **Audit in uscita: `0.0.0.0` e `::` non si segnalano più.** Su Linux connettersi a 0.0.0.0 vuol dire localhost; sul PC di prova 19 eventi su 72 (un port-forward di `kubectl`/`k9s` verso `0.0.0.0:45233`) erano segnati «lan» per errore. Ora si scartano come il loopback (`audit.Local`), senza consumare il tetto di eventi al secondo. `Scope` non classifica più l'indirizzo non specificato come rete locale.

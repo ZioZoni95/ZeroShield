@@ -70,6 +70,10 @@ func TestLocalIsNotReported(t *testing.T) {
 
 func TestScope(t *testing.T) {
 	for ip, want := range map[string]string{
+		"127.0.0.1":     "local",
+		"::1":           "local",
+		"0.0.0.0":       "local", // port-forward: e' localhost, non rete locale e non internet
+		"::":            "local",
 		"10.209.4.62":   "lan",
 		"192.168.1.5":   "lan",
 		"172.17.0.2":    "lan",

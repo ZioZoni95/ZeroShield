@@ -318,14 +318,25 @@ func TestWatcherStressRapidRenames(t *testing.T) {
 }
 
 func TestIsBaseProgram(t *testing.T) {
-	for name, want := range map[string]bool{
-		"aws": true, "glab": true, "cargo": true, "terraform": true, "ssh": true,
-		"/usr/local/bin/aws": false, // un percorso scritto a mano che non esiste è un errore da segnalare
-		"programma-mio":      false,
-		"":                   false,
+	for _, c := range []struct {
+		rule, name string
+		want       bool
+	}{
+		{"cloud-creds", "aws", true},
+		{"dev-tokens", "glab", true},
+		{"dev-tokens", "cargo", true},
+		{"cloud-creds", "terraform", true},
+		{"ssh-keys", "ssh", true},
+		{"cloud-creds", "/usr/local/bin/aws", false}, // un percorso scritto a mano che non esiste è un errore da segnalare
+		{"cloud-creds", "programma-mio", false},
+		{"cloud-creds", "", false},
+		// regola dell'utente: anche se il nome coincide con un programma di base, un refuso o un binario mancante si segnala
+		{"mia-regola", "aws", false},
+		// il programma e' di base per un altro gruppo, non per questo
+		{"ssh-keys", "aws", false},
 	} {
-		if got := isBaseProgram(name); got != want {
-			t.Errorf("isBaseProgram(%q) = %v, atteso %v", name, got, want)
+		if got := isBaseProgram(c.rule, c.name); got != c.want {
+			t.Errorf("isBaseProgram(%q, %q) = %v, atteso %v", c.rule, c.name, got, c.want)
 		}
 	}
 }

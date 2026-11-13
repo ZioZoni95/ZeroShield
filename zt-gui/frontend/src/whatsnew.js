@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.24': {
+        title: 'Novità della versione 0.0.24',
+        items: [
+            ['Avvisi più affidabili', 'Se in una tua regola scrivi un programma che non si trova (per esempio un refuso in «aws»), il registro ora te lo segnala come errore. Prima poteva sembrare un semplice programma non installato.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.23': {
         title: 'Novità della versione 0.0.23',
         items: [
