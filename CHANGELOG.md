@@ -28,6 +28,15 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.25] — 2026-11-13
+
+Primo passo del rifacimento della GUI in stile macOS (si procede una pagina alla volta). Solo aspetto: nessuna funzione aggiunta o tolta, stessi `id` e classi, i 269 controlli nel browser passano senza modifiche.
+
+- **Sistema di design** (`style.css`): colori, raggi, ombre e controlli definiti una volta sola. Barra laterale con la voce scelta piena; barra in alto traslucida; pulsanti a pressione, controllo segmentato e interruttori come in macOS; riquadri senza bordi colorati; elenchi «Da fare» e «Ultimi eventi» a righe dentro un riquadro; finestre di conferma a foglio; barre di scorrimento sottili; rispetto di «riduci movimento».
+- **Leggibilità**: font di sistema (`system-ui`, prima su Linux si ricadeva su un font generico), testo secondario più scuro (contrasto AA), titolo grande di pagina; intestazioni di sezione non più in maiuscolo. Tema scuro: blu, verde, rosso e ambra hanno ora una variante chiara (prima restavano quelle del tema chiaro, poco leggibili su fondo scuro).
+- **Corretto**: il messaggio a comparsa copriva il badge Audit/Enforce; ora esce sotto la barra in alto. Il titolo nella barra non ripete più quello della pagina: compare solo quando il titolo grande è scorso via.
+- Provato nel browser headless con il demone simulato (chiaro); **non ancora visto nell'app Wails vera né in tema scuro**.
+
 ## [0.0.24] — 2026-11-13
 
 Dalla revisione del commit della 0.0.23.

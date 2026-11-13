@@ -1351,6 +1351,17 @@ EventsOn('shield:canary', a => {
     requestRender();
 });
 
+// Titolo nella barra degli strumenti: la pagina ha gia' il suo titolo grande, quindi quello della barra compare solo
+// quando il primo e' scorso fuori vista (o se la pagina non ne ha uno). Evita il doppio titolo «Stato / Stato».
+function syncTopbar() {
+    const c = document.getElementById('content'), bar = document.getElementById('topbar');
+    if (!c || !bar) return;
+    bar.classList.toggle('scrolled', c.scrollTop > 36 || !c.querySelector('h2'));
+}
+document.getElementById('content').addEventListener('scroll', syncTopbar, {passive: true});
+// Le pagine si disegnano anche in modo asincrono: si riallinea a ogni cambio del contenuto, non solo allo scorrimento.
+new MutationObserver(syncTopbar).observe(document.getElementById('content'), {childList: true, subtree: true});
+
 // Toast non bloccante in alto a destra, sparisce da solo. danger=rosso.
 function toast(text, danger) {
     let el = document.getElementById('toast');

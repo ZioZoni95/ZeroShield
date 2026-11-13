@@ -7,7 +7,7 @@
 //   cd zt-gui/frontend
 //   npm run build
 //   npm i --no-save playwright-core        # solo il driver: il browser e' quello di sistema
-//   CHROME_PATH=/usr/bin/google-chrome node tests/gui.test.mjs       # SHOTS=dir per gli screenshot
+//   CHROME_PATH=/usr/bin/google-chrome node tests/gui.test.mjs       # SHOTS=dir per gli screenshot, DARK=1 tema scuro
 //
 // Browser: CHROME_PATH se impostato, altrimenti Google Chrome di sistema (channel
 // "chrome", presente sui runner GitHub), altrimenti il Chromium di Playwright.
@@ -58,7 +58,8 @@ async function launchBrowser() {
   return chromium.launch({ args });
 }
 const browser = await launchBrowser();
-const page = await browser.newPage({ viewport: { width: 1100, height: 760 }, timezoneId: 'Europe/Rome' });
+// DARK=1: stessi controlli e screenshot con il tema scuro del sistema.
+const page = await browser.newPage({ viewport: { width: 1100, height: 760 }, timezoneId: 'Europe/Rome', colorScheme: process.env.DARK ? 'dark' : 'light' });
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 
@@ -980,6 +981,7 @@ if (shots) {
     await page.click(`#sidebar button[data-view="${v}"]`);
     await page.waitForTimeout(250);
     await page.evaluate(() => { document.getElementById('content').scrollTop = 0; });
+    await page.waitForTimeout(300); // il titolo nella barra si dissolve dopo lo scorrimento: si aspetta la fine
     await page.screenshot({ path: path.join(shots, `${label}-${v}.png`) });
   }
 }

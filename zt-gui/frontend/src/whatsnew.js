@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.25': {
+        title: 'Novità della versione 0.0.25',
+        items: [
+            ['Nuovo aspetto in stile macOS', 'Barra laterale, barra in alto, pulsanti, interruttori, tabelle e finestre di conferma sono stati ridisegnati: testo più leggibile, riquadri più puliti, tema scuro con colori più chiari da leggere.'],
+            ['Avvisi che non coprono più la modalità', 'I messaggi a comparsa ora escono sotto la barra in alto e non nascondono più l\'indicatore Audit/Enforce.'],
+        ],
+        note: 'È il primo passo del rifacimento dell\'interfaccia: le pagine verranno riorganizzate una alla volta nelle prossime versioni.',
+    },
     '0.0.24': {
         title: 'Novità della versione 0.0.24',
         items: [
