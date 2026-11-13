@@ -5,6 +5,7 @@ import {createRulesView} from './rules.js';
 import {createFeaturesView} from './features.js';
 import {createProfileView} from './profile.js';
 import {statusHtml} from './statuspage.js';
+import {friendlyRule} from './names.js';
 import {createIfaceView} from './ifaces.js';
 import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
@@ -555,7 +556,7 @@ function filterEvents() {
         if (evType === 'egress' && e.action !== 'egress') return false;
         if (evType === 'canary' && !e.canary) return false;
         if (!q) return true;
-        const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''} ${e.dest || ''}`.toLowerCase();
+        const hay = `${e.rule || ''} ${e.rule ? friendlyRule(e.rule) : ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''} ${e.dest || ''}`.toLowerCase();
         return hay.includes(q);
     });
 }
@@ -566,33 +567,40 @@ const evSev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : ((e.c
 function evTag(e) {
     if (e.canary) {
         return e.action === 'killed'
-            ? [`<span class="tag tag-block">${ICO_BIRD} KILL</span>`, 'row-block']
-            : [`<span class="tag tag-canary">${ICO_BIRD} canary</span>`, 'row-canary'];
+            ? [`<span class="tag tag-block">${ICO_BIRD} Fermato</span>`, 'row-block']
+            : [`<span class="tag tag-canary">${ICO_BIRD} Canary</span>`, 'row-canary'];
     }
     if (e.action === 'egress') {
         return e.scope === 'internet'
-            ? ['<span class="tag tag-egress">📤 uscita</span>', 'row-egress']
-            : ['<span class="tag tag-egress-lan">📤 uscita (rete locale)</span>', 'row-audit'];
+            ? ['<span class="tag tag-egress">Uscita</span>', 'row-egress']
+            : ['<span class="tag tag-egress-lan">Uscita (rete locale)</span>', 'row-audit'];
     }
     return e.action === 'blocked'
-        ? [`<span class="tag tag-block">${ICO_BLOCK} BLOCCO</span>`, 'row-block']
-        : [`<span class="tag tag-audit">${ICO_AUDIT} audit</span>`, 'row-audit'];
+        ? [`<span class="tag tag-block">${ICO_BLOCK} Bloccato</span>`, 'row-block']
+        : [`<span class="tag tag-audit">${ICO_AUDIT} Osservato</span>`, 'row-audit'];
+}
+
+// Cella «Protezione»: nome leggibile (quello tecnico resta nel title e nella ricerca); il clic filtra per quella regola.
+function evRuleCell(e) {
+    if (e.canary) return 'Canary';
+    return `<button class="linklike" data-rule="${esc(e.rule)}" title="${esc(e.rule)}: mostra solo questa protezione">${esc(friendlyRule(e.rule))}</button>`;
+}
+// Cella «Programma»: nome in evidenza, percorso e pid sotto in piccolo. Prima erano tre colonne in monospazio.
+function evProgCell(e, extra) {
+    const name = e.comm || e.kind || '';
+    const path = e.canary ? `${e.exe || ''} ${e.path || ''}`.trim() : (e.exe || '(uscito)');
+    const dest = e.action === 'egress' ? ` → <b>${esc(e.dest || '')}</b>` : '';
+    return `<div class="ev-prog"><b>${esc(name)}</b>${extra || ''}</div><div class="ev-path mono">${esc(path)}${dest}</div>`;
 }
 
 function eventsTableHTML(pool) {
     const listed = [...pool].sort((a, b) => evSevFirst ? (evSev(a) - evSev(b)) : 0);
     const rows = listed.reverse().slice(0, 200).map(e => {
         const [tag, cls] = evTag(e);
-        const t = fmtTime(e.time);
-        if (e.canary) {
-            return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td>canary</td>
-            <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.kind || '')}</td><td class="mono">${esc(e.exe || '')} ${esc(e.path || '')}</td></tr>`;
-        }
-        const what = e.action === 'egress' ? `${esc(e.exe || '(uscito)')} → <b>${esc(e.dest || '')}</b>` : esc(e.exe || '(uscito)');
-        return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td><button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button></td>
-        <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${what}</td></tr>`;
+        return `<tr class="${cls}"><td>${tag}</td><td class="mono ev-t">${esc(fmtTime(e.time))}</td><td>${evRuleCell(e)}</td>
+        <td>${evProgCell(e, ` <span class="rl-d mono">pid=${esc(e.pid)}</span>`)}</td></tr>`;
     }).join('');
-    return `<table><tr><th>tipo</th><th>ora</th><th>regola</th><th>pid</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
+    return `<table class="ev-table"><tr><th>Tipo</th><th>Ora</th><th>Protezione</th><th>Programma</th></tr>${rows}</table>`;
 }
 
 // Vista raggruppata: stessi (tipo, regola, exe) in una riga con contatore. In audit lo
@@ -612,19 +620,18 @@ function eventsGroupedHTML(pool) {
     const rows = list.slice(0, 200).map(g => {
         const e = g.last;
         const [tag, cls] = evTag(e);
-        const rule = e.canary ? 'canary' : `<button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button>`;
-        return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(fmtTime(e.time))}</td><td>${rule}</td>
-        <td class="mono"><b>×${g.n}</b></td><td class="mono">${esc(e.comm || e.kind || '')}</td><td class="mono">${esc(e.exe || e.path || '(uscito)')}</td></tr>`;
+        return `<tr class="${cls}"><td>${tag}</td><td class="mono ev-t">${esc(fmtTime(e.time))}</td><td>${evRuleCell(e)}</td>
+        <td class="ev-n"><b>×${g.n}</b></td><td>${evProgCell(e)}</td></tr>`;
     }).join('');
-    return `<table><tr><th>tipo</th><th>ultimo</th><th>regola</th><th>volte</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
+    return `<table class="ev-table"><tr><th>Tipo</th><th>Ultimo</th><th>Protezione</th><th>Volte</th><th>Programma</th></tr>${rows}</table>`;
 }
 
 function eventsBarHTML() {
-    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['egress', 'uscita'], ['canary', 'canary']]
+    const chips = [['all', 'Tutti'], ['blocked', 'Blocchi'], ['audit', 'Osservati'], ['egress', 'Uscita'], ['canary', 'Canary']]
         .map(([v, l]) => `<button class="chip${evType === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('');
-    return `<div class="toolbar"><input id="ev-q" type="search" placeholder="Filtra regola, comm, exe, pid…" value="${esc(evSearch)}"><span class="chips">${chips}</span>
-    <button id="ev-group" class="chip${evGroup ? ' on' : ''}" title="Una riga per programma, con il numero di accessi">raggruppa</button>
-    <button id="ev-sev" class="chip${evSevFirst ? ' on' : ''}" title="Mostra prima blocchi e canary (contro l'alert-fatigue)">⚠️ pericolosi prima</button></div>`;
+    return `<div class="toolbar"><input id="ev-q" type="search" placeholder="Cerca protezione, programma, percorso, pid…" aria-label="Cerca negli eventi" value="${esc(evSearch)}"><span class="chips segc" role="group" aria-label="Tipo di evento">${chips}</span>
+    <button id="ev-group" class="chip${evGroup ? ' on' : ''}" title="Una riga per programma, con il numero di accessi">Raggruppa</button>
+    <button id="ev-sev" class="chip${evSevFirst ? ' on' : ''}" title="Mostra prima blocchi e canary (contro l'alert-fatigue)">Pericolosi prima</button></div>`;
 }
 
 // La vista Eventi e' l'unica con un campo di testo: se a ogni evento in arrivo si
@@ -636,11 +643,12 @@ function renderEvents() {
     if (!events.length) {
         delete content.dataset.view;
         content.innerHTML = `${h2(ICO_LIST, 'Eventi')}
-        <div class="empty"><span class="big">🌊</span><b>Rete calma, niente eventi.</b><br>In audit gli accessi legittimi compaiono qui: passa a enforce solo a log puliti.</div>`;
+        <p class="sub">Chi ha letto i tuoi segreti, in diretta.</p>
+        <div class="empty"><span class="big">🌊</span><b>Ancora nessun evento.</b><br>Qui compare ogni programma che legge un file protetto. In sola osservazione nulla viene bloccato: passa a Blocca quando l'elenco contiene solo programmi tuoi.</div>`;
         return;
     }
     const pool = filterEvents();
-    const sub = `${pool.length}/${events.length} eventi (ultimi 200, live)`;
+    const sub = `${pool.length === events.length ? events.length : pool.length + ' di ' + events.length} eventi in diretta · si mostrano gli ultimi 200`;
     const body = document.getElementById('ev-body');
     const tableHTML = () => evGroup ? eventsGroupedHTML(pool) : eventsTableHTML(pool);
     if (content.dataset.view === 'events' && body) {

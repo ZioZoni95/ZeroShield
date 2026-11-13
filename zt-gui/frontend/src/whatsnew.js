@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.26': {
+        title: 'Novità della versione 0.0.26',
+        items: [
+            ['Stato più chiaro', 'In cima vedi subito se sei protetto, con un simbolo e un solo pulsante. In «Da fare» le cose che mancano vengono per prime, con una barra di avanzamento, e i comandi da terminale hanno il pulsante «copia».'],
+            ['Eventi più leggibili', 'Quattro colonne invece di sei: tipo, ora, protezione (con il nome in chiaro, per esempio «Chiavi SSH») e programma con il percorso sotto. Il filtro per tipo è un unico controllo.'],
+        ],
+        note: 'Secondo passo del rifacimento dell\'interfaccia. La ricerca negli eventi trova sia il nome in chiaro sia quello tecnico della protezione.',
+    },
     '0.0.25': {
         title: 'Novità della versione 0.0.25',
         items: [

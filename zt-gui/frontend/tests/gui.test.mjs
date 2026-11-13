@@ -1106,11 +1106,11 @@ for (const v of ['guide', 'config']) {
   });
   await page.waitForFunction(() => document.querySelector('#ev-body').textContent.includes('203.0.113.9:443'));
   const body = await page.textContent('#ev-body');
-  check('uscita: la riga mostra programma e destinazione', body.includes('/usr/bin/python3.12') && body.includes('203.0.113.9:443') && body.includes('uscita'));
+  check('uscita: la riga mostra programma e destinazione', body.includes('/usr/bin/python3.12') && body.includes('203.0.113.9:443') && body.includes('Uscita'));
   check('uscita: la rete locale e distinta da Internet', body.includes('rete locale') && body.includes('10.209.4.1:6443'));
   await page.click('#ev-bar [data-t="egress"]');
   await page.waitForTimeout(150);
-  const onlyEg = await page.evaluate(() => [...document.querySelectorAll('#ev-body tr')].slice(1).every(r => r.textContent.includes('uscita')) && document.querySelectorAll('#ev-body tr').length > 2);
+  const onlyEg = await page.evaluate(() => [...document.querySelectorAll('#ev-body tr')].slice(1).every(r => r.textContent.includes('Uscita')) && document.querySelectorAll('#ev-body tr').length > 2);
   check('uscita: il filtro «uscita» mostra solo le connessioni in uscita', onlyEg);
   await page.click('#ev-bar [data-t="audit"]');
   await page.waitForTimeout(150);

@@ -601,3 +601,57 @@ details.tech { margin: 14px 0 4px; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---- Stato (0.0.26): scheda in alto con simbolo, tessere con numero grande, liste a righe ---- */
+.hero { align-items: center; gap: 16px; }
+.hero-ico { flex: none; width: 46px; height: 46px; }
+.hero-ico svg { width: 100%; height: 100%; }
+.hero.ok .hero-ico { color: var(--green-fill); }
+.hero.warn .hero-ico { color: #f5a623; }
+.hero.bad .hero-ico { color: var(--red); }
+.hero-m { flex: 1; min-width: 0; }
+.hero-d { color: var(--text); }
+.hero-a { flex: none; margin-top: 0; flex-direction: column; align-items: flex-end; gap: 8px; }
+.tile-v { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.tile-n { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.tile-u { font-size: 14px; font-weight: 600; color: var(--text); }
+.tile .linklike { align-self: flex-start; margin-top: 6px; font-size: 13px; }
+.sec-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sec-row .linklike { font-weight: 500; }
+.prog { flex: none; width: 120px; height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.prog i { display: block; height: 100%; border-radius: 3px; background: var(--green-fill); transition: width .3s; }
+.todo li { align-items: flex-start; }
+.todo-i { margin-top: 1px; }
+.todo-b { flex: 1; min-width: 0; line-height: 1.45; }
+.todo li.ok b { font-weight: 500; }
+.todo-go { flex: none; font-size: 13px; margin-top: 1px; }
+.todo-how { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 6px; }
+.todo-how .code-row code { white-space: nowrap; }
+.todo-fix { margin-top: 0; }
+.recent li { display: flex; align-items: baseline; gap: 10px; }
+.ev-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: translateY(-1px); }
+.ev-dot.block { background: var(--red); }
+.ev-dot.canary { background: #f5a623; }
+.ev-what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ev-what b { font-weight: 600; }
+.ev-time { flex: none; }
+details.tech .panel { margin-top: 8px; }
+@media (max-width: 640px) { .hero-a { align-items: stretch; } .hero-ico { display: none; } }
+
+/* ---- Eventi (0.0.26): quattro colonne leggibili, filtro per tipo come controllo segmentato ---- */
+.chips.segc { background: var(--fill); border-radius: 8px; padding: 2px; gap: 2px; flex-wrap: nowrap; }
+.chips.segc .chip { background: transparent; box-shadow: none; min-height: 26px; padding: 3px 11px; border-radius: 6px; font-weight: 500; }
+.chips.segc .chip:hover { background: var(--hover); filter: none; }
+.chips.segc .chip.on { background: var(--ctl); color: var(--text); font-weight: 600; box-shadow: var(--ctl-shadow); }
+.ev-table td { vertical-align: top; }
+.ev-table .ev-t, .ev-table .ev-n { white-space: nowrap; }
+.ev-prog b { font-weight: 600; }
+.ev-path { color: var(--dim); font-size: 11.5px; margin-top: 2px; overflow-wrap: anywhere; }
+.ev-path b { color: var(--text); }
+.tag { font-weight: 600; font-size: 12.5px; }
+.tag-egress, .tag-egress-lan { padding: 1px 8px; border-radius: 10px; }
+tr.row-block td { background: transparent; }
+tr.row-block td:first-child, tr.row-audit td:first-child, tr.row-canary td:first-child, .row-egress td:first-child { box-shadow: none; }
+tr.row-block { background: var(--red-soft); }
+tr.row-canary td { background: transparent; }
+tr.row-canary { background: var(--amber-soft); }

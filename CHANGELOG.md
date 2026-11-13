@@ -28,6 +28,14 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.26] — 2026-11-13
+
+Rifacimento GUI, secondo passo: pagine **Stato** ed **Eventi**. Nessuna funzione tolta.
+
+- **Stato**: scheda in alto con simbolo (scudo verde/ambra/rosso) e pulsante a destra; tessere con il numero in grande; «Da fare» con barra di avanzamento e le voci da sistemare per prime; il comando sysctl ha il pulsante «copia»; «Ultimi eventi» con pallino colorato e orario a destra; i dettagli tecnici sono righe in un riquadro (prima schede).
+- **Eventi**: colonne Tipo, Ora, Protezione, Programma (nome in evidenza, percorso e pid sotto; prima `pid`, `comm`, `exe` in tre colonne monospazio). La protezione ha il nome leggibile; quello tecnico resta nel suggerimento e nella ricerca. Filtro per tipo come controllo segmentato; etichette «Osservato», «Bloccato», «Fermato», «Uscita».
+- Test: due controlli aggiornati per l'etichetta «Uscita» (maiuscola). 269 controlli, chiaro e scuro, nel browser headless con il demone simulato; non visto nell'app Wails vera.
+
 ## [0.0.25] — 2026-11-13
 
 Primo passo del rifacimento della GUI in stile macOS (si procede una pagina alla volta). Solo aspetto: nessuna funzione aggiunta o tolta, stessi `id` e classi, i 269 controlli nel browser passano senza modifiche.
