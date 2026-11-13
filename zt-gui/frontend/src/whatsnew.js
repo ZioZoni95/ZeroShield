@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.27': {
+        title: 'Novità della versione 0.0.27',
+        items: [
+            ['Funzioni come nelle Impostazioni', 'Ogni funzione è una riga con il suo interruttore a destra, in tre gruppi: Protezione, Comportamento, Strumenti avanzati. La modalità (Solo osserva / Blocca) è un unico selettore.'],
+            ['Elenchi più ordinati in Rete e Regole', 'Le interfacce e i programmi sono righe di uno stesso riquadro invece di tante schede separate.'],
+        ],
+        note: 'Terzo passo del rifacimento dell\'interfaccia. Le funzioni e i pulsanti sono gli stessi di prima.',
+    },
     '0.0.26': {
         title: 'Novità della versione 0.0.26',
         items: [

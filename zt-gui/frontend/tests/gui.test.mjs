@@ -977,7 +977,7 @@ check('novita: la versione in VERSION (' + verFile + ') ha la sua voce in whatsn
 
 if (shots) {
   fs.mkdirSync(shots, { recursive: true });
-  for (const v of ['status', 'events', 'rules', 'net', 'guide']) {
+  for (const v of ['status', 'events', 'radar', 'features', 'rules', 'net', 'config', 'guide']) {
     await page.click(`#sidebar button[data-view="${v}"]`);
     await page.waitForTimeout(250);
     await page.evaluate(() => { document.getElementById('content').scrollTop = 0; });

@@ -28,6 +28,14 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.27] — 2026-11-13
+
+Rifacimento GUI, terzo passo: pagine **Funzioni**, **Rete** e **Regole**. Nessuna funzione tolta.
+
+- **Funzioni**: da griglia di schede a elenco raggruppato (Protezione, Comportamento, Strumenti avanzati); a sinistra nome, stato e spiegazione, a destra il comando. Gli acceso/spento sono interruttori (`role="switch"`, con il testo Attivo/Spento accanto); la modalità è un controllo segmentato. Stessi `id` (`fn-poison`, `fn-canary`, `fn-tray`, `fn-boot`, `fn-ks`, `fn-harden`).
+- **Rete e Regole**: le righe consecutive (interfacce, programmi visti) formano un solo riquadro con separatori; la scelta Automatica/Scelgo io è un riquadro a due righe.
+- Test: gli screenshot (`SHOTS=`) coprono ora tutte le otto pagine. 269 controlli, chiaro e scuro; non visto nell'app Wails vera.
+
 ## [0.0.26] — 2026-11-13
 
 Rifacimento GUI, secondo passo: pagine **Stato** ed **Eventi**. Nessuna funzione tolta.

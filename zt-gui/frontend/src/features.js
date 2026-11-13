@@ -29,12 +29,15 @@ export function createFeaturesView(d) {
         paint();
     }
 
+    // Interruttore in stile macOS: un pulsante con ruolo «switch»; il testo (Attivo/Spento) resta per chi usa uno screen reader
+    // e accanto alla levetta, cosi' lo stato non dipende solo dal colore.
     const toggle = (id, on, labels, disabled) =>
-        `<button class="chip big${on ? ' on' : ''}" id="${id}" aria-pressed="${on}" ${disabled ? 'disabled' : ''}>${on ? '● ' + labels[0] : '○ ' + labels[1]}</button>`;
+        `<button class="swb${on ? ' on' : ''}" id="${id}" role="switch" aria-checked="${on}" aria-pressed="${on}" ${disabled ? 'disabled' : ''}><span class="swb-l">${on ? labels[0] : labels[1]}</span><span class="swb-t" aria-hidden="true"></span></button>`;
 
+    // Una riga per funzione, come nelle Impostazioni: a sinistra nome, stato e spiegazione; a destra il comando.
     function card(title, state, stateCls, body, action) {
-        return `<div class="fn-card"><div class="fn-head"><b>${title}</b><span class="fn-state ${stateCls}">${state}</span></div>
-            <div class="fn-body">${body}</div>${action ? `<div class="fn-act">${action}</div>` : ''}</div>`;
+        return `<div class="fn-card"><div class="fn-main"><div class="fn-head"><b>${title}</b><span class="fn-state ${stateCls}">${state}</span></div>
+            <div class="fn-body">${body}</div></div>${action ? `<div class="fn-act">${action}</div>` : ''}</div>`;
     }
 
     function paint() {
@@ -50,8 +53,7 @@ export function createFeaturesView(d) {
         cards.push(card('Protezione dei segreti',
             mode === 'enforce' ? 'Blocca' : 'Solo osserva', mode === 'enforce' ? 'on' : 'warn',
             `Controlla chi legge le tue chiavi SSH, le credenziali cloud, i token e le chiavi GPG. In <b>Solo osserva</b> registra senza bloccare nulla; in <b>Blocca</b> nega a chi non è nella lista. <span class="rl-d">Le singole protezioni e i programmi autorizzati si scelgono in Regole.</span>`,
-            `<button class="chip big${mode === 'enforce' ? '' : ' on'}" id="fn-mode-audit" ${mode === 'enforce' ? '' : 'disabled'}>Solo osserva</button>
-             <button class="chip big${mode === 'enforce' ? ' on' : ''}" id="fn-mode-enforce" ${mode === 'enforce' ? 'disabled' : ''}>Blocca</button>
+            `<div class="seg" role="group" aria-label="Modalità"><button class="seg-b${mode === 'enforce' ? '' : ' on'}" id="fn-mode-audit" ${mode === 'enforce' ? '' : 'disabled'}>Solo osserva</button><button class="seg-b${mode === 'enforce' ? ' on enf' : ''}" id="fn-mode-enforce" ${mode === 'enforce' ? 'disabled' : ''}>Blocca</button></div>
              <button class="linklike" data-go="rules">Scegli le protezioni →</button>`));
 
         // 2. Filtro di rete (anti-poisoning)
@@ -95,7 +97,7 @@ export function createFeaturesView(d) {
         cards.push(card('Hardening del sistema', 'Manuale', 'warn',
             `Chiude l’ingresso con il firewall (UFW), spegne LLMNR/mDNS nel resolver, irrigidisce i parametri di rete e, sulle reti ostili, spegne avahi. Prima ti mostro <b>esattamente cosa cambierebbe</b>, poi decidi. <span class="rl-d">Sperimentale: lo script non è mai stato provato su un sistema vero; meglio in una macchina virtuale.</span>`,
             `<select id="fn-hprof" aria-label="Profilo di hardening">${profiles.map(p => `<option value="${p}"${p === hp ? ' selected' : ''}>${p}</option>`).join('')}</select>
-             <button class="chip big" id="fn-harden">Vedi cosa cambierebbe…</button>`));
+             <button class="chip" id="fn-harden">Vedi cosa cambierebbe…</button>`));
 
         // 7. VPN: monitor (sempre) e kill-switch (se il tunnel e' configurato nel file)
         const vpn = st.vpn || {};
@@ -114,7 +116,10 @@ export function createFeaturesView(d) {
             ''));
 
         const root = document.getElementById('fn-root');
-        root.innerHTML = `<div class="fn-grid">${cards.join('')}</div>${busy ? `<div class="rl-bar">${esc(busy)}</div>` : ''}`;
+        // Tre gruppi, nell'ordine in cui servono: cosa protegge, come si comporta il programma, strumenti avanzati.
+        const group = (t, list) => `<h3 class="sec">${t}</h3><div class="fn-grid">${list.join('')}</div>`;
+        root.innerHTML = group('Protezione', cards.slice(0, 3)) + group('Comportamento', cards.slice(3, 5)) + group('Strumenti avanzati', cards.slice(5))
+            + (busy ? `<div class="rl-bar">${esc(busy)}</div>` : '');
         bind();
     }
 
@@ -197,7 +202,7 @@ export function createFeaturesView(d) {
     function render() {
         // Lo scheletro si crea una volta; i dati si ridisegnano dentro (gli aggiornamenti di stato non lo ricostruiscono).
         if (!document.getElementById('fn-root')) {
-            content.innerHTML = `<h2>Funzioni</h2>
+            content.innerHTML = `<h2><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 2.6v5.2c0 4.4-3 8.2-7 9.7-4-1.5-7-5.3-7-9.7V5.6L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2.2 2.2L15 10.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Funzioni</h2>
             <p class="sub">Accendi o spegni ogni funzione una per una. Quello che vedi è lo stato <b>reale</b> del demone in questo momento.</p>
             <div id="fn-root"><p class="sub">Carico…</p></div>`;
             if (!model) load(); else paint();
