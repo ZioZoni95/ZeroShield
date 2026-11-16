@@ -28,6 +28,50 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.28] — 2026-11-13
+
+Rifacimento GUI, ultimo passo: **Configurazione**, **Guida**, **Radar**, primo avvio. Con questa versione tutte le otto pagine usano il nuovo sistema di design.
+
+- **Configurazione**: «Avvio all'accensione» è un interruttore; **nuovo** interruttore «Icona nella barra» (stesso `SetTrayEnabled` della pagina Funzioni, nessun privilegio nuovo); le righe Interfacce, Drop poisoning, Canary e Regole portano alla pagina dove si cambiano (prima dicevano «si cambia nel file» anche per ciò che la GUI sa già fare). Il testo «Altre opzioni» elenca solo ciò che resta davvero nel file: profilo, utente, subnet bloccate, VPN, rescan, formato del log.
+- **Guida**: schede come controllo segmentato; aggiunta la riga della pagina Funzioni e corrette le scorciatoie (1–8, prima diceva 1–7); il titolo «Da pacchetto .deb» è un'intestazione di sezione.
+- **Radar**: il riquadro del verdetto va a capo correttamente (titolo sopra, note sotto); la legenda usa lo spazio accanto al grafico.
+- **Barra laterale**: un poco più larga (180 px minimo), i nomi lunghi non finiscono più sotto il numero della scorciatoia. Simboli `◐` tolti (non presenti in tutti i font di sistema).
+- **Non fatto, di proposito**: l'editor a campi per profilo, utente, subnet e VPN. Richiede nuove scritture sul canale privilegiato e resta dopo il collaudo in VM (`docs/PUNTI_APERTI.md`).
+- Test: 271 controlli (2 nuovi: interruttore dell'icona in Configurazione, collegamenti verso Rete/Funzioni/Regole), chiaro e scuro, nel browser headless con il demone simulato. **Mai visto nell'app Wails vera (WebKitGTK)**: sfocature, font di sistema e `:has()` vanno controllati lì.
+
+## [0.0.27] — 2026-11-13
+
+Rifacimento GUI, terzo passo: pagine **Funzioni**, **Rete** e **Regole**. Nessuna funzione tolta.
+
+- **Funzioni**: da griglia di schede a elenco raggruppato (Protezione, Comportamento, Strumenti avanzati); a sinistra nome, stato e spiegazione, a destra il comando. Gli acceso/spento sono interruttori (`role="switch"`, con il testo Attivo/Spento accanto); la modalità è un controllo segmentato. Stessi `id` (`fn-poison`, `fn-canary`, `fn-tray`, `fn-boot`, `fn-ks`, `fn-harden`).
+- **Rete e Regole**: le righe consecutive (interfacce, programmi visti) formano un solo riquadro con separatori; la scelta Automatica/Scelgo io è un riquadro a due righe.
+- Test: gli screenshot (`SHOTS=`) coprono ora tutte le otto pagine. 269 controlli, chiaro e scuro; non visto nell'app Wails vera.
+
+## [0.0.26] — 2026-11-13
+
+Rifacimento GUI, secondo passo: pagine **Stato** ed **Eventi**. Nessuna funzione tolta.
+
+- **Stato**: scheda in alto con simbolo (scudo verde/ambra/rosso) e pulsante a destra; tessere con il numero in grande; «Da fare» con barra di avanzamento e le voci da sistemare per prime; il comando sysctl ha il pulsante «copia»; «Ultimi eventi» con pallino colorato e orario a destra; i dettagli tecnici sono righe in un riquadro (prima schede).
+- **Eventi**: colonne Tipo, Ora, Protezione, Programma (nome in evidenza, percorso e pid sotto; prima `pid`, `comm`, `exe` in tre colonne monospazio). La protezione ha il nome leggibile; quello tecnico resta nel suggerimento e nella ricerca. Filtro per tipo come controllo segmentato; etichette «Osservato», «Bloccato», «Fermato», «Uscita».
+- Test: due controlli aggiornati per l'etichetta «Uscita» (maiuscola). 269 controlli, chiaro e scuro, nel browser headless con il demone simulato; non visto nell'app Wails vera.
+
+## [0.0.25] — 2026-11-13
+
+Primo passo del rifacimento della GUI in stile macOS (si procede una pagina alla volta). Solo aspetto: nessuna funzione aggiunta o tolta, stessi `id` e classi, i 269 controlli nel browser passano senza modifiche.
+
+- **Sistema di design** (`style.css`): colori, raggi, ombre e controlli definiti una volta sola. Barra laterale con la voce scelta piena; barra in alto traslucida; pulsanti a pressione, controllo segmentato e interruttori come in macOS; riquadri senza bordi colorati; elenchi «Da fare» e «Ultimi eventi» a righe dentro un riquadro; finestre di conferma a foglio; barre di scorrimento sottili; rispetto di «riduci movimento».
+- **Leggibilità**: font di sistema (`system-ui`, prima su Linux si ricadeva su un font generico), testo secondario più scuro (contrasto AA), titolo grande di pagina; intestazioni di sezione non più in maiuscolo. Tema scuro: blu, verde, rosso e ambra hanno ora una variante chiara (prima restavano quelle del tema chiaro, poco leggibili su fondo scuro).
+- **Corretto**: il messaggio a comparsa copriva il badge Audit/Enforce; ora esce sotto la barra in alto. Il titolo nella barra non ripete più quello della pagina: compare solo quando il titolo grande è scorso via.
+- Provato nel browser headless con il demone simulato (chiaro); **non ancora visto nell'app Wails vera né in tema scuro**.
+
+## [0.0.24] — 2026-11-13
+
+Dalla revisione del commit della 0.0.23.
+
+- **Avviso «non risolto» non più nascosto nelle regole dell'utente.** La riga unica per i programmi di base non installati valeva per qualunque regola: una regola scritta a mano con `allow: [aws]` e un refuso o un binario mancante finiva nell'info «nessun effetto» invece dell'avviso, e lo strumento veniva negato (EACCES) senza spiegazione. Ora `isBaseProgram` guarda anche la regola: solo i gruppi predefiniti (`ssh-keys`, `cloud-creds`, `dev-tokens`…) con la loro lista di base. Test con regola utente e con programma di base di un altro gruppo.
+- **`audit.Scope`** ora risponde `local` per loopback e indirizzo non specificato (prima `0.0.0.0` sarebbe diventato «internet» per un chiamante che non filtra con `Local`). Gli eventi non cambiano: `RunEgress` scarta già prima questi indirizzi. Casi aggiunti a `TestScope`.
+- Non cambiato, deciso: `0.0.0.0`/`::` restano esclusi dall'audit in uscita. Un relay locale (`kubectl port-forward`, `ssh -L`) non è tracciato dall'audit: limite da tenere presente, non un errore del codice.
+
 ## [0.0.23] — 2026-11-12
 
 - **Audit in uscita: `0.0.0.0` e `::` non si segnalano più.** Su Linux connettersi a 0.0.0.0 vuol dire localhost; sul PC di prova 19 eventi su 72 (un port-forward di `kubectl`/`k9s` verso `0.0.0.0:45233`) erano segnati «lan» per errore. Ora si scartano come il loopback (`audit.Local`), senza consumare il tetto di eventi al secondo. `Scope` non classifica più l'indirizzo non specificato come rete locale.

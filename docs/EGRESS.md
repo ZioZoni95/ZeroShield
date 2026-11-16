@@ -40,5 +40,6 @@ destinazione, poi basta. Il rumore vero è la lista delle destinazioni: una dest
 ## Limiti e cose da collaudare (VM)
 
 - Mai provato su un kernel reale: compila, passa il verifier in CI, non è stato visto scattare. Vedi `docs/COLLAUDO_HARDENING.md`, sezione 7.
+- Un relay locale non si vede: `0.0.0.0`/`::`/loopback sono scartati, quindi un programma che ha letto un segreto e lo manda a un listener locale (`kubectl port-forward`, `ssh -L`, un proxy) che poi lo inoltra non compare nell'audit. Scelta per non avere rumore (un port-forward faceva 19 eventi su 72); il limite resta.
 - I figli di un processo non sono seguiti (limite strutturale della mappa per tgid).
 - Un programma che legge il segreto **prima** dell'avvio del demone, o via un fd ereditato, non è seguito.

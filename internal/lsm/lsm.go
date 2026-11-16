@@ -136,14 +136,16 @@ var optionalBinaries = map[string]bool{
 	"/usr/libexec/gcr-ssh-agent": true,
 }
 
-// isBaseProgram: il nome (senza percorso) e' nella lista di base di un gruppo predefinito (aws, glab, cargo...).
-// Su un PC che non li ha installati e' normale: non e' un errore di configurazione da segnalare uno per uno.
-func isBaseProgram(name string) bool {
+// isBaseProgram: la regola e' un gruppo predefinito (ssh-keys, cloud-creds...) e il nome (senza percorso) e' nella sua
+// lista di base (aws, glab, cargo...). Su un PC che non li ha installati e' normale: non e' un errore di configurazione.
+// Si guarda la regola, non solo il nome: in una regola scritta dall'utente un `aws` mancante o con un refuso resta un
+// errore da segnalare (altrimenti il suo strumento verrebbe negato con EACCES senza alcun avviso).
+func isBaseProgram(rule, name string) bool {
 	if strings.Contains(name, "/") {
 		return false // un percorso scritto a mano che non esiste e' un errore dell'utente: si avvisa
 	}
 	for _, id := range config.GroupOrder {
-		if g, ok := config.Group(id); ok && slices.Contains(g.Allow, name) {
+		if g, ok := config.Group(id); ok && g.Name == rule && slices.Contains(g.Allow, name) {
 			return true
 		}
 	}
@@ -194,7 +196,7 @@ func (m *Manager) Sync() (protected, allowed int) {
 				if optionalBinaries[a] {
 					continue // programma di desktop che puo' mancare: niente avviso
 				}
-				if isBaseProgram(a) {
+				if isBaseProgram(r.Name, a) {
 					missingBase[a] = true // una riga sola a fine giro, non un avviso per programma
 					continue
 				}

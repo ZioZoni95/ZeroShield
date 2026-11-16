@@ -5,6 +5,46 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.28': {
+        title: 'Novità della versione 0.0.28',
+        items: [
+            ['Configurazione con i comandi veri', 'L\'avvio all\'accensione e l\'icona nella barra sono interruttori. Interfacce, filtro di rete, canary e regole hanno il collegamento alla pagina dove si cambiano, invece del rimando al file.'],
+            ['Guida e Radar più leggibili', 'Le schede della Guida sono un unico selettore e c\'è la voce per la pagina Funzioni; nel Radar la spiegazione usa lo spazio a fianco del grafico.'],
+            ['Rifacimento completato', 'Tutte le otto pagine usano ora lo stesso stile, in chiaro e in scuro.'],
+        ],
+        note: 'Profilo, utente protetto, subnet bloccate e VPN si cambiano ancora solo nel file: un editor a campi arriverà dopo il collaudo in macchina virtuale.',
+    },
+    '0.0.27': {
+        title: 'Novità della versione 0.0.27',
+        items: [
+            ['Funzioni come nelle Impostazioni', 'Ogni funzione è una riga con il suo interruttore a destra, in tre gruppi: Protezione, Comportamento, Strumenti avanzati. La modalità (Solo osserva / Blocca) è un unico selettore.'],
+            ['Elenchi più ordinati in Rete e Regole', 'Le interfacce e i programmi sono righe di uno stesso riquadro invece di tante schede separate.'],
+        ],
+        note: 'Terzo passo del rifacimento dell\'interfaccia. Le funzioni e i pulsanti sono gli stessi di prima.',
+    },
+    '0.0.26': {
+        title: 'Novità della versione 0.0.26',
+        items: [
+            ['Stato più chiaro', 'In cima vedi subito se sei protetto, con un simbolo e un solo pulsante. In «Da fare» le cose che mancano vengono per prime, con una barra di avanzamento, e i comandi da terminale hanno il pulsante «copia».'],
+            ['Eventi più leggibili', 'Quattro colonne invece di sei: tipo, ora, protezione (con il nome in chiaro, per esempio «Chiavi SSH») e programma con il percorso sotto. Il filtro per tipo è un unico controllo.'],
+        ],
+        note: 'Secondo passo del rifacimento dell\'interfaccia. La ricerca negli eventi trova sia il nome in chiaro sia quello tecnico della protezione.',
+    },
+    '0.0.25': {
+        title: 'Novità della versione 0.0.25',
+        items: [
+            ['Nuovo aspetto in stile macOS', 'Barra laterale, barra in alto, pulsanti, interruttori, tabelle e finestre di conferma sono stati ridisegnati: testo più leggibile, riquadri più puliti, tema scuro con colori più chiari da leggere.'],
+            ['Avvisi che non coprono più la modalità', 'I messaggi a comparsa ora escono sotto la barra in alto e non nascondono più l\'indicatore Audit/Enforce.'],
+        ],
+        note: 'È il primo passo del rifacimento dell\'interfaccia: le pagine verranno riorganizzate una alla volta nelle prossime versioni.',
+    },
+    '0.0.24': {
+        title: 'Novità della versione 0.0.24',
+        items: [
+            ['Avvisi più affidabili', 'Se in una tua regola scrivi un programma che non si trova (per esempio un refuso in «aws»), il registro ora te lo segnala come errore. Prima poteva sembrare un semplice programma non installato.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.23': {
         title: 'Novità della versione 0.0.23',
         items: [

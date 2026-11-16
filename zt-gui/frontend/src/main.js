@@ -5,6 +5,7 @@ import {createRulesView} from './rules.js';
 import {createFeaturesView} from './features.js';
 import {createProfileView} from './profile.js';
 import {statusHtml} from './statuspage.js';
+import {friendlyRule} from './names.js';
 import {createIfaceView} from './ifaces.js';
 import {WHATS_NEW, baseVersion, pickWhatsNew} from './whatsnew.js';
 import {EventsOn} from '../wailsjs/runtime/runtime.js';
@@ -295,6 +296,11 @@ function render(force) {
     return renderNet();
 }
 
+// Interruttore in stile macOS (stesso di Funzioni): pulsante con ruolo «switch» e il testo dello stato accanto.
+function swBtn(id, on, onLabel, offLabel) {
+    return `<button class="swb${on ? ' on' : ''}" id="${id}" role="switch" aria-checked="${on}" aria-pressed="${on}"><span class="swb-l">${on ? onLabel : offLabel}</span><span class="swb-t" aria-hidden="true"></span></button>`;
+}
+
 // Riga impostazione: nome, valore, e una frase che spiega a cosa serve e dove si cambia.
 function kv(k, v, hint) {
     return `<div class="kv"><div class="kv-k">${esc(k)}</div><div class="kv-v">${v}</div>${hint ? `<div class="kv-h">${hint}</div>` : ''}</div>`;
@@ -310,6 +316,8 @@ async function renderConfig() {
     try { fileMode = await bound(ConfigMode, ); } catch (_) {}
     let boot = null; // null = questa build non lo sa dire
     try { const b = await bound(BootEnabled, ); if (typeof b === 'boolean') boot = b; } catch (_) {}
+    let tray = null;
+    try { const t = await bound(TrayEnabled, ); if (typeof t === 'boolean') tray = t; } catch (_) {}
     // Le due letture sono asincrone: se nel frattempo si e' cambiata tab, non
     // sovrascrivere la pagina nuova con questa.
     if (view !== 'config' || !status) return;
@@ -318,38 +326,50 @@ async function renderConfig() {
     const subs = status.block_subnets || [];
     const xdp = (status.xdp || []).length ? status.xdp.map(x => `<span class="mono">${esc(x)}</span>`).join(', ') : '<span class="dot-off">spento</span>';
     content.innerHTML = `${h2(ICO_GEAR, 'Configurazione')}
-    <p class="sub">Riepilogo di ciò che il demone sta usando. Il file su disco è <span class="mono">/etc/zt-shield/shield.yaml</span>, letto a ogni avvio.</p>
+    <p class="sub">Riepilogo di ciò che il demone sta usando, con i comandi per cambiarlo. Il file su disco è <span class="mono">/etc/zt-shield/shield.yaml</span>, letto a ogni avvio.</p>
     ${mismatch ? `<div class="warn">${ICO_WARN}<div>Il file dice <b>${esc(fileMode)}</b> ma il demone sta girando in <b>${esc(running)}</b>: la modifica non è ancora attiva. Riavvia il servizio.</div></div>` : ''}
     ${sec('Protezione')}
     <div class="panel">
       ${kv('Modalità', `<div class="seg" role="group" aria-label="Modalità"><button class="seg-b${running === 'audit' ? ' on' : ''}" id="m-audit">Audit · logga</button><button class="seg-b${running === 'enforce' ? ' on enf' : ''}" id="m-enforce">Enforce · blocca</button></div>`,
         'Audit registra senza negare nulla, enforce nega davvero. Il cambio riavvia il servizio.')}
-      ${boot === null ? '' : kv('Avvio all\'accensione', `<button class="chip${boot ? ' on' : ''}" id="boot-toggle" aria-pressed="${boot}">${boot ? '● Attivo' : '○ Spento'}</button>`,
+      ${boot === null ? '' : kv('Avvio all\'accensione', swBtn('boot-toggle', boot, 'Attivo', 'Spento'),
         boot ? 'Il demone parte da solo a ogni accensione. Spegnerlo lascia il PC senza protezione finché non lo avvii tu.' : 'Il demone NON parte da solo: dopo un riavvio il PC resta senza protezione. Attivalo per avviarlo a ogni accensione.')}
+      ${tray === null ? '' : kv('Icona nella barra', swBtn('tray-toggle', tray, 'Attiva', 'Spenta'), 'Mostra lo stato in alto e avvisa dei blocchi anche a finestra chiusa. Chiuderla non ferma la protezione.')}
       ${kv('Profilo', `<b>${esc(status.profile)}</b>`, 'Sceglie le regole di base. Si cambia nel file (<span class="mono">profile:</span>).')}
       ${kv('Utente protetto', `<span class="mono">${esc(status.home)}</span>`, 'La home di cui il demone difende i segreti (<span class="mono">user:</span>).')}
-      ${kv('Regole', `<b>${(status.rules || []).length}</b> gruppi · ${status.protected} file · ${status.allowed} binari`, `<button class="linklike" data-go="rules">vedi le regole →</button>`)}
+      ${kv('Regole', `<b>${(status.rules || []).length}</b> gruppi · ${status.protected} file · ${status.allowed} binari`, `<button class="linklike" data-go="rules">Gestisci in Regole →</button>`)}
     </div>
     ${sec('Rete')}
     <div class="panel">
-      ${kv('Interfacce con XDP', xdp, 'Le altre interfacce attive non sono filtrate. Per coprirne altre elencale in <span class="mono">interface:</span> nel file.')}
-      ${kv('Drop poisoning', status.block_poisoning ? '<span class="dot-ok">●</span> attivo' : '<span class="dot-off">●</span> spento', 'Scarta LLMNR, mDNS e NetBIOS in ingresso (porte 5355, 5353, 137, 138).')}
+      ${kv('Interfacce con XDP', xdp, 'Le altre interfacce attive non sono filtrate. <button class="linklike" data-go="net">Scegli le interfacce in Rete →</button>')}
+      ${kv('Drop poisoning', status.block_poisoning ? '<span class="dot-ok">●</span> attivo' : '<span class="dot-off">●</span> spento', 'Scarta LLMNR, mDNS e NetBIOS in ingresso (porte 5355, 5353, 137, 138). <button class="linklike" data-go="features">Accendi o spegni in Funzioni →</button>')}
       ${kv('Subnet bloccate', subs.length ? subs.map(c => `<span class="mono">${esc(c)}</span>`).join(', ') : 'nessuna', 'Scarta tutto il traffico da quelle reti, anche le risposte: mai gateway o DNS.')}
-      ${kv('VPN', (status.vpn && status.vpn.enabled) ? 'monitorata' : 'non monitorata', `Il demone osserva tunnel e kill-switch, non li applica. <button class="linklike" data-go="net">stato in Rete →</button>`)}
+      ${kv('VPN', (status.vpn && status.vpn.enabled) ? 'monitorata' : 'non monitorata', `Il demone osserva tunnel e kill-switch, non li applica. <button class="linklike" data-go="net">Stato in Rete →</button>`)}
+      ${kv('Anti-ransomware (canary)', (status.canary && status.canary.active) ? '<span class="dot-ok">●</span> attivo' : 'spento', '<button class="linklike" data-go="features">Accendi o spegni in Funzioni →</button>')}
     </div>
     <div id="profile-box"></div>
     ${sec('Altre opzioni')}
-    <p class="sub">Canary, regole extra, intervallo di rescan e formato log si impostano nel file. Dopo ogni modifica:</p>
+    <p class="sub">Profilo, utente protetto, subnet bloccate, VPN, intervallo di rescan e formato del log si impostano solo nel file. Dopo ogni modifica:</p>
     ${codeRow('sudo systemctl restart zt-shield')}
     <details class="file"><summary>Mostra il file <span class="mono">shield.yaml</span></summary>
       <div class="file-bar"><button class="copy" data-copy="${esc(txt)}">copia contenuto</button><span class="sub">modifica con: </span><code>sudoedit /etc/zt-shield/shield.yaml</code></div>
       <pre>${esc(txt)}</pre></details>`;
     profileView.mount(document.getElementById('profile-box'));
+    const tt = document.getElementById('tray-toggle');
+    if (tt) tt.onclick = async () => {
+        const want = !tray;
+        tt.disabled = true;
+        try {
+            if (await bound(SetTrayEnabled, want) === undefined) toast('Non supportato in questa build', true);
+            else toast(want ? 'Icona nella barra accesa' : 'Icona nella barra spenta', false);
+        } catch (e) { toast('Non riuscito: ' + (e.message || e), true); }
+        renderConfig();
+    };
     const bt = document.getElementById('boot-toggle');
     if (bt) bt.onclick = async () => {
         const want = !boot;
         if (!want && !await confirmDialog({title: 'Spegnere l\'avvio all\'accensione?', body: 'Dopo il prossimo riavvio il PC resterà <b>senza protezione</b> finché non avvii tu il demone.', ok: 'Spegni', danger: true})) return;
-        bt.textContent = '…';
+        bt.disabled = true;
         try {
             if (await bound(SetBootEnabled, want) === undefined) toast('Non supportato in questa build', true);
             else toast(want ? 'Il demone partirà a ogni accensione' : 'Avvio all\'accensione spento', !want);
@@ -555,7 +575,7 @@ function filterEvents() {
         if (evType === 'egress' && e.action !== 'egress') return false;
         if (evType === 'canary' && !e.canary) return false;
         if (!q) return true;
-        const hay = `${e.rule || ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''} ${e.dest || ''}`.toLowerCase();
+        const hay = `${e.rule || ''} ${e.rule ? friendlyRule(e.rule) : ''} ${e.comm || ''} ${e.exe || ''} ${e.path || ''} ${e.pid || ''} ${e.kind || ''} ${e.dest || ''}`.toLowerCase();
         return hay.includes(q);
     });
 }
@@ -566,33 +586,40 @@ const evSev = e => (e.action === 'blocked' || e.action === 'killed') ? 0 : ((e.c
 function evTag(e) {
     if (e.canary) {
         return e.action === 'killed'
-            ? [`<span class="tag tag-block">${ICO_BIRD} KILL</span>`, 'row-block']
-            : [`<span class="tag tag-canary">${ICO_BIRD} canary</span>`, 'row-canary'];
+            ? [`<span class="tag tag-block">${ICO_BIRD} Fermato</span>`, 'row-block']
+            : [`<span class="tag tag-canary">${ICO_BIRD} Canary</span>`, 'row-canary'];
     }
     if (e.action === 'egress') {
         return e.scope === 'internet'
-            ? ['<span class="tag tag-egress">📤 uscita</span>', 'row-egress']
-            : ['<span class="tag tag-egress-lan">📤 uscita (rete locale)</span>', 'row-audit'];
+            ? ['<span class="tag tag-egress">Uscita</span>', 'row-egress']
+            : ['<span class="tag tag-egress-lan">Uscita (rete locale)</span>', 'row-audit'];
     }
     return e.action === 'blocked'
-        ? [`<span class="tag tag-block">${ICO_BLOCK} BLOCCO</span>`, 'row-block']
-        : [`<span class="tag tag-audit">${ICO_AUDIT} audit</span>`, 'row-audit'];
+        ? [`<span class="tag tag-block">${ICO_BLOCK} Bloccato</span>`, 'row-block']
+        : [`<span class="tag tag-audit">${ICO_AUDIT} Osservato</span>`, 'row-audit'];
+}
+
+// Cella «Protezione»: nome leggibile (quello tecnico resta nel title e nella ricerca); il clic filtra per quella regola.
+function evRuleCell(e) {
+    if (e.canary) return 'Canary';
+    return `<button class="linklike" data-rule="${esc(e.rule)}" title="${esc(e.rule)}: mostra solo questa protezione">${esc(friendlyRule(e.rule))}</button>`;
+}
+// Cella «Programma»: nome in evidenza, percorso e pid sotto in piccolo. Prima erano tre colonne in monospazio.
+function evProgCell(e, extra) {
+    const name = e.comm || e.kind || '';
+    const path = e.canary ? `${e.exe || ''} ${e.path || ''}`.trim() : (e.exe || '(uscito)');
+    const dest = e.action === 'egress' ? ` → <b>${esc(e.dest || '')}</b>` : '';
+    return `<div class="ev-prog"><b>${esc(name)}</b>${extra || ''}</div><div class="ev-path mono">${esc(path)}${dest}</div>`;
 }
 
 function eventsTableHTML(pool) {
     const listed = [...pool].sort((a, b) => evSevFirst ? (evSev(a) - evSev(b)) : 0);
     const rows = listed.reverse().slice(0, 200).map(e => {
         const [tag, cls] = evTag(e);
-        const t = fmtTime(e.time);
-        if (e.canary) {
-            return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td>canary</td>
-            <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.kind || '')}</td><td class="mono">${esc(e.exe || '')} ${esc(e.path || '')}</td></tr>`;
-        }
-        const what = e.action === 'egress' ? `${esc(e.exe || '(uscito)')} → <b>${esc(e.dest || '')}</b>` : esc(e.exe || '(uscito)');
-        return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(t)}</td><td><button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button></td>
-        <td class="mono">pid=${e.pid}</td><td class="mono">${esc(e.comm)}</td><td class="mono">${what}</td></tr>`;
+        return `<tr class="${cls}"><td>${tag}</td><td class="mono ev-t">${esc(fmtTime(e.time))}</td><td>${evRuleCell(e)}</td>
+        <td>${evProgCell(e, ` <span class="rl-d mono">pid=${esc(e.pid)}</span>`)}</td></tr>`;
     }).join('');
-    return `<table><tr><th>tipo</th><th>ora</th><th>regola</th><th>pid</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
+    return `<table class="ev-table"><tr><th>Tipo</th><th>Ora</th><th>Protezione</th><th>Programma</th></tr>${rows}</table>`;
 }
 
 // Vista raggruppata: stessi (tipo, regola, exe) in una riga con contatore. In audit lo
@@ -612,19 +639,18 @@ function eventsGroupedHTML(pool) {
     const rows = list.slice(0, 200).map(g => {
         const e = g.last;
         const [tag, cls] = evTag(e);
-        const rule = e.canary ? 'canary' : `<button class="linklike" data-rule="${esc(e.rule)}">${esc(e.rule)}</button>`;
-        return `<tr class="${cls}"><td>${tag}</td><td class="mono">${esc(fmtTime(e.time))}</td><td>${rule}</td>
-        <td class="mono"><b>×${g.n}</b></td><td class="mono">${esc(e.comm || e.kind || '')}</td><td class="mono">${esc(e.exe || e.path || '(uscito)')}</td></tr>`;
+        return `<tr class="${cls}"><td>${tag}</td><td class="mono ev-t">${esc(fmtTime(e.time))}</td><td>${evRuleCell(e)}</td>
+        <td class="ev-n"><b>×${g.n}</b></td><td>${evProgCell(e)}</td></tr>`;
     }).join('');
-    return `<table><tr><th>tipo</th><th>ultimo</th><th>regola</th><th>volte</th><th>comm</th><th>exe</th></tr>${rows}</table>`;
+    return `<table class="ev-table"><tr><th>Tipo</th><th>Ultimo</th><th>Protezione</th><th>Volte</th><th>Programma</th></tr>${rows}</table>`;
 }
 
 function eventsBarHTML() {
-    const chips = [['all', 'tutti'], ['blocked', 'blocchi'], ['audit', 'audit'], ['egress', 'uscita'], ['canary', 'canary']]
+    const chips = [['all', 'Tutti'], ['blocked', 'Blocchi'], ['audit', 'Osservati'], ['egress', 'Uscita'], ['canary', 'Canary']]
         .map(([v, l]) => `<button class="chip${evType === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('');
-    return `<div class="toolbar"><input id="ev-q" type="search" placeholder="Filtra regola, comm, exe, pid…" value="${esc(evSearch)}"><span class="chips">${chips}</span>
-    <button id="ev-group" class="chip${evGroup ? ' on' : ''}" title="Una riga per programma, con il numero di accessi">raggruppa</button>
-    <button id="ev-sev" class="chip${evSevFirst ? ' on' : ''}" title="Mostra prima blocchi e canary (contro l'alert-fatigue)">⚠️ pericolosi prima</button></div>`;
+    return `<div class="toolbar"><input id="ev-q" type="search" placeholder="Cerca protezione, programma, percorso, pid…" aria-label="Cerca negli eventi" value="${esc(evSearch)}"><span class="chips segc" role="group" aria-label="Tipo di evento">${chips}</span>
+    <button id="ev-group" class="chip${evGroup ? ' on' : ''}" title="Una riga per programma, con il numero di accessi">Raggruppa</button>
+    <button id="ev-sev" class="chip${evSevFirst ? ' on' : ''}" title="Mostra prima blocchi e canary (contro l'alert-fatigue)">Pericolosi prima</button></div>`;
 }
 
 // La vista Eventi e' l'unica con un campo di testo: se a ogni evento in arrivo si
@@ -636,11 +662,12 @@ function renderEvents() {
     if (!events.length) {
         delete content.dataset.view;
         content.innerHTML = `${h2(ICO_LIST, 'Eventi')}
-        <div class="empty"><span class="big">🌊</span><b>Rete calma, niente eventi.</b><br>In audit gli accessi legittimi compaiono qui: passa a enforce solo a log puliti.</div>`;
+        <p class="sub">Chi ha letto i tuoi segreti, in diretta.</p>
+        <div class="empty"><span class="big">🌊</span><b>Ancora nessun evento.</b><br>Qui compare ogni programma che legge un file protetto. In sola osservazione nulla viene bloccato: passa a Blocca quando l'elenco contiene solo programmi tuoi.</div>`;
         return;
     }
     const pool = filterEvents();
-    const sub = `${pool.length}/${events.length} eventi (ultimi 200, live)`;
+    const sub = `${pool.length === events.length ? events.length : pool.length + ' di ' + events.length} eventi in diretta · si mostrano gli ultimi 200`;
     const body = document.getElementById('ev-body');
     const tableHTML = () => evGroup ? eventsGroupedHTML(pool) : eventsTableHTML(pool);
     if (content.dataset.view === 'events' && body) {
@@ -897,7 +924,7 @@ function renderRadar() {
     const title = att ? `${att} ${att === 1 ? 'sorgente da verificare' : 'sorgenti da verificare'}` : 'Nessuna sorgente da verificare';
     content.innerHTML = `${h2(ICO_RADAR, 'Radar rete')}
     <p class="sub">${esc(summary)}</p>
-    <div class="verdict ${att ? 'warn' : 'ok'}"><div class="verdict-t">${att ? '◐' : '●'} ${esc(title)}</div>
+    <div class="verdict ${att ? 'warn' : 'ok'}"><div class="verdict-t">${esc(title)}</div>
       <ul>${parts.length ? `<li>${esc(parts.join(' · '))}</li>` : ''}
       <li>Il kernel non distingue richieste normali da risposte avvelenate: è una stima, non un verdetto.</li></ul></div>
     <div id="radar-wrap"><canvas id="radar" width="720" height="720"></canvas>${radarLegend()}</div>
@@ -1009,7 +1036,7 @@ let guideTab = 'start';
 const GUIDE_TABS = [['start', 'Per iniziare'], ['screens', 'Le schermate'], ['terms', 'Glossario'], ['trouble', 'Problemi comuni']];
 
 function renderGuide() {
-    const tabs = `<div class="tabs" role="tablist">${GUIDE_TABS.map(([k, l]) =>
+    const tabs = `<div class="tabs chips segc" role="tablist">${GUIDE_TABS.map(([k, l]) =>
         `<button class="chip${guideTab === k ? ' on' : ''}" role="tab" aria-selected="${guideTab === k}" data-gtab="${k}">${l}</button>`).join('')}</div>`;
     const body = {start: guideStart, screens: guideScreens, terms: guideTerms, trouble: guideTrouble}[guideTab]();
     content.innerHTML = `${h2(ICO_HELP, 'Guida')}<p class="sub">Cosa fa ZeroShield, come leggere le schermate e cosa fare quando qualcosa non torna.</p>${tabs}${body}`;
@@ -1037,7 +1064,7 @@ function guideChecklist() {
         [enf ? 'ok' : 'caution', enf ? 'Modalità enforce' : 'Modalità audit', enf ? 'Gli accessi non autorizzati vengono negati.' : 'Stai osservando: nulla viene bloccato. Passa a enforce quando in Eventi non compaiono più accessi legittimi.', 'config'],
         [v.enabled ? 'ok' : 'off', v.enabled ? 'VPN monitorata' : 'VPN non monitorata', v.enabled ? 'Il demone osserva tunnel e kill-switch.' : 'Facoltativa: su una rete ostile, senza VPN, il traffico esce in chiaro.', 'net'],
     ];
-    const sym = {ok: '●', caution: '◐', ko: '○', off: '–'};
+    const sym = {ok: '●', caution: '●', ko: '○', off: '–'}; // il colore distingue «a posto» (verde) da «attenzione» (ambra)
     return `<div class="panel checklist">${items.map(([st, t, h, g]) =>
         `<div class="check ${st}"><span>${sym[st]}</span><span><b>${t}</b> <span class="sub">${h}</span>${g ? ` <button class="linklike" data-go="${g}">vedi →</button>` : ''}</span></div>`).join('')}</div>`;
 }
@@ -1055,12 +1082,13 @@ const GUIDE_SCREENS = [
     ['radar', 'Radar', 'Chi mi disturba in rete?', 'Gli IP da cui XDP ha scartato traffico di scoperta di rete, classificati in rumore probabile, da verificare, bloccati e noti.', 'Quando vedi drop o sospetti una rete ostile.'],
     ['rules', 'Regole', 'Cosa è protetto, e da chi?', 'I gruppi di segreti e i programmi autorizzati a leggerli, con gli accessi visti in sessione.', 'Quando un programma legittimo viene segnalato.'],
     ['net', 'Rete', 'Cosa filtra il demone e cosa è esposto?', 'Interfacce coperte da XDP, subnet bloccate, stato della VPN e porte in ascolto.', 'Su una rete nuova.'],
-    ['config', 'Configurazione', 'Cosa sta usando il demone?', 'Riepilogo delle impostazioni, cambio audit/enforce e il file di configurazione.', 'Per cambiare modalità o controllare il file.'],
+    ['features', 'Funzioni', 'Cosa posso accendere o spegnere?', 'Un interruttore per funzione: filtro di rete, anti-ransomware, avvio all\'accensione, icona, hardening, kill-switch VPN.', 'Per attivare o togliere una difesa.'],
+    ['config', 'Configurazione', 'Cosa sta usando il demone?', 'Riepilogo delle impostazioni, cambio audit/enforce, profilo condiviso e il file di configurazione.', 'Per cambiare modalità o controllare il file.'],
 ];
 function guideScreens() {
     return `${sec('A cosa serve ogni schermata')}<div class="panel">${GUIDE_SCREENS.map(([g, name, q, d, when]) =>
         `<div class="kv"><div class="kv-k"><button class="linklike" data-go="${g}">${name}</button></div><div class="kv-v"><b>${q}</b></div><div class="kv-h">${d} <i>Quando: ${when}</i></div></div>`).join('')}</div>
-    <p class="sub">Scorciatoie: i tasti <kbd>1</kbd>–<kbd>7</kbd> aprono le schermate nell'ordine del menu (non funzionano mentre scrivi in un campo).</p>`;
+    <p class="sub">Scorciatoie: i tasti <kbd>1</kbd>–<kbd>8</kbd> aprono le schermate nell'ordine del menu (non funzionano mentre scrivi in un campo).</p>`;
 }
 
 const GUIDE_TERMS = [
@@ -1134,7 +1162,7 @@ const GUIDE_SRC = [
 function renderGuideBody() {
     const block = steps => steps.map(([t, d, c]) => `<div class="rule"><h3>${esc(t)}</h3><div>${d}</div>
         <div style="margin-top:6px">${codeRow(c)}</div></div>`).join('');
-    return `<h2 style="margin-top:14px">Da pacchetto .deb (consigliato)</h2>${block(GUIDE_PKG)}
+    return `${sec('Da pacchetto .deb (consigliato)')}${block(GUIDE_PKG)}
     <details class="src"><summary>Da sorgente (sviluppo)</summary>${block(GUIDE_SRC)}</details>`;
 }
 
@@ -1350,6 +1378,17 @@ EventsOn('shield:canary', a => {
     }
     requestRender();
 });
+
+// Titolo nella barra degli strumenti: la pagina ha gia' il suo titolo grande, quindi quello della barra compare solo
+// quando il primo e' scorso fuori vista (o se la pagina non ne ha uno). Evita il doppio titolo «Stato / Stato».
+function syncTopbar() {
+    const c = document.getElementById('content'), bar = document.getElementById('topbar');
+    if (!c || !bar) return;
+    bar.classList.toggle('scrolled', c.scrollTop > 36 || !c.querySelector('h2'));
+}
+document.getElementById('content').addEventListener('scroll', syncTopbar, {passive: true});
+// Le pagine si disegnano anche in modo asincrono: si riallinea a ogni cambio del contenuto, non solo allo scorrimento.
+new MutationObserver(syncTopbar).observe(document.getElementById('content'), {childList: true, subtree: true});
 
 // Toast non bloccante in alto a destra, sparisce da solo. danger=rosso.
 function toast(text, danger) {

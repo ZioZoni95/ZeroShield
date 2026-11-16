@@ -77,10 +77,15 @@ func Local(ip net.IP) bool {
 	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
 }
 
-// Scope classifica la destinazione: "lan" (rete locale, indirizzi privati e link-local) o "internet".
+// Scope classifica la destinazione: "local" (questa macchina), "lan" (rete locale, indirizzi privati e link-local) o
+// "internet". "local" non finisce negli eventi (RunEgress scarta prima con Local), ma cosi' un chiamante futuro che
+// non filtra non classifica 0.0.0.0 come internet.
 func Scope(ip net.IP) string {
 	if ip == nil {
 		return ""
+	}
+	if Local(ip) {
+		return "local"
 	}
 	if ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
 		return "lan"
