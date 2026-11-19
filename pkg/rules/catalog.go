@@ -21,6 +21,9 @@ var Tools = []Tool{
 	// negato (visto 2026-11-06: «couldn't read file ~/.ssh/id_ed25519: Permission denied», `ssh-add -l` vuoto)
 	// mentre `ssh` da solo continua a funzionare perche' e' gia' in lista.
 	{"gcr-ssh-agent", "Agente SSH di GNOME (gcr-ssh-agent)", []string{"/usr/libexec/gcr-ssh-agent"}, []string{"ssh-keys"}, "carica le tue chiavi SSH all'accesso (portachiavi di GNOME)"},
+	// Visto in audit 2026-11-16/19: 154 avvisi in tre giorni. buildx elenca i builder e i contesti, quindi apre
+	// ~/.kube/config (cloud-creds) oltre a ~/.docker/config.json (dev-tokens). E' un binario di root, non serve copiarlo.
+	{"docker-buildx", "Docker Buildx", []string{"/usr/libexec/docker/cli-plugins/docker-buildx"}, []string{"cloud-creds", "dev-tokens"}, "legge ~/.kube/config e ~/.docker/config.json quando elenca i builder"},
 	{"k3d", "k3d", []string{"k3d"}, []string{"dev-tokens"}, "legge ~/.docker/config.json per i registry"},
 	{"helm", "Helm", []string{"helm"}, []string{"cloud-creds", "dev-tokens"}, "usa il kubeconfig e le credenziali dei registry OCI"},
 	{"k9s", "k9s", []string{"k9s"}, []string{"cloud-creds"}, "legge il kubeconfig per mostrare i cluster"},

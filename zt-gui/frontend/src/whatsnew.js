@@ -5,6 +5,12 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.29': {
+        title: 'Novità della versione 0.0.29',
+        items: [
+            ['Docker Buildx tra i programmi', 'Nella pagina Regole puoi autorizzare Docker Buildx con un clic: legge il kubeconfig e la configurazione di Docker quando elenca i builder e, in modalità Solo osserva, generava la maggior parte degli avvisi.'],
+        ],
+    },
     '0.0.28': {
         title: 'Novità della versione 0.0.28',
         items: [
