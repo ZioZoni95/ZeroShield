@@ -149,6 +149,27 @@ func TestCatalogRulesExist(t *testing.T) {
 	}
 }
 
+// docker-buildx e' il programma piu' rumoroso visto in audit: deve coprire entrambe le regole che tocca.
+func TestCatalogHasDockerBuildx(t *testing.T) {
+	for _, tl := range Tools {
+		if tl.ID != "docker-buildx" {
+			continue
+		}
+		if len(tl.Names) != 1 || tl.Names[0] != "/usr/libexec/docker/cli-plugins/docker-buildx" {
+			t.Errorf("percorso inatteso: %v", tl.Names)
+		}
+		got := map[string]bool{}
+		for _, r := range tl.Rules {
+			got[r] = true
+		}
+		if !got["cloud-creds"] || !got["dev-tokens"] || len(got) != 2 {
+			t.Errorf("regole attese cloud-creds+dev-tokens, trovate %v", tl.Rules)
+		}
+		return
+	}
+	t.Error("docker-buildx manca dal catalogo")
+}
+
 func TestCustomRulesRoundTripAndValidation(t *testing.T) {
 	txt := "profile: home\nuser: alice\n"
 	c := Choice{

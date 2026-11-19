@@ -28,6 +28,10 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.29] — 2026-11-19
+
+- **Catalogo programmi**: aggiunto Docker Buildx (`/usr/libexec/docker/cli-plugins/docker-buildx`) per **cloud-creds** e **dev-tokens**. In tre giorni di audit era il primo per avvisi (154 su 179): apre `~/.kube/config` e `~/.docker/config.json` quando elenca i builder. È un binario di root, si autorizza dalla pagina Regole senza copie. Test `TestCatalogHasDockerBuildx`.
+
 ## [0.0.28] — 2026-11-13
 
 Rifacimento GUI, ultimo passo: **Configurazione**, **Guida**, **Radar**, primo avvio. Con questa versione tutte le otto pagine usano il nuovo sistema di design.
