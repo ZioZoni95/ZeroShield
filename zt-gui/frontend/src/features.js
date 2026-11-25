@@ -95,7 +95,7 @@ export function createFeaturesView(d) {
         const profiles = ['home', 'corporate', 'public-wifi', 'paranoid'];
         const hp = hardProfile || (model && profiles.includes(model.profile) ? model.profile : 'home');
         cards.push(card('Hardening del sistema', 'Manuale', 'warn',
-            `Chiude l’ingresso con il firewall (UFW), spegne LLMNR/mDNS nel resolver, irrigidisce i parametri di rete e, sulle reti ostili, spegne avahi. Prima ti mostro <b>esattamente cosa cambierebbe</b>, poi decidi. <span class="rl-d">Sperimentale: lo script non è mai stato provato su un sistema vero; meglio in una macchina virtuale.</span>`,
+            `Chiude l’ingresso con il firewall (UFW), spegne LLMNR/mDNS nel resolver, irrigidisce i parametri di rete e, sulle reti ostili, spegne avahi. Prima ti mostro <b>esattamente cosa cambierebbe</b>, poi decidi. Torna indietro a mano (firewall, file in <code>/etc/sysctl.d</code>, resolver). <span class="rl-d">Provato su un PC reale con il profilo <b>home</b>: rete, DNS e Docker hanno continuato a funzionare. Gli altri profili (corporate, public-wifi, paranoid) non sono ancora stati provati; i container che parlano con servizi dell’host o i dispositivi <code>.local</code> (stampanti) vanno controllati dopo.</span>`,
             `<select id="fn-hprof" aria-label="Profilo di hardening">${profiles.map(p => `<option value="${p}"${p === hp ? ' selected' : ''}>${p}</option>`).join('')}</select>
              <button class="chip" id="fn-harden">Vedi cosa cambierebbe…</button>`));
 

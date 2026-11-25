@@ -22,7 +22,7 @@ VPN è provato solo in un network namespace e con comandi finti.
 | Pacchetti `.deb` | ✅ costruiti e installati su un PC (aggiornamento 0.0.4 → 0.0.6 con `apt`) · release v0.0.1–v0.0.4 e v0.0.9 pubblicate (pre-release; 0.0.5–0.0.8 sono versioni interne) · pacchetto unico dalla v0.0.4 |
 | Kill-switch VPN | 🟡 provato in un network namespace (54 controlli); mai su rete reale |
 | Auto-VPN + helper Proton | 🟡 provati con comandi finti; mai con NetworkManager o Proton veri |
-| `harden_system.sh` | 🟡 `--dry-run` + 21 controlli con comandi finti; mai su un sistema vero |
+| `harden_system.sh` | 🟢 profilo `home` applicato su un PC reale il 2026-11-25 (internet, DNS, Docker ok); 🟡 gli altri profili solo `--dry-run` + 21 controlli con comandi finti |
 | `setup_fido2.sh` | ⚠️ mai eseguito (solo shellcheck) |
 | Hook `lsm/file_truncate` (≥ 6.2), inotify sulle dir protette | 🟡 inotify testato; `file_truncate` non confermato: nel journal compare solo «Hook LSM 'file_open' attivo», da verificare con `zt-probe` come root |
 
@@ -63,7 +63,7 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
 - [ ] **Percorsi dei browser** in `audit` (deb/snap; Flatpak non è coperto) prima di `public-wifi` in enforce.
 - [ ] **`zt-probe` su un kernel con BPF LSM**: deve accettare anche `zt_file_truncate` (nuovo, mai caricato).
 - [ ] **Unit systemd**: provare `ProtectSystem=strict` e `CapabilityBoundingSet` in VM. Le direttive a basso rischio già presenti girano su un PC vero (il demone parte e resta attivo).
-- [ ] **Script** `harden_system.sh` (prima con `--dry-run`) e `setup_fido2.sh` in VM con snapshot.
+- [ ] **Script** `setup_fido2.sh` in VM con snapshot. `harden_system.sh`: profilo `home` provato su un PC reale (2026-11-25); restano `corporate`, `public-wifi` e `paranoid` (forzano DoT, spengono avahi) e il traffico dai container verso servizi dell'host.
 - [ ] **Test furto-token** in VM isolata: infostealer simulato, reverse shell host-only.
 - [ ] **Pentest LAN** da macchina esterna ([`TESTING.md`](TESTING.md), Test 5).
 

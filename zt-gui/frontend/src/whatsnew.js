@@ -5,6 +5,12 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.32': {
+        title: 'Novità della versione 0.0.32',
+        items: [
+            ['Hardening di sistema provato', 'La scheda in Funzioni non è più segnata come sperimentale: il profilo «home» è stato provato su un computer vero. Dice anche cosa controllare dopo e come tornare indietro.'],
+        ],
+    },
     '0.0.31': {
         title: 'Novità della versione 0.0.31',
         items: [

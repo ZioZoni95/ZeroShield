@@ -2,6 +2,10 @@
 
 Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
+## [0.0.32] — 2026-11-25
+
+- **Hardening di sistema**: la scheda in Funzioni non dice più «sperimentale, mai provato». Il profilo `home` è stato applicato su un PC reale (firewall, LLMNR/mDNS spenti, sysctl di rete): internet, DNS e Docker invariati. La scheda indica cosa è provato (solo `home`), come tornare indietro e cosa controllare dopo (container verso l'host, dispositivi `.local`). Aggiornati README e `PUNTI_APERTI.md`. Nessuna modifica allo script.
+
 ## [Non rilasciato]
 
 - **Release**: la pagina di ogni tag mostra le «Novità» prese dalla sezione del `CHANGELOG.md` per quella versione (prima era un testo fisso, fermo alla 0.0.9). Nessuna modifica al prodotto.
