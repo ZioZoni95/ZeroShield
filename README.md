@@ -94,7 +94,8 @@ GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`.
 | Icona nella barra (`zt-tray`, servizio utente) | 🟢 provata su un PC | registrata in GNOME, colori per stato, riavvio dopo `apt install` dal `.deb` (visto un caso di icona invisibile dopo due riavvii ravvicinati: ora si reimposta ogni 30 s) |
 | Revisione del codice (statica, 2026-11-05) | 🟡 4 punti, 3 corretti | frammenti XDP (ZS-001), firma polkit (ZS-004), finestra di rescan (ZS-003) corretti con test; `deny_write` era un malinteso sui testi. Nessun test avversario né runtime |
 | Pacchetto `.deb` | ✅ costruito, installato e rimosso | CI e prove locali |
-| Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh`, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
+| `harden_system.sh` (profilo `home`) | ✅ **sistema reale** | applicato su un PC il 2026-11-25: firewall, DNS (LLMNR/mDNS spenti), sysctl; rete, DNS e Docker invariati |
+| Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh` negli altri profili, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
 | `setup_fido2.sh`, unit systemd | ⚠️ solo sintassi | `shellcheck`, `systemd-analyze verify` |
 
 **In pratica:** puoi guardare le interfacce con dati finti e provare XDP e canary su un kernel vero.
@@ -210,7 +211,7 @@ nome con cui lo chiami.
   commit firmati via SSH.
 * **Hardening (`scripts/harden_system.sh`).** LLMNR e mDNS spenti in `systemd-resolved`, DNS-over-TLS nei
   profili per reti ostili, sysctl anti-redirect, `avahi` disabilitato, UFW `default deny incoming`. Usa
-  **sempre `--dry-run` prima**: mostra diff e comandi senza modificare nulla.
+  **sempre `--dry-run` prima**: mostra diff e comandi senza modificare nulla. Provato su un PC reale solo con il profilo `home`; gli altri tre no.
 
 ---
 
@@ -349,7 +350,7 @@ make probe                                 # il kernel accetta i programmi? (sud
 sudo SHIELD_USER=$USER ./bin/zt-shield     # prova in primo piano (profilo home = solo audit)
 
 bash scripts/harden_system.sh home --dry-run    # PRIMA: mostra diff e comandi
-sudo bash scripts/harden_system.sh home         # poi, in VM: corporate | public-wifi | paranoid
+sudo bash scripts/harden_system.sh home         # poi; corporate | public-wifi | paranoid non provati: meglio in VM
 sudo bash scripts/install_service.sh $USER home # servizio systemd (solo da sorgente; dal .deb c'è configure_service.sh)
 make package                                    # dist/zeroshield_<versione>_<arch>.deb (demone + TUI + GUI + icona)
 ```
