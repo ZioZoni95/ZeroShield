@@ -5,6 +5,14 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.30': {
+        title: 'Novità della versione 0.0.30',
+        items: [
+            ['Eventi completi anche se apri la finestra dopo', 'Se un blocco o un allarme canary arrivava mentre la finestra era chiusa, aprendola la tabella Eventi poteva restare vuota. Ora compaiono gli ultimi eventi che il servizio ricorda.'],
+            ['Niente più riavvii dopo la sospensione', 'Quando chiudevi il coperchio per un po\', alla ripresa il servizio poteva essere riavviato da solo per un errore nel controllo di salute. Ora la sospensione non conta più.'],
+        ],
+        note: 'Serve il demone nuovo: riavvia il servizio dopo l\'aggiornamento.',
+    },
     '0.0.29': {
         title: 'Novità della versione 0.0.29',
         items: [

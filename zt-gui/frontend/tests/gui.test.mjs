@@ -83,6 +83,7 @@ await page.addInitScript((status) => {
     HardenApply: async (p) => { window.__hardApply.push(p); },
     KillSwitchOn: async (e, t) => { window.__ksCalls.push(['on', e, t]); },
     KillSwitchOff: async () => { window.__ksCalls.push(['off']); },
+    FrontendReady: async () => { window.__readyWith = Object.keys(window.__handlers || {}); },
     ExportProfile: async (n, t) => { window.__profCalls.push(['export', n, t]); if (window.__profCancel) return { path: '', left: [], cancelled: true }; return { path: '/home/u/zeroshield-profilo.yaml', left: ['«dev-tokens»: autorizzato /home/u/.local/bin/omp sta nella cartella di un utente'], cancelled: false }; },
     ChooseProfile: async () => window.__profPath,
     PreviewProfile: async (p, r, a) => { window.__profCalls.push(['preview', p, r, a]); if (window.__profErr) throw new Error(window.__profErr); return JSON.parse(JSON.stringify(window.__profPv)); },
@@ -162,6 +163,21 @@ check(`la ricerca tiene focus e testo durante un flood di ${n} eventi`, st.activ
 
 const rows = await page.evaluate(() => document.querySelectorAll('#ev-body table tr').length);
 check('...e la tabella continua ad aggiornarsi (righe > 5)', rows > 5, `righe=${rows}`);
+
+// --- avvio: la GUI dice «sono pronta» al demone solo dopo aver registrato gli ascoltatori degli eventi
+const readyWith = await page.evaluate(() => window.__readyWith || null);
+check('avvio: FrontendReady parte dopo aver registrato stato, eventi e canary', Array.isArray(readyWith) && ['shield:status', 'shield:event', 'shield:canary'].every(k => readyWith.includes(k)), JSON.stringify(readyWith));
+
+// --- canary: un allarme del demone (come arriva dal vivo e come arriva dalla cronologia) compare in Eventi
+await page.fill('#ev-q', '');
+await page.evaluate(() => window.__emit('shield:canary', { time: '2026-10-05T10:03:00Z', action: 'alert', pid: 4242, exe: '/usr/lib/cargo/bin/coreutils/cat', kind: 'open', path: '/home/u/Documents/.canary-wallet.dat', reason: 'tocco esca canary (audit: solo log)', replay: true }));
+await page.waitForTimeout(200);
+const canaryRows = () => page.evaluate(() => [...document.querySelectorAll('#ev-body table tr')].filter(r => r.textContent.includes('Canary') && r.textContent.includes('.canary-wallet.dat')).length);
+check('canary: un allarme in audit compare nella tabella Eventi', (await canaryRows()) >= 1, `righe canary=${await canaryRows()}`);
+await page.evaluate(() => window.__emit('shield:canary', { time: '2026-10-05T10:03:00Z', action: 'alert', pid: 4242, exe: '/usr/lib/cargo/bin/coreutils/cat', kind: 'open', path: '/home/u/Documents/.canary-wallet.dat', reason: 'x', replay: true }));
+await page.waitForTimeout(150);
+check('canary: lo stesso allarme riletto dalla cronologia non si duplica', (await canaryRows()) === 1, `righe canary=${await canaryRows()}`);
+await page.click('#ev-body ~ * >> text=Canary', { timeout: 500 }).catch(() => {});
 
 // --- sanificazione: testo ostile in comm/exe non diventa HTML
 await page.evaluate(() => window.__emit('shield:event', { time: '2026-10-05T10:02:00Z', action: 'blocked', pid: 7, comm: '<img src=x onerror=window.__pwned=1>', exe: '<script>window.__pwned=1</script>', rule: 'ssh-keys', inode: 3 }));

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gen2brain/beeep"
@@ -23,7 +24,8 @@ import (
 // App struct: backend GUI sopra lo stesso socket IPC della TUI.
 // Nessun privilegio qui: legge stato/eventi, non tocca eBPF né mappe.
 type App struct {
-	ctx context.Context
+	ctx  context.Context
+	once sync.Once // le sottoscrizioni al demone partono una volta sola (vedi FrontendReady)
 }
 
 // NewApp creates a new App application struct
@@ -31,10 +33,25 @@ func NewApp() *App {
 	return &App{}
 }
 
-// startup lancia i poll verso il demone: stato ogni 2s + stream eventi live.
-// Se il demone non gira, il frontend riceve errori e mostra la diagnosi.
+// startup salva il contesto. Le sottoscrizioni al demone NON partono qui: partono quando la pagina ha registrato i suoi
+// ascoltatori (FrontendReady). Il demone rilegge lo storico appena qualcuno si collega; se la GUI si collegava prima
+// che la pagina fosse pronta, gli eventi riletti andavano persi (visto il 2026-11-25: allarme canary notificato
+// dall'icona, GUI aperta 28 secondi dopo, tabella Eventi vuota). Dopo 10 s partono comunque (frontend vecchio, dev).
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	time.AfterFunc(10*time.Second, a.begin)
+}
+
+// FrontendReady: la pagina ha registrato gli ascoltatori; da qui in poi gli eventi del demone (anche quelli riletti
+// dallo storico) arrivano a qualcuno. Idempotente.
+func (a *App) FrontendReady() { a.begin() }
+
+func (a *App) begin() { a.once.Do(a.run) }
+
+// run lancia i poll verso il demone: stato ogni 2s + stream eventi live.
+// Se il demone non gira, il frontend riceve errori e mostra la diagnosi.
+func (a *App) run() {
+	ctx := a.ctx
 
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)

@@ -1,6 +1,6 @@
 // ZeroShield GUI — client IPC: primo paint via GetStatus, poi push live.
 // Solo lettura: nessun'azione privilegiata da qui (cambio mode via config+restart).
-import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff, ExportProfile, ChooseProfile, PreviewProfile, ApplyProfile} from '../wailsjs/go/main/App.js';
+import {GetStatus, SocketPath, Version, ServiceState, ServiceInstall, ServiceInstallAs, ServiceStart, ServiceStop, BootEnabled, SetBootEnabled, ConfigMode, SetConfigMode, ConfigText, Preflight, RulesModel, CheckProgram, ApplyRules, MakeTrusted, PreviewPaths, PickPath, ApplyInterfaces, ApplyFeatures, TrayEnabled, SetTrayEnabled, HardenPreview, HardenApply, KillSwitchOn, KillSwitchOff, ExportProfile, ChooseProfile, PreviewProfile, ApplyProfile, FrontendReady} from '../wailsjs/go/main/App.js';
 import {createRulesView} from './rules.js';
 import {createFeaturesView} from './features.js';
 import {createProfileView} from './profile.js';
@@ -1378,6 +1378,10 @@ EventsOn('shield:canary', a => {
     }
     requestRender();
 });
+
+// Tutti gli ascoltatori sono registrati: ora il demone puo' mandare anche lo storico che rilegge alla connessione.
+// Prima la GUI si collegava subito e gli eventi riletti arrivavano a una pagina che non ascoltava ancora.
+try { Promise.resolve(FrontendReady()).catch(() => {}); } catch (_) { /* build senza il binding: parte da sola dopo 10 s */ }
 
 // Titolo nella barra degli strumenti: la pagina ha gia' il suo titolo grande, quindi quello della barra compare solo
 // quando il primo e' scorso fuori vista (o se la pagina non ne ha uno). Evita il doppio titolo «Stato / Stato».
