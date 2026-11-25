@@ -28,6 +28,10 @@ Dalla seconda revisione statica del codice (commit `8a0dd93`), verificata sul so
 
 - **Catalogo**: aggiunto `gcr-ssh-agent` (agente SSH del portachiavi di GNOME, `/usr/libexec/gcr-ssh-agent`) per la regola `ssh-keys`. In enforce senza questa autorizzazione l'agente non legge le chiavi (`couldn't read file … Permission denied`, `ssh-add -l` vuoto), mentre `ssh` da solo continua a funzionare perché è già in lista. Visto sul PC il 2026-11-06. Dopo Applica: `systemctl --user restart gcr-ssh-agent`.
 
+## [0.0.31] — 2026-11-25
+
+- **Canary collaudato in `enforce`** su un PC reale: toccando l'esca, il processo viene ucciso (`Killed`) e il journal riporta `CANARY-KILL`. Nessuna modifica al codice del prodotto; aggiornati README e `PUNTI_APERTI.md`.
+
 ## [0.0.30] — 2026-11-25
 
 - **Corretto: il watchdog uccideva il demone dopo una sospensione del PC.** L'istante dell'ultimo rescan era salvato come ora di calendario (`UnixNano`): alla ripresa dalla sospensione l'ora salta in avanti di tutto il tempo dormito, il demone vedeva «rescan fermo da 10 minuti», smetteva di avvisare systemd e il watchdog lo uccideva con `SIGABRT` (visto il 2026-11-09 alle 14:14 e il 2026-11-23 alle 08:45, a ogni sospensione lunga; il riavvio automatico lo rimetteva su in un secondo, ma con una piccola finestra senza protezione). Ora `watchdog.Liveness` misura con l'orologio monotono di Go, che non conta la sospensione.

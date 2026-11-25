@@ -5,6 +5,12 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.31': {
+        title: 'Novità della versione 0.0.31',
+        items: [
+            ['Anti-ransomware provato in Blocca', 'Il file esca è stato toccato con il servizio in modalità Blocca: il programma è stato fermato subito e l\'evento è registrato.'],
+        ],
+    },
     '0.0.30': {
         title: 'Novità della versione 0.0.30',
         items: [
