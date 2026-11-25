@@ -201,7 +201,7 @@ nome con cui lo chiami.
 * **Anti-ransomware (canary + fanotify).** Si accende dalla pagina **Funzioni** della GUI (sceglie le cartelle, prepara anche il drop-in systemd) o a mano nel config. File esca nascosti nelle cartelle scelte: chi li tocca viene
   ucciso in `enforce` (mai PID ≤ 1 né il demone). Una raffica di scritture, cancellazioni o rinomine genera
   solo un allarme. `exclude_exe` e `allow_exe` esentano indicizzatori e backup. Spento di default: si tara una
-  settimana in `audit` ([`docs/CANARY.md`](docs/CANARY.md)). **Visto su un PC reale** (2026-11-13/25, in audit): 12 giorni senza falsi allarmi e un allarme con notifica toccando l'esca; l'uccisione in `enforce` non è stata provata.
+  settimana in `audit` ([`docs/CANARY.md`](docs/CANARY.md)). **Visto su un PC reale** (2026-11-13/25, in audit): 12 giorni senza falsi allarmi e un allarme con notifica toccando l'esca; l'uccisione in `enforce` è stata provata il 2026-11-25 (`cat` sull'esca → `Killed`, riga `CANARY-KILL` nel journal).
 * **VPN.** Il demone **monitora, non applica**: mostra tunnel, kill-switch nftables e handshake WireGuard.
   `scripts/vpn_killswitch.sh` applica il kill-switch con una sola tabella nft (`inet zt-killswitch`);
   `nm_vpn.sh` e `proton_*.sh` sono opzionali. Tutto provato solo in un namespace o con comandi finti
