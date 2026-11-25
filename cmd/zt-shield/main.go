@@ -428,8 +428,9 @@ Opzioni:
 	// Rescan periodico (vedi sopra). lastRescan alimenta il watchdog: se il
 	// rescan si pianta (walk bloccato su NFS, deadlock) i ping si fermano e
 	// systemd riavvia, invece di un demone che si dichiara vivo ma non lavora.
-	var lastRescan atomic.Int64
-	lastRescan.Store(time.Now().UnixNano())
+	// Orologio monotono (watchdog.Liveness): con l'ora di calendario una sospensione del PC sembrava un rescan fermo
+	// da minuti e systemd uccideva il demone alla ripresa.
+	lastRescan := watchdog.NewLiveness()
 	// Il tunnel puo' cadere tra un rescan e l'altro: con la VPN configurata lo stato
 	// si rilegge ogni 5 s (non ogni rescan_seconds) e si ripubblica solo se cambia.
 	// Stessa goroutine del rescan: nessuno stato condiviso da proteggere.
@@ -486,13 +487,13 @@ Opzioni:
 				refreshRadar(true)
 				curVpn = vpn.Check(cfg.Vpn, vpn.ExecRunner)
 				publishStatus()
-				lastRescan.Store(time.Now().UnixNano())
+				lastRescan.Touch()
 			case <-rescanReq:
 				p, a = mgr.Sync()
 				log.Printf("🔄 Rescan su richiesta: file=%d binari=%d", p, a)
 				refreshRadar(true)
 				publishStatus()
-				lastRescan.Store(time.Now().UnixNano())
+				lastRescan.Touch()
 			case <-vpnC:
 				if st := vpn.Check(cfg.Vpn, vpn.ExecRunner); st != curVpn {
 					log.Printf("🔒 VPN: tunnel=%v kill-switch=%v handshake=%ds (prima: tunnel=%v kill-switch=%v)",
@@ -516,7 +517,7 @@ Opzioni:
 			wd := time.NewTicker(every)
 			defer wd.Stop()
 			for range wd.C {
-				if time.Since(time.Unix(0, lastRescan.Load())) > stale {
+				if lastRescan.Since() > stale {
 					log.Printf("⚠️ rescan fermo da oltre %s: stop ping watchdog", stale)
 					continue
 				}

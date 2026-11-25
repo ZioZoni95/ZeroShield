@@ -129,3 +129,7 @@ export function PreviewProfile(arg1, arg2, arg3) {
 export function ApplyProfile(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ApplyProfile'](arg1, arg2, arg3, arg4);
 }
+
+export function FrontendReady() {
+  return window['go']['main']['App']['FrontendReady']();
+}
