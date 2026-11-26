@@ -30,7 +30,20 @@ func KillSwitchScript() string { return findScript("vpn_killswitch.sh") }
 // HardenProfiles: profili accettati da harden_system.sh.
 var HardenProfiles = []string{"home", "corporate", "public-wifi", "paranoid"}
 
+// HardenUndo: pseudo-profilo che annulla l'hardening (stesso percorso: anteprima, conferma, pkexec).
+const HardenUndo = "undo"
+
+func hardenArg(p string) string {
+	if p == HardenUndo {
+		return "--undo"
+	}
+	return p
+}
+
 func validProfile(p string) bool {
+	if p == HardenUndo {
+		return true
+	}
 	for _, x := range HardenProfiles {
 		if p == x {
 			return true
@@ -53,7 +66,7 @@ func HardenPreview(profile string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	out, err := execCombined(ctx, "bash", script, profile, "--dry-run")
+	out, err := execCombined(ctx, "bash", script, hardenArg(profile), "--dry-run")
 	text := string(out)
 	if len(text) > previewMax {
 		text = text[:previewMax] + "\n… (output troncato)"
@@ -79,7 +92,7 @@ func HardenApply(profile string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	if out, err := execCombined(ctx, el, "bash", script, profile); err != nil {
+	if out, err := execCombined(ctx, el, "bash", script, hardenArg(profile)); err != nil {
 		return fmt.Errorf("hardening fallito: %s", strings.TrimSpace(string(out)))
 	}
 	return nil

@@ -25,11 +25,13 @@ set -euo pipefail
 # Provalo SEMPRE prima della prima esecuzione vera.
 DRY_RUN="${ZT_DRY_RUN:-0}"
 PROFILE=""
+UNDO=0
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=1 ;;
+        --undo) UNDO=1 ;;
         home|corporate|public-wifi|paranoid) PROFILE="$arg" ;;
-        *) echo "Uso: $0 [home|corporate|public-wifi|paranoid] [--dry-run]"; exit 1 ;;
+        *) echo "Uso: $0 [home|corporate|public-wifi|paranoid|--undo] [--dry-run]"; exit 1 ;;
     esac
 done
 # Validazione esplicita dell'argomento: senza, un refuso diventa un profilo
@@ -39,7 +41,7 @@ PROFILE="${PROFILE:-home}"
 if [ "$DRY_RUN" != 1 ] && [ "$(id -u)" -ne 0 ]; then
     # sudo azzera l'ambiente: gli override di test (ZT_RESOLVED_CONF, ZT_SYSCTL_FILE) e un
     # PATH con comandi finti andrebbero persi e lo script modificherebbe il sistema VERO.
-    if [ -n "${ZT_RESOLVED_CONF:-}${ZT_SYSCTL_FILE:-}" ]; then
+    if [ -n "${ZT_RESOLVED_CONF:-}${ZT_SYSCTL_FILE:-}${ZT_STATE_FILE:-}${ZT_UFW_CONF:-}" ]; then
         echo "❌ ZT_RESOLVED_CONF/ZT_SYSCTL_FILE sono override da test e richiedono root o --dry-run: rifiuto di passare da sudo."
         exit 3
     fi
@@ -51,6 +53,7 @@ run() {
     if [ "$DRY_RUN" = 1 ]; then echo "   [dry-run] $*"; else "$@"; fi
 }
 
+[ "$UNDO" = 1 ] && PROFILE="annulla"
 echo "🧱 Profilo: $PROFILE$([ "$DRY_RUN" = 1 ] && echo " (DRY-RUN: nulla viene modificato)")"
 
 # --- Firewall ---
@@ -95,6 +98,60 @@ allow_pptp_gre() {
         done
     done < <(pptp_gateways | sort -u)
 }
+
+# --- Stato di partenza e annullamento ---
+# Alla PRIMA applicazione si annota com'era il sistema: senza, "annulla" dovrebbe indovinare.
+STATE_FILE="${ZT_STATE_FILE:-/etc/zt-shield/harden.state}"
+UFW_CONF="${ZT_UFW_CONF:-/etc/ufw/ufw.conf}"
+SYSCTL_PATH="${ZT_SYSCTL_FILE:-/etc/sysctl.d/99-zt-shield.conf}"
+RESOLVED_PATH="${ZT_RESOLVED_CONF:-/etc/systemd/resolved.conf}"
+state() { sed -n "s/^$1=//p" "$STATE_FILE" 2>/dev/null || true; }
+
+undo() {
+    if [ ! -e "$STATE_FILE" ] && [ ! -e "$SYSCTL_PATH" ] && [ ! -e "$RESOLVED_PATH.zt-backup" ]; then
+        echo "ℹ️  Niente da annullare: l'hardening non risulta applicato."
+        return 0
+    fi
+    local gw ip
+    if command -v ufw >/dev/null; then
+        if [ "$(state ufw)" = on ]; then
+            echo "ℹ️  ufw era già acceso prima: resta acceso, tolgo solo le regole GRE aggiunte."
+            while read -r gw; do
+                for ip in $({ getent ahostsv4 "$gw" || true; } | awk '{print $1}' | sort -u); do
+                    run ufw delete allow proto gre from "$ip" to any || true
+                done
+            done < <(pptp_gateways | sort -u)
+        else
+            [ -n "$(state ufw)" ] || echo "⚠️  Non so com'era il firewall prima (hardening applicato da una versione precedente): lo spengo."
+            run ufw disable
+        fi
+    fi
+    run rm -f "$SYSCTL_PATH"
+    run sysctl --system
+    echo "ℹ️  Alcuni parametri di rete tornano ai valori originali solo al prossimo riavvio."
+    if [ -e "$RESOLVED_PATH.zt-backup" ]; then
+        echo "ℹ️  Ripristino resolved.conf di prima dell'hardening (eventuali modifiche successive vanno perse)."
+        run mv "$RESOLVED_PATH.zt-backup" "$RESOLVED_PATH"
+        run systemctl restart systemd-resolved
+    fi
+    if [ "$(state avahi)" = on ]; then run systemctl enable --now avahi-daemon.socket avahi-daemon.service; fi
+    run rm -f "$STATE_FILE"
+}
+
+if [ "$UNDO" = 1 ]; then
+    undo
+    if [ "$DRY_RUN" = 1 ]; then echo "✅ Dry-run completato: nessuna modifica fatta."; else echo "✅ Hardening annullato."; fi
+    exit 0
+fi
+# Un backup di resolved.conf senza stato vuol dire "gia' applicato da una versione precedente":
+# annotare adesso registrerebbe come originale cio' che abbiamo cambiato noi.
+if [ "$DRY_RUN" != 1 ] && [ ! -e "$STATE_FILE" ] && [ ! -e "$RESOLVED_PATH.zt-backup" ]; then
+    mkdir -p "$(dirname "$STATE_FILE")"
+    {
+        if grep -q '^ENABLED=yes' "$UFW_CONF" 2>/dev/null; then echo ufw=on; else echo ufw=off; fi
+        if systemctl is-enabled avahi-daemon >/dev/null 2>&1; then echo avahi=on; else echo avahi=off; fi
+    } > "$STATE_FILE"
+fi
 
 if command -v ufw >/dev/null; then
     # Prima di accendere il firewall: le regole devono gia' esserci quando entra in vigore.

@@ -63,6 +63,9 @@ func TestHardenPreview(t *testing.T) {
 	if len(got) != 4 || got[0] != "bash" || got[2] != "public-wifi" || got[3] != "--dry-run" {
 		t.Errorf("comando inatteso: %v", got)
 	}
+	if _, err := HardenPreview(HardenUndo); err != nil || got[len(got)-2] != "--undo" {
+		t.Errorf("annulla: argomenti %v, err %v", got, err)
+	}
 	if _, err := HardenPreview("home; reboot"); err == nil {
 		t.Error("un profilo non valido va rifiutato")
 	}

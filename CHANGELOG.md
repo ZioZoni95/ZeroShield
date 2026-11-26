@@ -2,6 +2,14 @@
 
 Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
+## [0.0.34] — 2026-11-26
+
+- **Annulla hardening**: `harden_system.sh --undo` e il collegamento nella scheda di Funzioni (anteprima, poi conferma). Alla prima applicazione lo script annota com'erano `ufw` e `avahi` (`/etc/zt-shield/harden.state`). Provato con comandi finti e `--dry-run`, non ancora dal vivo.
+- **`scripts/collaudo_hooks.sh`**: collaudo degli hook (rename, link, truncate, `deny_write`) su file finti. Non ancora eseguito con le regole attive.
+- `docs/BETA.md`: bloccanti per la beta e scheda di prova per un'altra persona.
+- La correzione VPN PPTP della 0.0.33 è **confermata dal vivo**.
+- Nuovo limite annotato: nei programmi «multicall» (coreutils in Rust, busybox) autorizzarne uno li autorizza tutti.
+
 ## [0.0.33] — 2026-11-26
 
 - **Corretto — l'hardening bloccava le VPN PPTP.** Visto su un PC reale: dopo l'hardening `home`, `ufw` (`deny incoming`) scartava il GRE (protocollo 47) di ritorno e la VPN non si collegava. Ora `harden_system.sh` legge le VPN PPTP di NetworkManager e, prima di accendere il firewall, consente il GRE **solo** dagli indirizzi dei loro server; le righe compaiono nell'anteprima. Provato in `--dry-run` e con comandi finti, **non ancora riapplicando su un sistema vero**.

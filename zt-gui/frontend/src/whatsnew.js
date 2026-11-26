@@ -5,6 +5,12 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.34': {
+        title: 'Novità della versione 0.0.34',
+        items: [
+            ['Annulla hardening', 'Nella pagina Funzioni puoi rimettere firewall, resolver e parametri di rete com\'erano, vedendo prima cosa cambia.'],
+        ],
+    },
     '0.0.33': {
         title: 'Novità della versione 0.0.33',
         items: [

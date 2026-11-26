@@ -69,11 +69,12 @@ assert_stubs() {
 assert_stubs
 
 fresh() {
-    rm -f "$T/calls" "$T/sshd_port" "$T/sysctl.conf" "$T/vpn"
+    rm -f "$T/calls" "$T/sshd_port" "$T/sysctl.conf" "$T/vpn" "$T/state" "$T/ufw.conf" "$T/resolved.conf.zt-backup"
     printf '[Resolve]\n#LLMNR=yes\n#MulticastDNS=yes\n#DNS=\n' > "$T/resolved.conf"
 }
 harden() {
     env PATH="$T/bin:$PATH" ZT_RESOLVED_CONF="$T/resolved.conf" ZT_SYSCTL_FILE="$T/sysctl.conf" \
+        ZT_STATE_FILE="$T/state" ZT_UFW_CONF="$T/ufw.conf" \
         "$HERE/harden_system.sh" "$@" 2>&1
 }
 
@@ -108,6 +109,21 @@ check "senza VPN PPTP nessuna regola GRE" '! echo "$out" | grep -q "proto gre"'
 out="$(harden public-wifi --dry-run)"
 check "i profili con DNS pubblico avvisano per le VPN" 'echo "$out" | grep -q "nomi interni raggiunti tramite VPN"'
 
+echo "== annulla (dry-run)"
+fresh
+out="$(harden --undo --dry-run)"; rc=$?
+check "mai applicato: non spegne niente" '[ $rc -eq 0 ] && echo "$out" | grep -q "Niente da annullare" && ! echo "$out" | grep -q "ufw disable"'
+fresh; echo ufw=off > "$T/state"; : > "$T/sysctl.conf"; : > "$T/resolved.conf.zt-backup"
+out="$(harden --undo --dry-run)"
+check "ufw era spento: lo spegne e ripristina il resolver" 'echo "$out" | grep -q "ufw disable" && echo "$out" | grep -q "mv .*resolved.conf.zt-backup"'
+check "il dry-run non cancella nulla" '[ -e "$T/state" ] && [ -e "$T/sysctl.conf" ] && [ -e "$T/resolved.conf.zt-backup" ]'
+fresh; echo ufw=on > "$T/state"; echo vpn.example.com > "$T/vpn"
+out="$(harden --undo --dry-run)"
+check "ufw era acceso: resta acceso, toglie le regole GRE" '! echo "$out" | grep -q "ufw disable" && echo "$out" | grep -q "ufw delete allow proto gre from 192.0.2.10"'
+fresh; : > "$T/sysctl.conf"
+out="$(harden --undo --dry-run)"
+check "senza stato salvato: avvisa e spegne" 'echo "$out" | grep -q "Non so com" && echo "$out" | grep -q "ufw disable"'
+
 echo "== esecuzione reale (comandi finti)"
 # Solo da root: da utente normale harden_system.sh fa `exec sudo`, e sudo azzera PATH e le
 # variabili ZT_*, cioe' scarta i comandi finti ed esegue l'hardening VERO sul sistema.
@@ -128,6 +144,12 @@ else
     harden paranoid >/dev/null
     check "idempotente: la seconda esecuzione non cambia resolved.conf" '[ "$(md5sum < "$T/resolved.conf")" = "$sums" ]'
     check "...e non duplica le chiavi" '[ "$(grep -c "^LLMNR=" "$T/resolved.conf")" -eq 1 ]'
+
+    fresh; original="$(cat "$T/resolved.conf")"
+    harden home >/dev/null
+    check "alla prima applicazione annota lo stato di ufw" 'grep -q "^ufw=off" "$T/state"'
+    harden --undo >/dev/null
+    check "annulla: resolved.conf come prima, niente sysctl ne' stato" '[ "$(cat "$T/resolved.conf")" = "$original" ] && [ ! -e "$T/sysctl.conf" ] && [ ! -e "$T/state" ]'
 
     fresh; echo 2222 > "$T/sshd_port"
     harden home >/dev/null

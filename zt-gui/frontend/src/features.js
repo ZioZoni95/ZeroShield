@@ -95,9 +95,10 @@ export function createFeaturesView(d) {
         const profiles = ['home', 'corporate', 'public-wifi', 'paranoid'];
         const hp = hardProfile || (model && profiles.includes(model.profile) ? model.profile : 'home');
         cards.push(card('Hardening del sistema', 'Manuale', 'warn',
-            `Chiude l’ingresso con il firewall (UFW), spegne LLMNR/mDNS nel resolver, irrigidisce i parametri di rete e, sulle reti ostili, spegne avahi. Prima ti mostro <b>esattamente cosa cambierebbe</b>, poi decidi. Torna indietro a mano (firewall, file in <code>/etc/sysctl.d</code>, resolver). <span class="rl-d">Per le VPN <b>PPTP</b> di NetworkManager apre il ritorno GRE solo dai loro server (nell’anteprima vedi le righe <code>proto gre</code>); PPTP configurate a mano o altri tunnel che ricevono connessioni vanno controllati. Profilo <b>home</b> provato su un PC reale: la prima versione bloccava una VPN PPTP; la correzione è provata solo in anteprima e nei test. Controlla dopo: VPN, container che parlano con l’host, dispositivi <code>.local</code>. Con public-wifi e paranoid i nomi interni della VPN possono non risolversi.</span>`,
+            `Chiude l’ingresso con il firewall (UFW), spegne LLMNR/mDNS nel resolver, irrigidisce i parametri di rete e, sulle reti ostili, spegne avahi. Prima ti mostro <b>esattamente cosa cambierebbe</b>, poi decidi. Si torna indietro con <b>Annulla hardening</b>. <span class="rl-d">Per le VPN <b>PPTP</b> di NetworkManager apre il ritorno GRE solo dai loro server (nell’anteprima vedi le righe <code>proto gre</code>); PPTP configurate a mano o altri tunnel che ricevono connessioni vanno controllati. Profilo <b>home</b> provato su un PC reale: la prima versione bloccava una VPN PPTP; corretto e riprovato dal vivo. Controlla dopo: VPN, container che parlano con l’host, dispositivi <code>.local</code>. Con public-wifi e paranoid i nomi interni della VPN possono non risolversi.</span>`,
             `<select id="fn-hprof" aria-label="Profilo di hardening">${profiles.map(p => `<option value="${p}"${p === hp ? ' selected' : ''}>${p}</option>`).join('')}</select>
-             <button class="chip" id="fn-harden">Vedi cosa cambierebbe…</button>`));
+             <button class="chip" id="fn-harden">Vedi cosa cambierebbe…</button>
+             <button class="linklike" id="fn-unharden">Annulla hardening…</button>`));
 
         // 7. VPN: monitor (sempre) e kill-switch (se il tunnel e' configurato nel file)
         const vpn = st.vpn || {};
@@ -179,6 +180,16 @@ export function createFeaturesView(d) {
                 ok: 'Applica', danger: true});
             if (!ok) return;
             run('Applico l’hardening…', () => api.HardenApply(prof), `Hardening «${prof}» applicato.`);
+        };
+        const ub = $('fn-unharden');
+        if (ub) ub.onclick = async () => {
+            let text;
+            try { text = await api.HardenPreview('undo'); } catch (e) { toast(String((e && e.message) || e), true); return; }
+            const ok = await confirmDialog({title: 'Annullare l’hardening?',
+                body: `<div class="fn-pre">${esc(text)}</div>Questa è solo l’anteprima: <b>non è stato cambiato nulla</b>. <b>Annulla hardening</b> rimette firewall, resolver e parametri di rete com’erano (password di sistema).`,
+                ok: 'Annulla hardening', danger: true});
+            if (!ok) return;
+            run('Annullo l’hardening…', () => api.HardenApply('undo'), 'Hardening annullato.');
         };
         const kb = $('fn-ks');
         if (kb) kb.onclick = async () => {

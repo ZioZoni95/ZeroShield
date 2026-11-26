@@ -7,6 +7,10 @@ Prima di ogni prova scrivi l'esito in [`PUNTI_APERTI.md`](PUNTI_APERTI.md): ✅ 
 
 ## 0. Preparazione
 
+Le sezioni 1 e 2 si fanno con lo script (anche su un PC reale: tocca solo file finti in `~/zs-collaudo`):
+`scripts/collaudo_hooks.sh prepara`, crea le due protezioni che indica, poi `scripts/collaudo_hooks.sh prova`
+e, attivato `deny_write` su `zs-a`, `scripts/collaudo_hooks.sh prova deny_write`.
+
 ```bash
 mkdir -p ~/zs-collaudo && cd ~/zs-collaudo
 for f in a1 a2 b1 n1; do echo "segreto-$f" > $f; done      # a* = regola A, b1 = regola B, n1 = non protetto
