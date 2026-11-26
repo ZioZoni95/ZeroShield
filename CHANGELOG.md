@@ -2,6 +2,12 @@
 
 Formato: aggiunte, cambiati, corretti. Versioni `0.0.x` = alpha solo-lab.
 
+## [0.0.33] — 2026-11-26
+
+- **Corretto — l'hardening bloccava le VPN PPTP.** Visto su un PC reale: dopo l'hardening `home`, `ufw` (`deny incoming`) scartava il GRE (protocollo 47) di ritorno e la VPN non si collegava. Ora `harden_system.sh` legge le VPN PPTP di NetworkManager e, prima di accendere il firewall, consente il GRE **solo** dagli indirizzi dei loro server; le righe compaiono nell'anteprima. Provato in `--dry-run` e con comandi finti, **non ancora riapplicando su un sistema vero**.
+- Avviso nei profili `public-wifi` e `paranoid`: il DNS pubblico può rompere i nomi interni delle VPN.
+- La 0.0.32 diceva «rete invariata»: non era vero per la PPTP. Scheda, README e `PUNTI_APERTI` corretti.
+
 ## [0.0.32] — 2026-11-25
 
 - **Hardening di sistema**: la scheda in Funzioni non dice più «sperimentale, mai provato». Il profilo `home` è stato applicato su un PC reale (firewall, LLMNR/mDNS spenti, sysctl di rete): internet, DNS e Docker invariati. La scheda indica cosa è provato (solo `home`), come tornare indietro e cosa controllare dopo (container verso l'host, dispositivi `.local`). Aggiornati README e `PUNTI_APERTI.md`. Nessuna modifica allo script.

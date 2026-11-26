@@ -5,6 +5,13 @@
 // aggiorna non vedrebbe cosa e' cambiato. Il testo e' per chi non conosce il progetto: cosa puoi
 // fare ora, non cosa e' stato modificato nel codice.
 export const WHATS_NEW = {
+    '0.0.33': {
+        title: 'Novità della versione 0.0.33',
+        items: [
+            ['L\'hardening non blocca più le VPN PPTP', 'Prima di accendere il firewall, lascia passare il ritorno del tunnel dai server delle tue VPN PPTP. Nell\'anteprima vedi le regole aggiunte.'],
+        ],
+        note: 'Se l\'avevi disattivato, guarda l\'anteprima prima di riapplicarlo e poi prova a collegare la VPN.',
+    },
     '0.0.32': {
         title: 'Novità della versione 0.0.32',
         items: [
