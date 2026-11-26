@@ -94,7 +94,7 @@ GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`.
 | Icona nella barra (`zt-tray`, servizio utente) | 🟢 provata su un PC | registrata in GNOME, colori per stato, riavvio dopo `apt install` dal `.deb` (visto un caso di icona invisibile dopo due riavvii ravvicinati: ora si reimposta ogni 30 s) |
 | Revisione del codice (statica, 2026-11-05) | 🟡 4 punti, 3 corretti | frammenti XDP (ZS-001), firma polkit (ZS-004), finestra di rescan (ZS-003) corretti con test; `deny_write` era un malinteso sui testi. Nessun test avversario né runtime |
 | Pacchetto `.deb` | ✅ costruito, installato e rimosso | CI e prove locali |
-| `harden_system.sh` (profilo `home`) | ✅ **sistema reale** | applicato su un PC il 2026-11-25: firewall, DNS (LLMNR/mDNS spenti), sysctl; rete, DNS e Docker invariati |
+| `harden_system.sh` (profilo `home`) | 🟡 **sistema reale, con un difetto trovato** | applicato su un PC il 2026-11-25: internet, DNS e Docker ok, ma **bloccava una VPN PPTP** (GRE di ritorno scartato). Corretto in 0.0.33; la correzione è provata solo in `--dry-run` e nei test |
 | Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh` negli altri profili, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
 | `setup_fido2.sh`, unit systemd | ⚠️ solo sintassi | `shellcheck`, `systemd-analyze verify` |
 
@@ -211,7 +211,7 @@ nome con cui lo chiami.
   commit firmati via SSH.
 * **Hardening (`scripts/harden_system.sh`).** LLMNR e mDNS spenti in `systemd-resolved`, DNS-over-TLS nei
   profili per reti ostili, sysctl anti-redirect, `avahi` disabilitato, UFW `default deny incoming`. Usa
-  **sempre `--dry-run` prima**: mostra diff e comandi senza modificare nulla. Provato su un PC reale solo con il profilo `home`; gli altri tre no.
+  **sempre `--dry-run` prima**: mostra diff e comandi senza modificare nulla. Provato su un PC reale solo con il profilo `home`; gli altri tre no. Per le VPN PPTP di NetworkManager consente il GRE dai soli server configurati; con `public-wifi`/`paranoid` il DNS pubblico può rompere i nomi interni delle VPN.
 
 ---
 

@@ -64,7 +64,41 @@ echo "🧱 Profilo: $PROFILE$([ "$DRY_RUN" = 1 ] && echo " (DRY-RUN: nulla viene
 ssh_ports() {
     ss -Hltnp 2>/dev/null | awk '/"sshd"/ { n = split($4, a, ":"); print a[n] }' | sort -un
 }
+# --- VPN PPTP ---
+# PPTP porta i dati su GRE (protocollo 47). Senza un helper conntrack il GRE di ritorno non
+# risulta "gia' stabilito", quindi "deny incoming" lo scarta e il tunnel non si alza. Visto su
+# un PC reale: la VPN ha smesso di collegarsi subito dopo l'hardening. Si apre solo il GRE, e
+# solo dai server delle VPN PPTP configurate in NetworkManager (non i pppd scritti a mano).
+pptp_gateways() {
+    command -v nmcli >/dev/null || return 0
+    local id type
+    nmcli -t -f UUID,TYPE connection show 2>/dev/null | while IFS=: read -r id type; do
+        [ "$type" = vpn ] || continue
+        [ "$(nmcli -g vpn.service-type connection show "$id" 2>/dev/null)" = org.freedesktop.NetworkManager.pptp ] || continue
+        nmcli -g vpn.data connection show "$id" 2>/dev/null | tr ',' '\n' |
+            sed -n 's/^ *gateway *= *//p' | sed 's/ *$//'
+    done
+}
+allow_pptp_gre() {
+    local gw ips ip
+    while read -r gw; do
+        [ -n "$gw" ] || continue
+        # Un nome puo' avere piu' indirizzi (rotazione DNS): si aprono tutti.
+        ips="$({ getent ahostsv4 "$gw" || true; } | awk '{print $1}' | sort -u)"
+        if [ -z "$ips" ]; then
+            echo "⚠️  VPN PPTP verso $gw: nome non risolto, nessuna regola GRE: con il firewall acceso questa VPN NON si collegherà."
+            continue
+        fi
+        echo "ℹ️  VPN PPTP verso $gw: consento il GRE di ritorno (se il server cambia indirizzo, riapplica l'hardening)."
+        for ip in $ips; do
+            run ufw allow proto gre from "$ip" to any comment "zeroshield: VPN PPTP"
+        done
+    done < <(pptp_gateways | sort -u)
+}
+
 if command -v ufw >/dev/null; then
+    # Prima di accendere il firewall: le regole devono gia' esserci quando entra in vigore.
+    allow_pptp_gre
     run ufw default deny incoming
     run ufw default allow outgoing
     ports="$(ssh_ports)"
@@ -119,6 +153,7 @@ if [ -f "$RESOLVED_CONF" ]; then
             # risoluzione dei nomi dei repository interni.
             # Il costo: i nomi interni smettono di risolversi. Su una rete aziendale
             # questo profilo e' la scelta sbagliata, anche se il profilo si chiama public-wifi.
+            echo "⚠️  Questo profilo manda le query DNS a resolver pubblici: i nomi interni raggiunti tramite VPN possono smettere di risolversi. Con una VPN aziendale usa home o corporate."
             set_resolved DNS "1.1.1.1#cloudflare-dns.com 9.9.9.9#dns.quad9.net"
             # ~. = escludi i domini aziendali da questi resolver, per non mandare
             # query interne a Cloudflare. Senso inverso, serve in ambienti misti.

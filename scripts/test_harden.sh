@@ -36,12 +36,31 @@ cat > "$T/bin/ss" <<STUB
 exit 0
 STUB
 chmod +x "$T/bin/ss"
+# nmcli finto: una VPN PPTP e una OpenVPN, solo se il test crea $T/vpn. getent finto: due
+# indirizzi per il server PPTP, nessuno per i nomi che iniziano con "ignoto".
+cat > "$T/bin/nmcli" <<STUB
+#!/bin/sh
+[ -f "$T/vpn" ] || exit 0
+case "\$*" in
+    "-t -f UUID,TYPE connection show") printf 'aaa:vpn\nbbb:vpn\nccc:802-3-ethernet\n' ;;
+    "-g vpn.service-type connection show aaa") echo org.freedesktop.NetworkManager.pptp ;;
+    "-g vpn.service-type connection show bbb") echo org.freedesktop.NetworkManager.openvpn ;;
+    "-g vpn.data connection show aaa") echo "domain = esempio, gateway = \$(cat "$T/vpn"), user = u" ;;
+    "-g vpn.data connection show bbb") echo "remote = openvpn.example.com" ;;
+esac
+STUB
+cat > "$T/bin/getent" <<'STUB'
+#!/bin/sh
+case "$2" in ignoto*) exit 2 ;; esac
+printf '192.0.2.10 STREAM %s\n192.0.2.10 DGRAM\n192.0.2.11 STREAM\n' "$2"
+STUB
+chmod +x "$T/bin/nmcli" "$T/bin/getent"
 
 # Rete di sicurezza: se per qualunque motivo i finti non sono i primi nel PATH, il test si
 # ferma PRIMA di toccare il sistema (harden_system.sh, da root, modificherebbe UFW e DNS veri).
 assert_stubs() {
     local c
-    for c in ufw systemctl sysctl ss; do
+    for c in ufw systemctl sysctl ss nmcli getent; do
         if [ "$(PATH="$T/bin:$PATH" command -v "$c")" != "$T/bin/$c" ]; then
             echo "ERRORE: $c non e' il comando finto: rifiuto di proseguire"; exit 2
         fi
@@ -50,7 +69,7 @@ assert_stubs() {
 assert_stubs
 
 fresh() {
-    rm -f "$T/calls" "$T/sshd_port" "$T/sysctl.conf"
+    rm -f "$T/calls" "$T/sshd_port" "$T/sysctl.conf" "$T/vpn"
     printf '[Resolve]\n#LLMNR=yes\n#MulticastDNS=yes\n#DNS=\n' > "$T/resolved.conf"
 }
 harden() {
@@ -72,6 +91,22 @@ check "mostra il diff di resolved.conf" 'echo "$out" | grep -q "^+LLMNR=no" && e
 check "mostra il nuovo contenuto sysctl" 'echo "$out" | grep -q "net.ipv4.conf.all.accept_redirects = 0"'
 check "dice che non ha modificato nulla" 'echo "$out" | grep -q "nessuna modifica fatta"'
 check "ZT_DRY_RUN=1 equivale a --dry-run" '(fresh; ZT_DRY_RUN=1 harden home >/dev/null; ! grep -vE "^(ss -|systemctl is-enabled)" "$T/calls" 2>/dev/null)'
+
+echo "== VPN PPTP (dry-run)"
+fresh; echo vpn.example.com > "$T/vpn"
+out="$(harden home --dry-run)"; rc=$?
+check "esce 0" '[ $rc -eq 0 ]'
+check "consente il GRE da tutti gli indirizzi del server" 'echo "$out" | grep -q "ufw allow proto gre from 192.0.2.10 to any" && echo "$out" | grep -q "ufw allow proto gre from 192.0.2.11 to any"'
+check "una regola per indirizzo, nessuna per OpenVPN" '[ "$(echo "$out" | grep -c "ufw allow proto gre")" -eq 2 ] && ! echo "$out" | grep -q "openvpn.example.com"'
+check "le regole GRE vengono prima di accendere il firewall" '[ "$(echo "$out" | grep -n "proto gre" | tail -1 | cut -d: -f1)" -lt "$(echo "$out" | grep -n "ufw --force enable" | cut -d: -f1)" ]'
+fresh; echo ignoto.example.com > "$T/vpn"
+out="$(harden home --dry-run)"; rc=$?
+check "server non risolto: avvisa e prosegue" '[ $rc -eq 0 ] && echo "$out" | grep -q "NON si collegherà" && ! echo "$out" | grep -q "proto gre"'
+fresh
+out="$(harden home --dry-run)"
+check "senza VPN PPTP nessuna regola GRE" '! echo "$out" | grep -q "proto gre"'
+out="$(harden public-wifi --dry-run)"
+check "i profili con DNS pubblico avvisano per le VPN" 'echo "$out" | grep -q "nomi interni raggiunti tramite VPN"'
 
 echo "== esecuzione reale (comandi finti)"
 # Solo da root: da utente normale harden_system.sh fa `exec sudo`, e sudo azzera PATH e le
