@@ -1105,6 +1105,13 @@ for (const v of ['guide', 'config']) {
   await page.waitForFunction(() => window.__hardApply.length === 1);
   check('funzioni: confermando si applica il profilo scelto', await page.evaluate(() => window.__hardApply[0] === 'public-wifi'));
 
+  await page.waitForSelector('#fn-unharden');
+  await page.click('#fn-unharden');
+  await page.waitForSelector('#dlg .fn-pre');
+  await page.click('#dlg-ok');
+  await page.waitForFunction(() => window.__hardApply.length === 2);
+  check('funzioni: annulla hardening passa da anteprima e conferma', await page.evaluate(() => window.__hardApply[1] === 'undo' && window.__hardPrev.at(-1) === 'undo'));
+
   // Kill-switch VPN: senza VPN configurata non c'e' il pulsante; con la VPN si accende dopo una conferma che avvisa
   check('funzioni: senza VPN configurata niente pulsante kill-switch', (await page.locator('#fn-ks').count()) === 0);
   await page.evaluate(() => { window.__status = Object.assign({}, window.__status, { vpn: { enabled: true, endpoint: '203.0.113.7:51820', tunnel: 'wg0', up: true, killswitch: false, handshake_age: 5 } }); window.__emit('shield:status', window.__status); });

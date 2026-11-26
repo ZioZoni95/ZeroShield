@@ -94,7 +94,7 @@ GUI è quello del binario in uso; le build locali sono `<VERSION>~dev+<commit>`.
 | Icona nella barra (`zt-tray`, servizio utente) | 🟢 provata su un PC | registrata in GNOME, colori per stato, riavvio dopo `apt install` dal `.deb` (visto un caso di icona invisibile dopo due riavvii ravvicinati: ora si reimposta ogni 30 s) |
 | Revisione del codice (statica, 2026-11-05) | 🟡 4 punti, 3 corretti | frammenti XDP (ZS-001), firma polkit (ZS-004), finestra di rescan (ZS-003) corretti con test; `deny_write` era un malinteso sui testi. Nessun test avversario né runtime |
 | Pacchetto `.deb` | ✅ costruito, installato e rimosso | CI e prove locali |
-| `harden_system.sh` (profilo `home`) | 🟡 **sistema reale, con un difetto trovato** | applicato su un PC il 2026-11-25: internet, DNS e Docker ok, ma **bloccava una VPN PPTP** (GRE di ritorno scartato). Corretto in 0.0.33; la correzione è provata solo in `--dry-run` e nei test |
+| `harden_system.sh` (profilo `home`) | ✅ **sistema reale** | applicato il 2026-11-25/26: internet, DNS, Docker e VPN PPTP ok (la PPTP era bloccata fino alla 0.0.32). `--undo` non ancora eseguito dal vivo |
 | Kill-switch VPN, auto-VPN, helper Proton, `harden_system.sh` negli altri profili, `configure_service.sh` | 🟡 solo in namespace o con comandi finti | mai su una rete, un sistema o un `.deb` installato veri |
 | `setup_fido2.sh`, unit systemd | ⚠️ solo sintassi | `shellcheck`, `systemd-analyze verify` |
 
@@ -350,6 +350,7 @@ make probe                                 # il kernel accetta i programmi? (sud
 sudo SHIELD_USER=$USER ./bin/zt-shield     # prova in primo piano (profilo home = solo audit)
 
 bash scripts/harden_system.sh home --dry-run    # PRIMA: mostra diff e comandi
+bash scripts/harden_system.sh --undo --dry-run  # annullare (anche da GUI → Funzioni)
 sudo bash scripts/harden_system.sh home         # poi; corporate | public-wifi | paranoid non provati: meglio in VM
 sudo bash scripts/install_service.sh $USER home # servizio systemd (solo da sorgente; dal .deb c'è configure_service.sh)
 make package                                    # dist/zeroshield_<versione>_<arch>.deb (demone + TUI + GUI + icona)
@@ -493,6 +494,7 @@ L'elenco completo e aggiornato è in [`docs/PUNTI_APERTI.md`](docs/PUNTI_APERTI.
 | [`docs/COLLAUDO_LSM_2026-11-05.md`](docs/COLLAUDO_LSM_2026-11-05.md) | Primo blocco reale degli hook LSM: ambiente, esiti, cosa non è provato, come ripeterlo |
 | [`docs/TEST_SANDBOX.md`](docs/TEST_SANDBOX.md) · [`TESTING_LAB.md`](docs/TESTING_LAB.md) · [`TESTING.md`](docs/TESTING.md) | Cosa è stato provato su kernel reale; collaudo in VM isolata; collaudo pratico di LSM, XDP, FIDO2 e pentest esterno |
 | [`docs/PROFILO.md`](docs/PROFILO.md) | Profilo condiviso: esportare/importare le scelte tra macchine e rischi |
+| [`docs/BETA.md`](docs/BETA.md) | Cosa manca per la beta e scheda di prova per un'altra persona |
 | [`docs/CANARY.md`](docs/CANARY.md) · [`VPN_SETUP.md`](docs/VPN_SETUP.md) | Anti-ransomware: uso e taratura; kill-switch, auto-VPN, ProtonVPN |
 | [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md) | Ricerca TUI/GUI e architettura IPC |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`FEATURE_*.md`](docs/) | Piano a fasi e studi sulle estensioni |

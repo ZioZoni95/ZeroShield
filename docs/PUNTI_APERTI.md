@@ -22,7 +22,7 @@ VPN è provato solo in un network namespace e con comandi finti.
 | Pacchetti `.deb` | ✅ costruiti e installati su un PC (aggiornamento 0.0.4 → 0.0.6 con `apt`) · release v0.0.1–v0.0.4 e v0.0.9 pubblicate (pre-release; 0.0.5–0.0.8 sono versioni interne) · pacchetto unico dalla v0.0.4 |
 | Kill-switch VPN | 🟡 provato in un network namespace (54 controlli); mai su rete reale |
 | Auto-VPN + helper Proton | 🟡 provati con comandi finti; mai con NetworkManager o Proton veri |
-| `harden_system.sh` | 🟡 profilo `home` applicato su un PC reale (2026-11-25): bloccava una VPN PPTP, corretto in 0.0.33 (solo `--dry-run` e comandi finti); altri profili mai applicati |
+| `harden_system.sh` | 🟢 profilo `home` su un PC reale, VPN PPTP compresa (2026-11-26); 🟡 `--undo` solo dry-run e comandi finti; altri profili mai applicati |
 | `setup_fido2.sh` | ⚠️ mai eseguito (solo shellcheck) |
 | Hook `lsm/file_truncate` (≥ 6.2), inotify sulle dir protette | 🟡 inotify testato; `file_truncate` non confermato: nel journal compare solo «Hook LSM 'file_open' attivo», da verificare con `zt-probe` come root |
 
@@ -63,7 +63,9 @@ Root locale, keylogger e disco non cifrato restano fuori scopo.
 - [ ] **Percorsi dei browser** in `audit` (deb/snap; Flatpak non è coperto) prima di `public-wifi` in enforce.
 - [ ] **`zt-probe` su un kernel con BPF LSM**: deve accettare anche `zt_file_truncate` (nuovo, mai caricato).
 - [ ] **Unit systemd**: provare `ProtectSystem=strict` e `CapabilityBoundingSet` in VM. Le direttive a basso rischio già presenti girano su un PC vero (il demone parte e resta attivo).
-- [ ] **Hardening e VPN PPTP: correzione da collaudare dal vivo.** Il 2026-11-25 `deny incoming` scartava il GRE di ritorno e la VPN non si collegava. Dalla 0.0.33 lo script consente il GRE dai server PPTP di NetworkManager: riapplicare su un PC reale e collegare la VPN. Limiti: PPTP scritte a mano (`pppd`) non rilevate; se il server cambia IP va riapplicato; non c'è un «annulla hardening» (si torna indietro a mano).
+- [x] ~~**L'hardening bloccava le VPN PPTP**~~ — corretto in 0.0.33 e **confermato dal vivo il 2026-11-26**. Limiti: PPTP scritte a mano (`pppd`) non rilevate; se il server cambia IP va riapplicato.
+- [ ] **«Annulla hardening» (0.0.34) mai eseguito su un sistema vero.** Chi aveva applicato l'hardening con una versione precedente non ha lo stato salvato: il firewall viene spento (lo dice l'anteprima).
+- [ ] **Programmi «multicall»: autorizzarne uno li autorizza tutti (medio, visto il 2026-11-26).** Su Ubuntu con coreutils in Rust `cat`, `ls`, `rm`, `ln`, `truncate` sono lo stesso inode (anche `busybox` funziona così): autorizzare `cat` per una protezione autorizza anche gli altri. La GUI non avvisa ancora.
 - [ ] **Script** `setup_fido2.sh` in VM con snapshot. `harden_system.sh`: restano `corporate`, `public-wifi`, `paranoid` e il traffico dai container verso servizi dell'host.
 - [ ] **Test furto-token** in VM isolata: infostealer simulato, reverse shell host-only.
 - [ ] **Pentest LAN** da macchina esterna ([`TESTING.md`](TESTING.md), Test 5).
